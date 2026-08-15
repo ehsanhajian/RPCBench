@@ -1,0 +1,5 @@
+# Default owner for security-sensitive and repo policy files.
+*       @ehsanhajian
+/.github/ @ehsanhajian
+/SECURITY.md @ehsanhajian
+/docs/BOUNDARY.md @ehsanhajian
