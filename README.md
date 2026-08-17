@@ -20,15 +20,46 @@ How the three tools split: [docs/BOUNDARY.md](docs/BOUNDARY.md). RPCBench never 
 | **Output** | CLI, live TUI, local web UI, HTML (charts/heatmap), JSON, CSV, Markdown, Prometheus, Grafana |
 | **Families** | EVM (all chain IDs), Solana (+ gRPC first-seen), Substrate, Cosmos, Aptos, Sui, NEAR, Starknet, Bitcoin, TON |
 
-Implementation is the [issue tracker](https://github.com/ehsanhajian/RPCBench/issues) — complete product, not an MVP slice. Parent epic: [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
+Implementation is the [issue tracker](https://github.com/ehsanhajian/RPCBench/issues). Parent epic: [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
-## Planned usage
+## Install
 
 ```bash
-rpcbench compare --chain ethereum
-rpcbench compare --endpoints endpoints.yaml --workload indexer --budget standard --html -o report.html
-rpcbench replay --from capture.jsonl --endpoints endpoints.yaml
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
+
+## Quick start
+
+```bash
+cp endpoints.example.yaml endpoints.yaml
+rpcbench run --endpoints endpoints.yaml
+```
+
+Localhost is allowed — that is how you bench your own node. `run` is a reachability probe (`eth_blockNumber` by default), not a full benchmark yet.
+
+### Config
+
+YAML or JSON. Names must be unique; URLs must be `http` or `https`.
+
+```yaml
+endpoints:
+  - name: local
+    url: http://127.0.0.1:8545
+  - name: publicnode
+    url: https://ethereum.publicnode.com
+```
+
+### Flags
+
+```bash
+rpcbench run --endpoints endpoints.yaml --method eth_blockNumber --timeout 10 --retries 2 --budget 32
+```
+
+`--budget` is the max HTTP requests for the whole run, including retries (default 32). One bad URL or timeout fails that row only; if the budget is spent, later endpoints are skipped.
+
+Planned later: `rpcbench compare` (ranking, HTML, workloads).
 
 ## License
 

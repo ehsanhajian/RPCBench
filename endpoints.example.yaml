@@ -1,0 +1,8 @@
+# Named RPC endpoints. Localhost is allowed.
+# Copy to endpoints.yaml and edit. JSON with the same shape also works.
+
+endpoints:
+  - name: local
+    url: http://127.0.0.1:8545
+  - name: publicnode
+    url: https://ethereum.publicnode.com
