@@ -96,6 +96,7 @@ def probe(
     attempts = 0
     last_error = "unknown error"
     last_class = "error"
+    last_latency: float | None = None
     try:
         max_tries = max(1, retries + 1)
         for attempt in range(max_tries):
@@ -137,14 +138,17 @@ def probe(
             except httpx.TimeoutException as exc:
                 last_error = str(exc) or "timeout"
                 last_class = "timeout"
+                last_latency = (time.monotonic() - started) * 1000
                 continue
             except httpx.ConnectError as exc:
                 last_error = str(exc) or "connection failed"
                 last_class = "connection"
+                last_latency = (time.monotonic() - started) * 1000
                 continue
             except httpx.RequestError as exc:
                 last_error = str(exc) or "request failed"
                 last_class = "connection"
+                last_latency = (time.monotonic() - started) * 1000
                 continue
             latency_ms = (time.monotonic() - started) * 1000
             if response.status_code >= 400:
@@ -206,7 +210,7 @@ def probe(
         return ProbeResult(
             ok=False,
             reachable=False,
-            latency_ms=None,
+            latency_ms=last_latency,
             result=None,
             error=last_error,
             error_class=last_class,
