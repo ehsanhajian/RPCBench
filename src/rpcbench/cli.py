@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--warmup",
         type=int,
         default=1,
-        help="Warmup requests excluded from min/mean/max (default: 1)",
+        help="Warmup requests excluded from stats (default: 1)",
     )
     run.add_argument(
         "--timeout",

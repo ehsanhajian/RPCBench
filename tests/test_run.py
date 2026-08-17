@@ -7,7 +7,7 @@ import pytest
 
 from rpcbench.config import parse_endpoints
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
-from rpcbench.run import format_run, run_endpoints, summarize
+from rpcbench.run import format_run, percentile, run_endpoints, summarize
 
 
 def test_probe_success() -> None:
@@ -142,6 +142,9 @@ def test_summarize_all_fail() -> None:
     assert stats.n_ok == 0
     assert stats.n_fail == 2
     assert stats.min_ms is None
+    assert stats.p50_ms is None
+    assert stats.p95_ms is None
+    assert stats.p99_ms is None
 
 
 def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
@@ -167,10 +170,17 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
     assert outcome.stats.min_ms == pytest.approx(10.0)
     assert outcome.stats.mean_ms == pytest.approx(20.0)
     assert outcome.stats.max_ms == pytest.approx(30.0)
+    assert outcome.stats.p50_ms == pytest.approx(20.0)
+    assert outcome.stats.p95_ms == pytest.approx(30.0)
+    assert outcome.stats.p99_ms == pytest.approx(30.0)
     text = format_run(result)
     assert "min=10.0ms" in text
     assert "mean=20.0ms" in text
     assert "max=30.0ms" in text
+    assert "p50=20.0ms" in text
+    assert "p95=30.0ms" in text
+    assert "p99=30.0ms" in text
+    assert "(n=3)" in text
 
 
 def test_run_sends_configured_method() -> None:
@@ -196,3 +206,24 @@ def test_run_sends_configured_method() -> None:
         client=client,
     )
     assert seen == ["eth_chainId"]
+
+
+def test_percentile_nearest_rank() -> None:
+    vals = [float(i) for i in range(1, 21)]
+    assert percentile(vals, 0.50) == 10.0
+    assert percentile(vals, 0.95) == 19.0
+    assert percentile(vals, 0.99) == 20.0
+    assert percentile([7.0], 0.50) == 7.0
+    assert percentile([7.0], 0.99) == 7.0
+
+
+def test_summarize_percentiles_ignore_failures() -> None:
+    ok = [_ok(float(i)) for i in range(1, 21)]
+    stats = summarize(tuple(ok + [_fail(999.0), _fail(1.0)]))
+    assert stats.n_ok == 20
+    assert stats.n_fail == 2
+    assert stats.p50_ms == 10.0
+    assert stats.p95_ms == 19.0
+    assert stats.p99_ms == 20.0
+    assert stats.min_ms == 1.0
+    assert stats.max_ms == 20.0
