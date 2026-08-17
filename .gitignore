@@ -31,3 +31,5 @@ tmp/
 data/
 results/
 reports/
+endpoints.yaml
+endpoints.json
