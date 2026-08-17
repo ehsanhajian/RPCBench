@@ -57,7 +57,7 @@ endpoints:
 rpcbench run --endpoints endpoints.yaml --method eth_blockNumber --timeout 10 --retries 2 --budget 32
 ```
 
-One bad URL or timeout fails that row only; the rest of the run continues.
+`--budget` is the max HTTP requests for the whole run, including retries (default 32). One bad URL or timeout fails that row only; if the budget is spent, later endpoints are skipped.
 
 Planned later: `rpcbench compare` (ranking, HTML, workloads).
 
