@@ -1,7 +1,8 @@
-"""Timed JSON-RPC run: warmup then samples, min/mean/max on successes."""
+"""Timed JSON-RPC run: warmup then samples, min/mean/max and percentiles."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from rpcbench.config import BenchConfig, Endpoint
@@ -16,6 +17,9 @@ class LatencyStats:
     min_ms: float | None
     mean_ms: float | None
     max_ms: float | None
+    p50_ms: float | None
+    p95_ms: float | None
+    p99_ms: float | None
 
 
 @dataclass(frozen=True)
@@ -38,19 +42,41 @@ class RunResult:
     budget_remaining: int
 
 
+def percentile(samples: list[float], p: float) -> float:
+    """Nearest-rank percentile. ``p`` is in (0, 1]; ``samples`` must be non-empty."""
+    if not samples:
+        raise ValueError("percentile needs at least one sample")
+    if not 0 < p <= 1:
+        raise ValueError("percentile p must be in (0, 1]")
+    ordered = sorted(samples)
+    rank = max(1, math.ceil(p * len(ordered)))
+    return ordered[min(rank, len(ordered)) - 1]
+
+
 def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
     ok = [s.latency_ms for s in samples if s.ok and s.latency_ms is not None]
     n_fail = sum(1 for s in samples if not s.ok)
+    empty = LatencyStats(
+        n_ok=0,
+        n_fail=n_fail,
+        min_ms=None,
+        mean_ms=None,
+        max_ms=None,
+        p50_ms=None,
+        p95_ms=None,
+        p99_ms=None,
+    )
     if not ok:
-        return LatencyStats(
-            n_ok=0, n_fail=n_fail, min_ms=None, mean_ms=None, max_ms=None
-        )
+        return empty
     return LatencyStats(
         n_ok=len(ok),
         n_fail=n_fail,
         min_ms=min(ok),
         mean_ms=sum(ok) / len(ok),
         max_ms=max(ok),
+        p50_ms=percentile(ok, 0.50),
+        p95_ms=percentile(ok, 0.95),
+        p99_ms=percentile(ok, 0.99),
     )
 
 
@@ -165,10 +191,15 @@ def format_run(result: RunResult) -> str:
         stats = outcome.stats
         status = "ok" if stats.n_ok else "fail"
         n = f"n={stats.n_ok}/{stats.n_ok + stats.n_fail}"
+        indent = f"  {'':<{name_w}}         "
         if stats.min_ms is not None:
             detail = (
                 f"{n}  min={stats.min_ms:.1f}ms  "
                 f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms"
+            )
+            pct = (
+                f"p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  "
+                f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
             )
         else:
             err = outcome.samples[-1] if outcome.samples else (
@@ -178,13 +209,17 @@ def format_run(result: RunResult) -> str:
                 detail = f"{n}  {err.error_class}: {err.error}"
             else:
                 detail = n
+            pct = None
         url = display_url(outcome.endpoint.url)
         lines.append(
             f"  {outcome.endpoint.name:<{name_w}}  {status:<4}  {detail}"
         )
-        lines.append(f"  {'':<{name_w}}         {url}")
+        if pct is not None:
+            lines.append(f"{indent}{pct}")
+        lines.append(f"{indent}{url}")
     lines.append("")
     lines.append(
-        f"{ok_n} ok  {fail_n} failed  ·  warmup excluded  ·  min/mean/max of successful samples"
+        f"{ok_n} ok  {fail_n} failed  ·  warmup excluded  ·  "
+        "min/mean/max and p50/p95/p99 of successful samples"
     )
     return "\n".join(lines) + "\n"
