@@ -32,4 +32,4 @@ rpcbench replay --from capture.jsonl --endpoints endpoints.yaml
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE)
+[MIT](LICENSE)
