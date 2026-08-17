@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rpcbench.cli import main
+from rpcbench.cli import build_parser, main
 
 
 def test_cli_missing_file(capsys) -> None:
@@ -10,6 +10,15 @@ def test_cli_missing_file(capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "not found" in err
+
+
+def test_cli_defaults() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml"])
+    assert ns.samples == 10
+    assert ns.warmup == 1
+    assert ns.budget == 128
+    assert ns.method is None
+    assert ns.preset is None
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -38,16 +47,151 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
 
     def wrapped(config, **kwargs):
         kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
-        kwargs["retries"] = 0
         return real(config, **kwargs)
 
-    monkeypatch.setattr(run_mod, "run_endpoints", wrapped)
-    # cli imports run_endpoints at function call from rpcbench.run — patch cli too
     import rpcbench.cli as cli
 
     monkeypatch.setattr(cli, "run_endpoints", wrapped)
-    code = main(["run", "--endpoints", str(cfg), "--retries", "0"])
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
     out = capsys.readouterr().out
     assert code == 0
     assert "ok" in out
     assert "bad" in out
+    assert "min=" in out
+
+
+def test_cli_preset_balance(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x0"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--preset",
+            "balance",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert methods == ["eth_getBalance"]
+    assert "eth_getBalance" in capsys.readouterr().out
+
+
+def test_cli_method_flag(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--method",
+            "eth_chainId",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert methods == ["eth_chainId"]
+
+
+def test_cli_rejects_write_method(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--method", "eth_sendTransaction"]
+    )
+    assert code == 2
+    assert "write method" in capsys.readouterr().err
+
+
+def test_cli_rejects_preset_and_method(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--preset",
+            "head",
+            "--method",
+            "eth_chainId",
+        ]
+    )
+    assert code == 2
+    assert "either --preset or --method" in capsys.readouterr().err

@@ -7,6 +7,7 @@ import sys
 
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_endpoints
+from rpcbench.methods import MethodError, resolve_method
 from rpcbench.run import format_run, run_endpoints
 
 
@@ -20,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser(
         "run",
-        help="Probe configured endpoints with a cheap JSON-RPC method",
+        help="Measure JSON-RPC round-trip latency for configured endpoints",
     )
     run.add_argument(
         "--endpoints",
@@ -30,8 +31,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--method",
-        default="eth_blockNumber",
-        help="JSON-RPC method to call (default: eth_blockNumber)",
+        default=None,
+        help="JSON-RPC method (default: eth_blockNumber). Do not combine with --preset.",
+    )
+    run.add_argument(
+        "--preset",
+        default=None,
+        metavar="NAME",
+        help="Read-only method pack: head, chainId, or balance",
+    )
+    run.add_argument(
+        "--params",
+        default=None,
+        metavar="JSON",
+        help='JSON array of params, e.g. \'["0x0","latest"]\'',
+    )
+    run.add_argument(
+        "--samples",
+        type=int,
+        default=10,
+        help="Timed samples per endpoint after warmup (default: 10)",
+    )
+    run.add_argument(
+        "--warmup",
+        type=int,
+        default=1,
+        help="Warmup requests excluded from min/mean/max (default: 1)",
     )
     run.add_argument(
         "--timeout",
@@ -40,16 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Per-request timeout in seconds (default: 10)",
     )
     run.add_argument(
-        "--retries",
-        type=int,
-        default=2,
-        help="Retries on timeout/connection errors (default: 2)",
-    )
-    run.add_argument(
         "--budget",
         type=int,
-        default=32,
-        help="Max HTTP requests for the whole run (default: 32)",
+        default=128,
+        help="Max HTTP requests for the whole run, including warmup (default: 128)",
     )
     return parser
 
@@ -69,24 +88,30 @@ def main(argv: list[str] | None = None) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     try:
         config = load_endpoints(args.endpoints)
-    except ConfigError as exc:
+        method, params = resolve_method(
+            method=args.method, preset=args.preset, params_json=args.params
+        )
+    except (ConfigError, MethodError) as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
-    if args.timeout <= 0 or args.retries < 0 or args.budget < 1:
+    if args.timeout <= 0 or args.budget < 1 or args.samples < 1 or args.warmup < 0:
         print(
-            "rpcbench: --timeout must be > 0, --retries >= 0, --budget >= 1",
+            "rpcbench: --timeout must be > 0, --samples >= 1, "
+            "--warmup >= 0, --budget >= 1",
             file=sys.stderr,
         )
         return 2
     result = run_endpoints(
         config,
-        method=args.method,
+        method=method,
+        params=params,
+        samples=args.samples,
+        warmup=args.warmup,
         timeout=args.timeout,
-        retries=args.retries,
         budget=args.budget,
     )
     sys.stdout.write(format_run(result))
-    if any(outcome.probe.ok for outcome in result.outcomes):
+    if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1
 
