@@ -1,4 +1,4 @@
-"""Timed JSON-RPC run: warmup then samples, min/mean/max and percentiles."""
+"""Timed JSON-RPC run: latency stats, percentiles, and error rates."""
 
 from __future__ import annotations
 
@@ -10,10 +10,24 @@ from rpcbench.rpc import ProbeResult, RequestBudget, probe
 from rpcbench.urls import display_url
 
 
+_CLASS_ORDER = (
+    "timeout",
+    "connection",
+    "http_4xx",
+    "http_5xx",
+    "jsonrpc",
+    "malformed",
+    "invalid_url",
+    "budget",
+)
+
+
 @dataclass(frozen=True)
 class LatencyStats:
     n_ok: int
     n_fail: int
+    error_rate: float | None
+    by_class: tuple[tuple[str, int], ...]
     min_ms: float | None
     mean_ms: float | None
     max_ms: float | None
@@ -53,24 +67,41 @@ def percentile(samples: list[float], p: float) -> float:
     return ordered[min(rank, len(ordered)) - 1]
 
 
+def _count_classes(samples: tuple[ProbeResult, ...]) -> tuple[tuple[str, int], ...]:
+    counts: dict[str, int] = {}
+    for sample in samples:
+        if sample.ok or not sample.error_class:
+            continue
+        counts[sample.error_class] = counts.get(sample.error_class, 0) + 1
+    rank = {name: i for i, name in enumerate(_CLASS_ORDER)}
+    items = sorted(counts.items(), key=lambda kv: (rank.get(kv[0], 99), kv[0]))
+    return tuple(items)
+
+
 def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
     ok = [s.latency_ms for s in samples if s.ok and s.latency_ms is not None]
     n_fail = sum(1 for s in samples if not s.ok)
-    empty = LatencyStats(
-        n_ok=0,
-        n_fail=n_fail,
-        min_ms=None,
-        mean_ms=None,
-        max_ms=None,
-        p50_ms=None,
-        p95_ms=None,
-        p99_ms=None,
-    )
+    attempted = len(ok) + n_fail
+    error_rate = (n_fail / attempted) if attempted else None
+    by_class = _count_classes(samples)
     if not ok:
-        return empty
+        return LatencyStats(
+            n_ok=0,
+            n_fail=n_fail,
+            error_rate=error_rate,
+            by_class=by_class,
+            min_ms=None,
+            mean_ms=None,
+            max_ms=None,
+            p50_ms=None,
+            p95_ms=None,
+            p99_ms=None,
+        )
     return LatencyStats(
         n_ok=len(ok),
         n_fail=n_fail,
+        error_rate=error_rate,
+        by_class=by_class,
         min_ms=min(ok),
         mean_ms=sum(ok) / len(ok),
         max_ms=max(ok),
@@ -190,11 +221,18 @@ def format_run(result: RunResult) -> str:
     for outcome in result.outcomes:
         stats = outcome.stats
         status = "ok" if stats.n_ok else "fail"
-        n = f"n={stats.n_ok}/{stats.n_ok + stats.n_fail}"
+        attempted = stats.n_ok + stats.n_fail
+        if stats.error_rate is None:
+            rate = "err=n/a"
+        else:
+            rate = f"err={100 * stats.error_rate:.0f}%"
+        classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
+        n = f"n={stats.n_ok}/{attempted}  {rate}{classes}"
         indent = f"  {'':<{name_w}}         "
         if stats.min_ms is not None:
-            detail = (
-                f"{n}  min={stats.min_ms:.1f}ms  "
+            detail = n
+            lat = (
+                f"min={stats.min_ms:.1f}ms  "
                 f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms"
             )
             pct = (
@@ -209,17 +247,20 @@ def format_run(result: RunResult) -> str:
                 detail = f"{n}  {err.error_class}: {err.error}"
             else:
                 detail = n
+            lat = None
             pct = None
         url = display_url(outcome.endpoint.url)
         lines.append(
             f"  {outcome.endpoint.name:<{name_w}}  {status:<4}  {detail}"
         )
+        if lat is not None:
+            lines.append(f"{indent}{lat}")
         if pct is not None:
             lines.append(f"{indent}{pct}")
         lines.append(f"{indent}{url}")
     lines.append("")
     lines.append(
         f"{ok_n} ok  {fail_n} failed  ·  warmup excluded  ·  "
-        "min/mean/max and p50/p95/p99 of successful samples"
+        "err=failed/attempted  ·  min/mean/max and p50/p95/p99 of successful samples"
     )
     return "\n".join(lines) + "\n"

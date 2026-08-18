@@ -37,7 +37,7 @@ cp endpoints.example.yaml endpoints.yaml
 rpcbench run --endpoints endpoints.yaml
 ```
 
-Localhost is allowed — that is how you bench your own node. `run` times a read-only JSON-RPC method and prints **min / mean / max** and **P50 / P95 / P99** per endpoint (warmup excluded).
+Localhost is allowed — that is how you bench your own node. `run` times a read-only JSON-RPC method and prints **min / mean / max**, **P50 / P95 / P99**, and **error rate** per endpoint (warmup excluded).
 
 ### Config
 
@@ -57,7 +57,7 @@ endpoints:
 rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --timeout 10 --budget 128
 ```
 
-`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max and percentiles. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected.
+`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected.
 
 `--budget` is the max HTTP requests for the whole run, including warmup (default 128). One bad URL or timeout fails that row only; if the budget is spent, later endpoints are skipped.
 

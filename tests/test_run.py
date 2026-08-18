@@ -75,6 +75,9 @@ def test_run_continues_after_one_failure() -> None:
     assert "ok" in text
     assert "fail" in text
     assert "min=" in text or "n=1/1" in text
+    assert "err=0%" in text
+    assert "err=100%" in text
+    assert "connection=" in text
 
 
 def test_budget_skips_later_endpoints() -> None:
@@ -116,14 +119,16 @@ def _ok(ms: float) -> ProbeResult:
     )
 
 
-def _fail(ms: float) -> ProbeResult:
+def _fail(
+    ms: float, error_class: str = "timeout", error: str = "timeout"
+) -> ProbeResult:
     return ProbeResult(
         ok=False,
         reachable=False,
         latency_ms=ms,
         result=None,
-        error="timeout",
-        error_class="timeout",
+        error=error,
+        error_class=error_class,
         attempts=1,
     )
 
@@ -132,19 +137,23 @@ def test_summarize_min_mean_max_ignores_failures() -> None:
     stats = summarize((_ok(10.0), _fail(99.0), _ok(30.0)))
     assert stats.n_ok == 2
     assert stats.n_fail == 1
+    assert stats.error_rate == pytest.approx(1 / 3)
     assert stats.min_ms == 10.0
     assert stats.mean_ms == 20.0
     assert stats.max_ms == 30.0
+    assert dict(stats.by_class) == {"timeout": 1}
 
 
 def test_summarize_all_fail() -> None:
     stats = summarize((_fail(5.0), _fail(8.0)))
     assert stats.n_ok == 0
     assert stats.n_fail == 2
+    assert stats.error_rate == 1.0
     assert stats.min_ms is None
     assert stats.p50_ms is None
     assert stats.p95_ms is None
     assert stats.p99_ms is None
+    assert dict(stats.by_class) == {"timeout": 2}
 
 
 def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
@@ -181,6 +190,7 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
     assert "p95=30.0ms" in text
     assert "p99=30.0ms" in text
     assert "(n=3)" in text
+    assert "err=0%" in text
 
 
 def test_run_sends_configured_method() -> None:
@@ -227,3 +237,106 @@ def test_summarize_percentiles_ignore_failures() -> None:
     assert stats.p99_ms == 20.0
     assert stats.min_ms == 1.0
     assert stats.max_ms == 20.0
+    assert stats.error_rate == pytest.approx(2 / 22)
+    assert dict(stats.by_class) == {"timeout": 2}
+
+
+def test_timeout_and_jsonrpc_counted_separately() -> None:
+    stats = summarize(
+        (
+            _ok(10.0),
+            _fail(20.0, "timeout", "took too long"),
+            _fail(30.0, "jsonrpc", "Method not found"),
+            _ok(40.0),
+        )
+    )
+    assert stats.n_ok == 2
+    assert stats.n_fail == 2
+    assert stats.error_rate == pytest.approx(0.5)
+    assert dict(stats.by_class) == {"timeout": 1, "jsonrpc": 1}
+
+
+def test_mixed_timeouts_show_error_rate() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] % 2 == 0:
+            raise httpx.TimeoutException("slow")
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=4, warmup=0, budget=8, client=client)
+    stats = result.outcomes[0].stats
+    assert stats.n_ok == 2
+    assert stats.n_fail == 2
+    assert stats.error_rate == pytest.approx(0.5)
+    assert dict(stats.by_class) == {"timeout": 2}
+    text = format_run(result)
+    assert "err=50%" in text
+    assert "timeout=2" in text
+
+
+def test_bad_url_run_is_100_percent_error() -> None:
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "bad", "url": "http://["}]}
+    )
+    result = run_endpoints(cfg, samples=4, warmup=0, budget=8)
+    stats = result.outcomes[0].stats
+    assert stats.n_ok == 0
+    assert stats.error_rate == 1.0
+    assert dict(stats.by_class) == {"invalid_url": 1}
+    text = format_run(result)
+    assert "err=100%" in text
+    assert "invalid_url=" in text
+
+
+def test_probe_http_jsonrpc_and_malformed_classes() -> None:
+    def http_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    client = httpx.Client(transport=httpx.MockTransport(http_handler))
+    http_err = probe(
+        "http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0
+    )
+    assert http_err.error_class == "http_5xx"
+
+    def four_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, text="no")
+
+    client = httpx.Client(transport=httpx.MockTransport(four_handler))
+    four = probe(
+        "http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0
+    )
+    assert four.error_class == "http_4xx"
+
+    def rpc_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "Method not found"},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(rpc_handler))
+    rpc_err = probe(
+        "http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0
+    )
+    assert rpc_err.error_class == "jsonrpc"
+    assert "Method not found" in (rpc_err.error or "")
+
+    def bad_json(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="not json")
+
+    client = httpx.Client(transport=httpx.MockTransport(bad_json))
+    malformed = probe(
+        "http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0
+    )
+    assert malformed.error_class == "malformed"

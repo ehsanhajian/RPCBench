@@ -69,6 +69,7 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "bad" in out
     assert "min=" in out
     assert "p50=" in out
+    assert "err=" in out
 
 
 def test_cli_preset_balance(tmp_path: Path, monkeypatch, capsys) -> None:
