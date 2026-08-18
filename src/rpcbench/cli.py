@@ -8,7 +8,8 @@ import sys
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_endpoints
 from rpcbench.methods import MethodError, resolve_method
-from rpcbench.run import format_run, run_endpoints
+from rpcbench.report import format_run
+from rpcbench.run import run_endpoints
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,11 +19,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"rpcbench {__version__}")
     sub = parser.add_subparsers(dest="command")
-
-    run = sub.add_parser(
+    _add_run_parser(
+        sub,
         "run",
-        help="Measure JSON-RPC round-trip latency for configured endpoints",
+        "Measure JSON-RPC round-trip latency and print a comparison report",
     )
+    _add_run_parser(
+        sub,
+        "compare",
+        "Same as run: print a ranked CLI report for configured endpoints",
+    )
+    return parser
+
+
+def _add_run_parser(sub, name: str, help_text: str) -> None:
+    run = sub.add_parser(name, help=help_text)
     run.add_argument(
         "--endpoints",
         required=True,
@@ -70,7 +81,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=128,
         help="Max HTTP requests for the whole run, including warmup (default: 128)",
     )
-    return parser
+    run.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Print per-sample latency and error-class detail",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 2
-    if args.command == "run":
+    if args.command in {"run", "compare"}:
         return _cmd_run(args)
     parser.print_help()
     return 2
@@ -110,7 +126,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         budget=args.budget,
     )
-    sys.stdout.write(format_run(result))
+    sys.stdout.write(format_run(result, verbose=args.verbose))
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1

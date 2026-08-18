@@ -19,6 +19,7 @@ def test_cli_defaults() -> None:
     assert ns.budget == 128
     assert ns.method is None
     assert ns.preset is None
+    assert ns.verbose is False
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -70,6 +71,10 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "min=" in out
     assert "p50=" in out
     assert "err=" in out
+    assert "Fastest" in out
+    assert "Ranking" in out
+    assert "Capabilities" in out
+    assert "↳ Next:" not in out
 
 
 def test_cli_preset_balance(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -197,3 +202,82 @@ def test_cli_rejects_preset_and_method(tmp_path: Path, capsys) -> None:
     )
     assert code == 2
     assert "either --preset or --method" in capsys.readouterr().err
+
+
+def test_cli_compare_prints_report(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        ["compare", "--endpoints", str(cfg), "--samples", "1", "--warmup", "0"]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Fastest  ok" in out
+    assert "Ranking" in out
+
+
+def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "2",
+            "--warmup",
+            "0",
+            "--verbose",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "samples" in out
+    assert "1" in out
+    assert "2" in out
+
