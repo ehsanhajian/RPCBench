@@ -7,7 +7,8 @@ import pytest
 
 from rpcbench.config import parse_endpoints
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
-from rpcbench.run import format_run, percentile, run_endpoints, summarize
+from rpcbench.report import format_run
+from rpcbench.run import percentile, run_endpoints, summarize
 
 
 def test_probe_success() -> None:
@@ -71,13 +72,18 @@ def test_run_continues_after_one_failure() -> None:
     assert result.outcomes[0].stats.n_ok == 1
     assert result.outcomes[1].stats.n_ok == 0
     assert result.outcomes[1].samples[0].error_class == "connection"
-    text = format_run(result)
+    text = format_run(result, color=False)
     assert "ok" in text
     assert "fail" in text
     assert "min=" in text or "n=1/1" in text
     assert "err=0%" in text
     assert "err=100%" in text
     assert "connection=" in text
+    assert "Summary" in text
+    assert "Ranking" in text
+    assert "Fastest" in text
+    assert "Capabilities" in text
+    assert "↳ Next:" not in text
 
 
 def test_budget_skips_later_endpoints() -> None:
@@ -182,7 +188,7 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
     assert outcome.stats.p50_ms == pytest.approx(20.0)
     assert outcome.stats.p95_ms == pytest.approx(30.0)
     assert outcome.stats.p99_ms == pytest.approx(30.0)
-    text = format_run(result)
+    text = format_run(result, color=False)
     assert "min=10.0ms" in text
     assert "mean=20.0ms" in text
     assert "max=30.0ms" in text
@@ -277,7 +283,7 @@ def test_mixed_timeouts_show_error_rate() -> None:
     assert stats.n_fail == 2
     assert stats.error_rate == pytest.approx(0.5)
     assert dict(stats.by_class) == {"timeout": 2}
-    text = format_run(result)
+    text = format_run(result, color=False)
     assert "err=50%" in text
     assert "timeout=2" in text
 
@@ -291,7 +297,7 @@ def test_bad_url_run_is_100_percent_error() -> None:
     assert stats.n_ok == 0
     assert stats.error_rate == 1.0
     assert dict(stats.by_class) == {"invalid_url": 1}
-    text = format_run(result)
+    text = format_run(result, color=False)
     assert "err=100%" in text
     assert "invalid_url=" in text
 

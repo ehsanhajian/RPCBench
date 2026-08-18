@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from rpcbench.config import BenchConfig, Endpoint
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
-from rpcbench.urls import display_url
 
 
 _CLASS_ORDER = (
@@ -203,64 +202,3 @@ def _run_one(
         stats=summarize(tuple(measured)),
     )
 
-
-def format_run(result: RunResult) -> str:
-    ok_n = sum(1 for o in result.outcomes if o.stats.n_ok)
-    fail_n = len(result.outcomes) - ok_n
-    params = f" {list(result.params)}" if result.params else ""
-    lines = [
-        "RPCBench run",
-        "=" * 72,
-        f"Method:   {result.method}{params}",
-        f"Samples:  {result.samples}  Warmup: {result.warmup}  "
-        f"Timeout: {result.timeout:g}s  "
-        f"Budget: {result.budget} ({result.budget_remaining} left)",
-        "",
-    ]
-    name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
-    for outcome in result.outcomes:
-        stats = outcome.stats
-        status = "ok" if stats.n_ok else "fail"
-        attempted = stats.n_ok + stats.n_fail
-        if stats.error_rate is None:
-            rate = "err=n/a"
-        else:
-            rate = f"err={100 * stats.error_rate:.0f}%"
-        classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
-        n = f"n={stats.n_ok}/{attempted}  {rate}{classes}"
-        indent = f"  {'':<{name_w}}         "
-        if stats.min_ms is not None:
-            detail = n
-            lat = (
-                f"min={stats.min_ms:.1f}ms  "
-                f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms"
-            )
-            pct = (
-                f"p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  "
-                f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
-            )
-        else:
-            err = outcome.samples[-1] if outcome.samples else (
-                outcome.warmup[-1] if outcome.warmup else None
-            )
-            if err and err.error:
-                detail = f"{n}  {err.error_class}: {err.error}"
-            else:
-                detail = n
-            lat = None
-            pct = None
-        url = display_url(outcome.endpoint.url)
-        lines.append(
-            f"  {outcome.endpoint.name:<{name_w}}  {status:<4}  {detail}"
-        )
-        if lat is not None:
-            lines.append(f"{indent}{lat}")
-        if pct is not None:
-            lines.append(f"{indent}{pct}")
-        lines.append(f"{indent}{url}")
-    lines.append("")
-    lines.append(
-        f"{ok_n} ok  {fail_n} failed  ·  warmup excluded  ·  "
-        "err=failed/attempted  ·  min/mean/max and p50/p95/p99 of successful samples"
-    )
-    return "\n".join(lines) + "\n"
