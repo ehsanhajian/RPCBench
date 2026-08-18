@@ -152,13 +152,15 @@ def probe(
                 continue
             latency_ms = (time.monotonic() - started) * 1000
             if response.status_code >= 400:
+                code = response.status_code
+                http_class = "http_4xx" if code < 500 else "http_5xx"
                 return ProbeResult(
                     ok=False,
                     reachable=True,
                     latency_ms=latency_ms,
                     result=None,
-                    error=f"HTTP {response.status_code}",
-                    error_class="http",
+                    error=f"HTTP {code}",
+                    error_class=http_class,
                     attempts=attempts,
                 )
             try:
@@ -170,7 +172,7 @@ def probe(
                     latency_ms=latency_ms,
                     result=None,
                     error="response is not JSON",
-                    error_class="http",
+                    error_class="malformed",
                     attempts=attempts,
                 )
             if not isinstance(payload, dict):
@@ -180,7 +182,7 @@ def probe(
                     latency_ms=latency_ms,
                     result=None,
                     error="JSON-RPC response is not an object",
-                    error_class="jsonrpc",
+                    error_class="malformed",
                     attempts=attempts,
                 )
             if payload.get("error"):
