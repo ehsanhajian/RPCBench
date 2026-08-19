@@ -30,6 +30,8 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+Pull requests and pushes to `main` run `pytest`, then a live smoke: `rpcbench run` against PublicNode and dRPC (`--samples 1 --warmup 0`). There is no local node in CI. The smoke passes if either public endpoint is ok.
+
 ## Quick start
 
 ```bash

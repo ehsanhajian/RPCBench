@@ -59,6 +59,17 @@ def test_load_yaml_and_json(tmp_path: Path) -> None:
     assert load_endpoints(js).endpoints[0].name == "a"
 
 
+def test_ci_endpoints_are_public_https() -> None:
+    root = Path(__file__).resolve().parents[1]
+    cfg = load_endpoints(root / "endpoints.ci.yaml")
+    assert len(cfg.endpoints) >= 2
+    for endpoint in cfg.endpoints:
+        assert endpoint.url.startswith("https://")
+        lowered = endpoint.url.lower()
+        assert "127.0.0.1" not in lowered
+        assert "localhost" not in lowered
+
+
 def test_display_url_redacts_secrets() -> None:
     assert "***@" in display_url("https://user:secret@rpc.example/path")
     assert "[redacted]" in display_url("https://rpc.example/?apiKey=abc")
