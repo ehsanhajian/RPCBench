@@ -33,6 +33,7 @@ def resolve_method(
     method: str | None,
     preset: str | None,
     params_json: str | None,
+    allow_writes: bool = False,
 ) -> tuple[str, list[Any]]:
     if preset and method:
         raise MethodError("use either --preset or --method, not both")
@@ -45,12 +46,14 @@ def resolve_method(
         name, params = PRESETS[matched]
         if params_json:
             params = parse_params(params_json)
-        _reject_writes(name)
+        if not allow_writes:
+            _reject_writes(name)
         return name, params
     name = (method or "eth_blockNumber").strip()
     if not name:
         raise MethodError("method is required")
-    _reject_writes(name)
+    if not allow_writes:
+        _reject_writes(name)
     params = parse_params(params_json) if params_json else []
     return name, params
 
@@ -68,4 +71,6 @@ def parse_params(raw: str) -> list[Any]:
 def _reject_writes(method: str) -> None:
     lower = method.lower()
     if any(lower.startswith(p) for p in _WRITE_PREFIXES):
-        raise MethodError(f"{method} is a write method; RPCBench probes are read-only")
+        raise MethodError(
+            f"{method} is a write method; pass --allow-writes to run it anyway"
+        )

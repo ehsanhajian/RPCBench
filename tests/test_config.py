@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from rpcbench.config import ConfigError, load_endpoints, parse_endpoints
-from rpcbench.urls import display_url
+from rpcbench.config import ConfigError, load_endpoints, load_targets, parse_endpoints
+from rpcbench.urls import display_url, url_fingerprint
 
 
 def test_parse_two_endpoints() -> None:
@@ -70,7 +70,68 @@ def test_ci_endpoints_are_public_https() -> None:
         assert "localhost" not in lowered
 
 
+def test_rfc1918_is_allowed() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://10.0.0.1:8545"},
+                {"name": "b", "url": "http://192.168.0.1:8545"},
+                {"name": "c", "url": "http://172.16.0.1:8545"},
+            ]
+        }
+    )
+    assert [e.url for e in cfg.endpoints] == [
+        "http://10.0.0.1:8545",
+        "http://192.168.0.1:8545",
+        "http://172.16.0.1:8545",
+    ]
+
+
+def test_headers_and_bearer() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "paid",
+                    "url": "https://rpc.example/v3/abcdabcdabcdabcdabcdabcdabcdabcd",
+                    "bearer": "tok_secret",
+                    "headers": {"X-Api-Key": "hdr_secret"},
+                }
+            ]
+        }
+    )
+    endpoint = cfg.endpoints[0]
+    assert ("X-Api-Key", "hdr_secret") in endpoint.headers
+    assert ("Authorization", "Bearer tok_secret") in endpoint.headers
+    assert "hdr_secret" not in endpoint.display_url
+    assert "tok_secret" not in endpoint.display_url
+    assert "[redacted]" in endpoint.display_url
+    assert len(endpoint.url_id) == 12
+
+
+def test_load_targets_url() -> None:
+    cfg = load_targets("http://127.0.0.1:8545")
+    assert len(cfg.endpoints) == 1
+    assert cfg.endpoints[0].url == "http://127.0.0.1:8545"
+    assert cfg.endpoints[0].name == "127.0.0.1"
+
+
 def test_display_url_redacts_secrets() -> None:
     assert "***@" in display_url("https://user:secret@rpc.example/path")
+    assert "user:secret" not in display_url("https://user:secret@rpc.example/path")
     assert "[redacted]" in display_url("https://rpc.example/?apiKey=abc")
+    assert "abc" not in display_url("https://rpc.example/?apiKey=abc")
+    assert "[redacted]" in display_url("https://rpc.example/?jwt=tokenvalue")
+    path_key = "https://mainnet.infura.io/v3/abcdabcdabcdabcdabcdabcdabcdabcd"
+    assert "[redacted]" in display_url(path_key)
+    assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in display_url(path_key)
     assert "rpc.example" in display_url("https://rpc.example/v1")
+
+
+def test_url_fingerprint_is_stable_and_secret_sensitive() -> None:
+    a = "https://rpc.example/?apiKey=one"
+    b = "https://rpc.example/?apiKey=two"
+    assert url_fingerprint(a) == url_fingerprint(a)
+    assert url_fingerprint(a) != url_fingerprint(b)
+    assert len(url_fingerprint(a)) == 12
+

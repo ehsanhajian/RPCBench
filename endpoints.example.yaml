@@ -1,8 +1,15 @@
-# Named RPC endpoints. Localhost is allowed.
+# Named RPC endpoints. Localhost and RFC1918 are allowed.
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
+# Secrets in query strings, path tokens, userinfo, bearer, and headers
+# are stripped from reports; a short hash of the raw URL is kept instead.
 
 endpoints:
   - name: local
     url: http://127.0.0.1:8545
   - name: publicnode
     url: https://ethereum.publicnode.com
+  # - name: paid
+  #   url: https://eth.example/v3/YOUR_KEY
+  #   bearer: YOUR_TOKEN
+  #   headers:
+  #     X-Api-Key: YOUR_KEY

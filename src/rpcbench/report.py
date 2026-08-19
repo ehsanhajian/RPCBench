@@ -6,7 +6,6 @@ import os
 import sys
 
 from rpcbench.run import EndpointOutcome, RunResult
-from rpcbench.urls import display_url
 
 _GREEN = "32"
 _RED = "31"
@@ -148,10 +147,11 @@ def _provider_lines(
     ok = stats.n_ok > 0
     hue = _GREEN if ok else _RED
     status = _paint("ok" if ok else "fail", hue, enabled=use_color)
-    url = display_url(outcome.endpoint.url)
+    url = outcome.endpoint.display_url
+    url_id = outcome.endpoint.url_id
     indent = " " * (2 + name_w + 4)
     name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
-    lines = [f"  {name}  {status}  {url}"]
+    lines = [f"  {name}  {status}  {url}  id={url_id}"]
     attempted = stats.n_ok + stats.n_fail
     rate = f"err={_pct(stats.error_rate)}"
     classes = "".join(f"  {name}={count}" for name, count in stats.by_class)

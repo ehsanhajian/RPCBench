@@ -82,6 +82,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "↳ Next:" not in text
     assert "severity" not in text.lower()
     assert "finding" not in text.lower()
+    assert "id=" in text
 
 
 def test_all_failed_has_no_winner() -> None:

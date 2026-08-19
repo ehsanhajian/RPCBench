@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-
 from urllib.parse import urlsplit
 
 import httpx
@@ -70,6 +70,7 @@ def probe(
     retries: int = 2,
     budget: RequestBudget | None = None,
     client: httpx.Client | None = None,
+    headers: Sequence[tuple[str, str]] | None = None,
 ) -> ProbeResult:
     """Hit one JSON-RPC method. Transport failures retry; JSON-RPC errors do not."""
     owns = client is None
@@ -84,6 +85,7 @@ def probe(
             error_class="invalid_url",
             attempts=0,
         )
+    extra = dict(headers or ())
     http = client or httpx.Client(
         timeout=timeout,
         follow_redirects=False,
@@ -124,6 +126,7 @@ def probe(
                         "method": method,
                         "params": params or [],
                     },
+                    headers=extra or None,
                 )
             except httpx.InvalidURL as exc:
                 return ProbeResult(
