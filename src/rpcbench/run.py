@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 from rpcbench.config import BenchConfig, Endpoint
@@ -18,7 +19,9 @@ _CLASS_ORDER = (
     "malformed",
     "invalid_url",
     "budget",
+    "duration",
 )
+_STOP_CLASSES = {"invalid_url", "budget", "duration"}
 
 
 @dataclass(frozen=True)
@@ -119,14 +122,18 @@ def run_endpoints(
     warmup: int = 0,
     timeout: float = 10.0,
     budget: int = 32,
+    max_duration: float = 0.0,
     client=None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
     if warmup < 0:
         raise ValueError("warmup must be >= 0")
+    if max_duration < 0:
+        raise ValueError("max_duration must be >= 0")
     purse = RequestBudget(budget)
     rpc_params = list(params or [])
+    deadline = None if max_duration <= 0 else time.monotonic() + max_duration
     outcomes: list[EndpointOutcome] = []
     for endpoint in config.endpoints:
         outcomes.append(
@@ -138,6 +145,7 @@ def run_endpoints(
                 warmup=warmup,
                 timeout=timeout,
                 budget=purse,
+                deadline=deadline,
                 client=client,
             )
         )
@@ -153,6 +161,22 @@ def run_endpoints(
     )
 
 
+def _expired(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline
+
+
+def _skipped(error_class: str, error: str) -> ProbeResult:
+    return ProbeResult(
+        ok=False,
+        reachable=False,
+        latency_ms=None,
+        result=None,
+        error=error,
+        error_class=error_class,
+        attempts=0,
+    )
+
+
 def _run_one(
     endpoint: Endpoint,
     *,
@@ -162,13 +186,17 @@ def _run_one(
     warmup: int,
     timeout: float,
     budget: RequestBudget,
+    deadline: float | None,
     client,
 ) -> EndpointOutcome:
     warmup_hits: list[ProbeResult] = []
     measured: list[ProbeResult] = []
     stop = False
-    for _ in range(warmup):
-        hit = probe(
+
+    def hit_once() -> ProbeResult:
+        if _expired(deadline):
+            return _skipped("duration", "max duration exceeded")
+        return probe(
             endpoint.url,
             method,
             params=params,
@@ -176,25 +204,33 @@ def _run_one(
             retries=0,
             budget=budget,
             client=client,
+            headers=endpoint.headers,
         )
+
+    if _expired(deadline):
+        measured.append(_skipped("duration", "max duration exceeded"))
+        return EndpointOutcome(
+            endpoint=endpoint,
+            warmup=(),
+            samples=tuple(measured),
+            stats=summarize(tuple(measured)),
+        )
+    for _ in range(warmup):
+        hit = hit_once()
         warmup_hits.append(hit)
-        if hit.error_class in {"invalid_url", "budget"}:
+        if hit.error_class in _STOP_CLASSES:
             stop = True
             break
     if not stop:
         for _ in range(samples):
-            hit = probe(
-                endpoint.url,
-                method,
-                params=params,
-                timeout=timeout,
-                retries=0,
-                budget=budget,
-                client=client,
-            )
+            hit = hit_once()
             measured.append(hit)
-            if hit.error_class in {"invalid_url", "budget"}:
+            if hit.error_class in _STOP_CLASSES:
                 break
+    elif not measured:
+        last = warmup_hits[-1] if warmup_hits else None
+        if last is not None and last.error_class in _STOP_CLASSES:
+            measured.append(last)
     return EndpointOutcome(
         endpoint=endpoint,
         warmup=tuple(warmup_hits),

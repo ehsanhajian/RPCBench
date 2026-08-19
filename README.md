@@ -39,11 +39,11 @@ cp endpoints.example.yaml endpoints.yaml
 rpcbench run --endpoints endpoints.yaml
 ```
 
-Localhost is allowed — that is how you bench your own node. `run` (and `compare`) print a CLI report: **summary**, **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this).
+Localhost and RFC1918 are allowed — that is how you bench your own node. `run` (and `compare`) print a CLI report: **summary**, **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
 
 ### Config
 
-YAML or JSON. Names must be unique; URLs must be `http` or `https`.
+YAML or JSON. Names must be unique; URLs must be `http` or `https`. Optional `bearer` and `headers` are sent on every probe.
 
 ```yaml
 endpoints:
@@ -51,19 +51,29 @@ endpoints:
     url: http://127.0.0.1:8545
   - name: publicnode
     url: https://ethereum.publicnode.com
+  - name: paid
+    url: https://eth.example/v3/YOUR_KEY
+    bearer: YOUR_TOKEN
+    headers:
+      X-Api-Key: YOUR_KEY
 ```
+
+`--endpoints` also accepts a single URL: `rpcbench compare --endpoints http://127.0.0.1:8545`.
 
 ### Flags
 
 ```bash
 rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --timeout 10 --budget 128
 rpcbench compare --endpoints endpoints.yaml
+rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --verbose
 ```
 
-`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). Ranking uses mean of successful samples (warmup excluded); failures print last; equal means keep config order. `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected.
+`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). Ranking uses mean of successful samples (warmup excluded); failures print last; equal means keep config order. `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected unless `--allow-writes`.
 
-`--budget` is the max HTTP requests for the whole run, including warmup (default 128). One bad URL or timeout fails that row only; if the budget is spent, later endpoints are skipped.
+`--budget` is the max HTTP requests for the whole run, including warmup (default 128, hard cap `RPCBENCH_MAX_REQUESTS` default 10000). `--max-duration` stops remaining work after N seconds and still prints the report (default 600; `0` = no limit). `--concurrency` is 1. One bad URL or timeout fails that row only; if the budget or duration is spent, later endpoints are skipped and the report is still written.
+
+Kill switch: set `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key.
 
 Planned later: HTML reports and workload mixes.
 

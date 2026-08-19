@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
@@ -13,7 +14,15 @@ _SECRET_QUERY_KEYS = {
     "auth",
     "password",
     "secret",
+    "jwt",
+    "access_token",
+    "x-api-key",
 }
+
+
+def url_fingerprint(url: str) -> str:
+    """Short hash of the raw URL so reports can correlate without printing secrets."""
+    return hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
 
 
 def display_url(url: str) -> str:
@@ -25,6 +34,7 @@ def display_url(url: str) -> str:
     if "@" in netloc:
         host = netloc.rsplit("@", 1)[-1]
         netloc = f"***@{host}"
+    path = _redact_path(parts.path)
     query = parts.query
     if query:
         pairs = []
@@ -34,4 +44,21 @@ def display_url(url: str) -> str:
             else:
                 pairs.append(urlencode({key: value}))
         query = "&".join(pairs)
-    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+    return urlunsplit((parts.scheme, netloc, path, query, parts.fragment))
+
+
+def _redact_path(path: str) -> str:
+    parts = path.split("/")
+    out: list[str] = []
+    for part in parts:
+        if _looks_like_key(part):
+            out.append("[redacted]")
+        else:
+            out.append(part)
+    return "/".join(out)
+
+
+def _looks_like_key(part: str) -> bool:
+    if len(part) < 16:
+        return False
+    return all(c.isalnum() or c in "-_" for c in part)

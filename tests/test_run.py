@@ -104,6 +104,12 @@ def test_budget_skips_later_endpoints() -> None:
     result = run_endpoints(cfg, samples=1, warmup=0, budget=1, client=client)
     assert result.outcomes[0].stats.n_ok == 1
     assert result.outcomes[1].samples[-1].error_class == "budget"
+    text = format_run(result, color=False)
+    assert "Summary" in text
+    assert "Ranking" in text
+    assert "budget=" in text
+    assert "a" in text
+    assert "b" in text
 
 
 def test_request_budget_counts() -> None:
@@ -346,3 +352,74 @@ def test_probe_http_jsonrpc_and_malformed_classes() -> None:
         "http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0
     )
     assert malformed.error_class == "malformed"
+
+
+def test_probe_sends_headers_and_report_hides_them() -> None:
+    seen: list[httpx.Headers] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers)
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    secret = "hdr_secret_value_xyz"
+    url = "https://rpc.example/v3/abcdabcdabcdabcdabcdabcdabcdabcd?apiKey=query_secret"
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "paid",
+                    "url": url,
+                    "bearer": "tok_secret",
+                    "headers": {"X-Api-Key": secret},
+                }
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=1, warmup=0, budget=4, client=client)
+    assert seen
+    assert seen[0]["X-Api-Key"] == secret
+    assert seen[0]["Authorization"] == "Bearer tok_secret"
+    text = format_run(result, color=False)
+    assert secret not in text
+    assert "tok_secret" not in text
+    assert "query_secret" not in text
+    assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in text
+    assert "[redacted]" in text
+    assert f"id={cfg.endpoints[0].url_id}" in text
+
+
+def test_max_duration_skips_later_endpoints(monkeypatch) -> None:
+    clock = {"t": 0.0}
+
+    def now() -> float:
+        return clock["t"]
+
+    monkeypatch.setattr("rpcbench.run.time.monotonic", now)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        clock["t"] = 5.0
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=8, max_duration=1.0, client=client
+    )
+    assert result.outcomes[0].stats.n_ok == 1
+    assert result.outcomes[1].samples[-1].error_class == "duration"
+    text = format_run(result, color=False)
+    assert "duration=" in text
+    assert "Summary" in text
+

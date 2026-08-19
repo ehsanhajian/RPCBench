@@ -20,6 +20,9 @@ def test_cli_defaults() -> None:
     assert ns.method is None
     assert ns.preset is None
     assert ns.verbose is False
+    assert ns.allow_writes is False
+    assert ns.max_duration == 600.0
+    assert ns.concurrency == 1
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -280,4 +283,125 @@ def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None
     assert "samples" in out
     assert "1" in out
     assert "2" in out
+
+
+def test_cli_compare_url_endpoint(monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "compare",
+            "--endpoints",
+            "http://127.0.0.1:8545",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "127.0.0.1" in out
+    assert "id=" in out
+
+
+def test_cli_allow_writes(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--method",
+            "eth_sendRawTransaction",
+            "--allow-writes",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert methods == ["eth_sendRawTransaction"]
+
+
+def test_cli_kill_switch_env(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RPCBENCH_DISABLED", "1")
+    code = main(["run", "--endpoints", "http://127.0.0.1:8545"])
+    assert code == 2
+    assert "disabled" in capsys.readouterr().err
+
+
+def test_cli_kill_switch_file(tmp_path: Path, monkeypatch, capsys) -> None:
+    path = tmp_path / "DISABLED"
+    path.write_text("off\n", encoding="utf-8")
+    monkeypatch.setenv("RPCBENCH_DISABLE_FILE", str(path))
+    code = main(["run", "--endpoints", "http://127.0.0.1:8545"])
+    assert code == 2
+    assert "disable file" in capsys.readouterr().err
+
+
+def test_cli_budget_hard_cap(monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RPCBENCH_MAX_REQUESTS", "4")
+    code = main(
+        ["run", "--endpoints", "http://127.0.0.1:8545", "--budget", "5"]
+    )
+    assert code == 2
+    assert "hard cap" in capsys.readouterr().err
+
+
+def test_cli_rejects_concurrency(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--concurrency", "8", "--samples", "1"]
+    )
+    assert code == 2
+    assert "concurrency 1" in capsys.readouterr().err
 
