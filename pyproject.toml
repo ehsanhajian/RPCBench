@@ -1,15 +1,28 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpcbench"
 version = "0.1.0"
-description = "Measure RPC quality and compare providers."
+description = "Compare EVM JSON-RPC endpoints: latency, percentiles, errors, ranked CLI and JSON."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ehsan Hajian" }]
+keywords = ["rpc", "ethereum", "json-rpc", "benchmark", "latency"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Benchmark",
+]
 dependencies = [
   "httpx>=0.27",
   "PyYAML>=6.0",
