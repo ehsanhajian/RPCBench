@@ -37,7 +37,7 @@ cp endpoints.example.yaml endpoints.yaml
 rpcbench run --endpoints endpoints.yaml
 ```
 
-Localhost is allowed — that is how you bench your own node. `run` (and `compare`) print a CLI report: **summary**, **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by mean latency; failed endpoints are last. On a TTY, ok is green and fail is red (`NO_COLOR` disables this).
+Localhost is allowed — that is how you bench your own node. `run` (and `compare`) print a CLI report: **summary**, **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this).
 
 ### Config
 
@@ -59,7 +59,7 @@ rpcbench compare --endpoints endpoints.yaml
 rpcbench run --endpoints endpoints.yaml --verbose
 ```
 
-`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). Ranking uses mean latency of successful samples. `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected.
+`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). Ranking uses mean of successful samples (warmup excluded); failures print last; equal means keep config order. `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected.
 
 `--budget` is the max HTTP requests for the whole run, including warmup (default 128). One bad URL or timeout fails that row only; if the budget is spent, later endpoints are skipped.
 

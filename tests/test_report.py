@@ -103,12 +103,56 @@ def test_verbose_prints_per_sample() -> None:
     assert "  1  10.0ms" in verbose or "1  10.0ms" in verbose
 
 
-def test_color_respects_no_color(monkeypatch) -> None:
+def test_ties_and_failures_keep_config_order() -> None:
+    a = _outcome("a", (_ok(10.0), _ok(10.0)))
+    b = _outcome("b", (_ok(10.0), _ok(10.0)))
+    dead1 = _outcome("dead1", (_fail(),))
+    dead2 = _outcome("dead2", (_fail(),))
+    ranked = rank_outcomes(_result(dead1, b, dead2, a))
+    assert [o.endpoint.name for o in ranked] == ["b", "a", "dead1", "dead2"]
+
+
+def test_partial_success_sorts_with_ok_group() -> None:
+    flaky = _outcome("flaky", (_ok(8.0), _fail(), _fail()))
+    solid = _outcome("solid", (_ok(20.0), _ok(22.0), _ok(24.0)))
+    dead = _outcome("dead", (_fail(),))
+    ranked = rank_outcomes(_result(solid, dead, flaky))
+    assert [o.endpoint.name for o in ranked] == ["flaky", "solid", "dead"]
+
+
+def test_color_ok_green_fail_red() -> None:
+    result = _result(
+        _outcome("oknode", (_ok(10.0),)),
+        _outcome("badnode", (_fail(),)),
+    )
+    text = format_run(result, color=True)
+    assert "\033[32moknode" in text or "\033[1;32moknode" in text
+    assert "\033[31mbadnode" in text
+    assert "\033[32m" in text
+    assert "\033[31m" in text
+
+
+def test_no_ansi_when_no_color_or_not_tty(monkeypatch) -> None:
+    result = _result(_outcome("a", (_ok(10.0),)), _outcome("b", (_fail(),)))
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.delenv("FORCE_COLOR", raising=False)
     assert color_enabled(None) is False
+    assert "\033[" not in format_run(result, color=None)
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    import rpcbench.report as report_mod
+
+    class Dummy:
+        def isatty(self) -> bool:
+            return False
+
+    monkeypatch.setattr(report_mod.sys, "stdout", Dummy())
+    assert color_enabled(None) is False
+    assert "\033[" not in format_run(result, color=None)
+
+
+def test_explicit_color_false_has_no_ansi() -> None:
     result = _result(_outcome("a", (_ok(10.0),)))
-    text = format_run(result, color=True)
-    assert "\033[" in text
-    text = format_run(result, color=False)
-    assert "\033[" not in text
+    assert "\033[" not in format_run(result, color=False)
+    assert "\033[" in format_run(result, color=True)

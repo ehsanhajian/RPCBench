@@ -123,7 +123,11 @@ def _ranking_line(
     attempted = stats.n_ok + stats.n_fail
     rate = f"err={_pct(stats.error_rate)}"
     classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
-    name = f"{outcome.endpoint.name:<{name_w}}"
+    name = _paint(
+        f"{outcome.endpoint.name:<{name_w}}",
+        _GREEN if ok else _RED,
+        enabled=use_color,
+    )
     if ok:
         return (
             f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
@@ -142,10 +146,12 @@ def _provider_lines(
 ) -> list[str]:
     stats = outcome.stats
     ok = stats.n_ok > 0
-    status = _paint("ok" if ok else "fail", _GREEN if ok else _RED, enabled=use_color)
+    hue = _GREEN if ok else _RED
+    status = _paint("ok" if ok else "fail", hue, enabled=use_color)
     url = display_url(outcome.endpoint.url)
     indent = " " * (2 + name_w + 4)
-    lines = [f"  {outcome.endpoint.name:<{name_w}}  {status}  {url}"]
+    name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+    lines = [f"  {name}  {status}  {url}"]
     attempted = stats.n_ok + stats.n_fail
     rate = f"err={_pct(stats.error_rate)}"
     classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
