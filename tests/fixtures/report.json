@@ -1,0 +1,218 @@
+{
+  "tool": "rpcbench",
+  "version": "0.1.0",
+  "schema": 1,
+  "method": "eth_blockNumber",
+  "params": [],
+  "samples": 2,
+  "warmup": 0,
+  "timeout": 10.0,
+  "budget": 32,
+  "budget_remaining": 20,
+  "concurrency": 1,
+  "summary": {
+    "fastest": "fast",
+    "ok": 2,
+    "failed": 1,
+    "failed_names": [
+      "dead"
+    ]
+  },
+  "ranking": [
+    {
+      "rank": 1,
+      "name": "fast",
+      "ok": true,
+      "n_ok": 2,
+      "n_fail": 0,
+      "error_rate": 0.0,
+      "errors": {},
+      "mean_ms": 11.0,
+      "p95_ms": 12.0,
+      "score": 1.0
+    },
+    {
+      "rank": 2,
+      "name": "slow",
+      "ok": true,
+      "n_ok": 2,
+      "n_fail": 0,
+      "error_rate": 0.0,
+      "errors": {},
+      "mean_ms": 45.0,
+      "p95_ms": 50.0,
+      "score": 1.0
+    },
+    {
+      "rank": null,
+      "name": "dead",
+      "ok": false,
+      "n_ok": 0,
+      "n_fail": 1,
+      "error_rate": 1.0,
+      "errors": {
+        "timeout": 1
+      },
+      "mean_ms": null,
+      "p95_ms": null,
+      "score": 0.0
+    }
+  ],
+  "providers": [
+    {
+      "name": "fast",
+      "url": "http://127.0.0.1/fast",
+      "id": "cd87bc2f0598",
+      "rank": 1,
+      "ok": true,
+      "performance": {
+        "n_ok": 2,
+        "n_fail": 0,
+        "min_ms": 10.0,
+        "mean_ms": 11.0,
+        "max_ms": 12.0,
+        "p50_ms": 10.0,
+        "p95_ms": 12.0,
+        "p99_ms": 12.0,
+        "rps": 90.9090909090909
+      },
+      "errors": {
+        "error_rate": 0.0,
+        "by_class": {}
+      },
+      "reliability": {
+        "success_rate": 1.0,
+        "score": 1.0
+      },
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": true
+      },
+      "last_error": null,
+      "warmup": [],
+      "samples": [
+        {
+          "ok": true,
+          "reachable": true,
+          "latency_ms": 10.0,
+          "error": null,
+          "error_class": null,
+          "attempts": 1
+        },
+        {
+          "ok": true,
+          "reachable": true,
+          "latency_ms": 12.0,
+          "error": null,
+          "error_class": null,
+          "attempts": 1
+        }
+      ]
+    },
+    {
+      "name": "slow",
+      "url": "http://127.0.0.1/slow",
+      "id": "7bf1deb8ca9b",
+      "rank": 2,
+      "ok": true,
+      "performance": {
+        "n_ok": 2,
+        "n_fail": 0,
+        "min_ms": 40.0,
+        "mean_ms": 45.0,
+        "max_ms": 50.0,
+        "p50_ms": 40.0,
+        "p95_ms": 50.0,
+        "p99_ms": 50.0,
+        "rps": 22.22222222222222
+      },
+      "errors": {
+        "error_rate": 0.0,
+        "by_class": {}
+      },
+      "reliability": {
+        "success_rate": 1.0,
+        "score": 1.0
+      },
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": true
+      },
+      "last_error": null,
+      "warmup": [],
+      "samples": [
+        {
+          "ok": true,
+          "reachable": true,
+          "latency_ms": 40.0,
+          "error": null,
+          "error_class": null,
+          "attempts": 1
+        },
+        {
+          "ok": true,
+          "reachable": true,
+          "latency_ms": 50.0,
+          "error": null,
+          "error_class": null,
+          "attempts": 1
+        }
+      ]
+    },
+    {
+      "name": "dead",
+      "url": "http://127.0.0.1/dead",
+      "id": "6012748c2a5d",
+      "rank": null,
+      "ok": false,
+      "performance": {
+        "n_ok": 0,
+        "n_fail": 1,
+        "min_ms": null,
+        "mean_ms": null,
+        "max_ms": null,
+        "p50_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "rps": null
+      },
+      "errors": {
+        "error_rate": 1.0,
+        "by_class": {
+          "timeout": 1
+        }
+      },
+      "reliability": {
+        "success_rate": 0.0,
+        "score": 0.0
+      },
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": false
+      },
+      "last_error": "timeout: took too long",
+      "warmup": [],
+      "samples": [
+        {
+          "ok": false,
+          "reachable": false,
+          "latency_ms": 5.0,
+          "error": "took too long",
+          "error_class": "timeout",
+          "attempts": 1
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "method": "eth_blockNumber",
+    "responded": 2,
+    "total": 3,
+    "missed": [
+      {
+        "name": "dead",
+        "error_class": "timeout"
+      }
+    ]
+  }
+}

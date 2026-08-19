@@ -1,11 +1,16 @@
-"""Human-readable CLI report. Latency and ranking only — no security findings."""
+"""Human-readable CLI report and machine-readable JSON. No security findings."""
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from typing import Any
 
+from rpcbench import __version__
 from rpcbench.run import EndpointOutcome, RunResult
+
+SCHEMA_VERSION = 1
 
 _GREEN = "32"
 _RED = "31"
@@ -41,6 +46,58 @@ def rank_outcomes(result: RunResult) -> tuple[EndpointOutcome, ...]:
 
     indexed = list(enumerate(result.outcomes))
     return tuple(outcome for _, outcome in sorted(indexed, key=key))
+
+
+def run_to_dict(result: RunResult) -> dict[str, Any]:
+    """Stable JSON object. Redacted URL + hash only; complete enough to rebuild the CLI summary."""
+    ranked = rank_outcomes(result)
+    ok_rows = [o for o in ranked if o.stats.n_ok]
+    fail_rows = [o for o in ranked if not o.stats.n_ok]
+    ranking: list[dict[str, Any]] = []
+    providers: list[dict[str, Any]] = []
+    rank_n = 0
+    for outcome in ranked:
+        if outcome.stats.n_ok:
+            rank_n += 1
+            rank: int | None = rank_n
+        else:
+            rank = None
+        ranking.append(_ranking_entry(outcome, rank))
+        providers.append(_provider_entry(outcome, rank, result.method))
+    return {
+        "tool": "rpcbench",
+        "version": __version__,
+        "schema": SCHEMA_VERSION,
+        "method": result.method,
+        "params": list(result.params),
+        "samples": result.samples,
+        "warmup": result.warmup,
+        "timeout": result.timeout,
+        "budget": result.budget,
+        "budget_remaining": result.budget_remaining,
+        "concurrency": 1,
+        "summary": {
+            "fastest": ok_rows[0].endpoint.name if ok_rows else None,
+            "ok": len(ok_rows),
+            "failed": len(fail_rows),
+            "failed_names": [o.endpoint.name for o in fail_rows],
+        },
+        "ranking": ranking,
+        "providers": providers,
+        "capabilities": {
+            "method": result.method,
+            "responded": len(ok_rows),
+            "total": len(ranked),
+            "missed": [
+                {"name": o.endpoint.name, "error_class": _miss_class(o)}
+                for o in fail_rows
+            ],
+        },
+    }
+
+
+def format_json(result: RunResult) -> str:
+    return json.dumps(run_to_dict(result), indent=2, allow_nan=False) + "\n"
 
 
 def format_run(
@@ -207,6 +264,89 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
             bits.append(f"{outcome.endpoint.name} ({cls})")
         lines.append(f"  missed     {', '.join(bits)}")
     return lines
+
+
+def _ranking_entry(outcome: EndpointOutcome, rank: int | None) -> dict[str, Any]:
+    stats = outcome.stats
+    return {
+        "rank": rank,
+        "name": outcome.endpoint.name,
+        "ok": stats.n_ok > 0,
+        "n_ok": stats.n_ok,
+        "n_fail": stats.n_fail,
+        "error_rate": stats.error_rate,
+        "errors": dict(stats.by_class),
+        "mean_ms": stats.mean_ms,
+        "p95_ms": stats.p95_ms,
+        "score": _success_rate(stats.error_rate),
+    }
+
+
+def _provider_entry(
+    outcome: EndpointOutcome, rank: int | None, method: str
+) -> dict[str, Any]:
+    stats = outcome.stats
+    success = _success_rate(stats.error_rate)
+    rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
+    return {
+        "name": outcome.endpoint.name,
+        "url": outcome.endpoint.display_url,
+        "id": outcome.endpoint.url_id,
+        "rank": rank,
+        "ok": stats.n_ok > 0,
+        "performance": {
+            "n_ok": stats.n_ok,
+            "n_fail": stats.n_fail,
+            "min_ms": stats.min_ms,
+            "mean_ms": stats.mean_ms,
+            "max_ms": stats.max_ms,
+            "p50_ms": stats.p50_ms,
+            "p95_ms": stats.p95_ms,
+            "p99_ms": stats.p99_ms,
+            "rps": rps,
+        },
+        "errors": {
+            "error_rate": stats.error_rate,
+            "by_class": dict(stats.by_class),
+        },
+        "reliability": {
+            "success_rate": success,
+            "score": success,
+        },
+        "capability": {
+            "method": method,
+            "responded": stats.n_ok > 0,
+        },
+        "last_error": _last_error(outcome) or None,
+        "warmup": [_hit_entry(hit) for hit in outcome.warmup],
+        "samples": [_hit_entry(hit) for hit in outcome.samples],
+    }
+
+
+def _hit_entry(hit: Any) -> dict[str, Any]:
+    return {
+        "ok": hit.ok,
+        "reachable": hit.reachable,
+        "latency_ms": hit.latency_ms,
+        "error": hit.error,
+        "error_class": hit.error_class,
+        "attempts": hit.attempts,
+    }
+
+
+def _success_rate(error_rate: float | None) -> float | None:
+    if error_rate is None:
+        return None
+    return 1.0 - error_rate
+
+
+def _miss_class(outcome: EndpointOutcome) -> str:
+    if outcome.stats.by_class:
+        return outcome.stats.by_class[0][0]
+    err = _last_error(outcome)
+    if err:
+        return err.split(":", 1)[0]
+    return "error"
 
 
 def _last_error(outcome: EndpointOutcome) -> str:

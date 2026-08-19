@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.methods import MethodError, resolve_method
-from rpcbench.report import format_run
+from rpcbench.report import format_json, format_run
 from rpcbench.run import run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 
@@ -106,6 +107,17 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         action="store_true",
         help="Print per-sample latency and error-class detail",
     )
+    run.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a JSON report to stdout instead of the CLI table",
+    )
+    run.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Write the JSON report to FILE (CLI table still prints unless --json)",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -163,7 +175,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         budget=args.budget,
         max_duration=args.max_duration,
     )
-    sys.stdout.write(format_run(result, verbose=args.verbose))
+    payload = format_json(result) if (args.json or args.output) else None
+    if args.output:
+        path = Path(args.output)
+        try:
+            path.write_text(payload or "", encoding="utf-8")
+        except OSError as exc:
+            print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
+            return 2
+    if args.json:
+        sys.stdout.write(payload or "")
+    else:
+        sys.stdout.write(format_run(result, verbose=args.verbose))
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1

@@ -67,9 +67,13 @@ rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --
 rpcbench compare --endpoints endpoints.yaml
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --verbose
+rpcbench run --endpoints endpoints.yaml --json
+rpcbench run --endpoints endpoints.yaml -o report.json
 ```
 
 `--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples (the `n=` on that line). Error rate is failed/attempted with a small class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). Ranking uses mean of successful samples (warmup excluded); failures print last; equal means keep config order. `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected unless `--allow-writes`.
+
+`--json` prints a machine-readable report to stdout instead of the table. `-o FILE` writes that JSON to a file (the table still prints unless you also pass `--json`). The schema covers ranking, per-provider latency/percentiles, sequential `rps`, error classes, method capability, and a reliability `score` (success rate). URLs are redacted; only `url` + `id` are stored.
 
 `--budget` is the max HTTP requests for the whole run, including warmup (default 128, hard cap `RPCBENCH_MAX_REQUESTS` default 10000). `--max-duration` stops remaining work after N seconds and still prints the report (default 600; `0` = no limit). `--concurrency` is 1. One bad URL or timeout fails that row only; if the budget or duration is spent, later endpoints are skipped and the report is still written.
 
