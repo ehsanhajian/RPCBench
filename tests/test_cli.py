@@ -23,6 +23,8 @@ def test_cli_defaults() -> None:
     assert ns.allow_writes is False
     assert ns.max_duration == 600.0
     assert ns.concurrency == 1
+    assert ns.json is False
+    assert ns.output is None
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -404,4 +406,103 @@ def test_cli_rejects_concurrency(tmp_path: Path, capsys) -> None:
     )
     assert code == 2
     assert "concurrency 1" in capsys.readouterr().err
+
+
+def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "RPCBench" not in out
+    data = json.loads(out)
+    assert data["schema"] == 1
+    assert data["summary"]["fastest"] == "ok"
+    assert data["providers"][0]["id"]
+    assert data["ranking"][0]["name"] == "ok"
+
+
+def test_cli_output_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.json"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "-o",
+            str(report),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Fastest  ok" in out
+    data = json.loads(report.read_text(encoding="utf-8"))
+    assert data["summary"]["fastest"] == "ok"
+    assert data["capabilities"]["responded"] == 1
+
 
