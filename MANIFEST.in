@@ -1,0 +1,11 @@
+include LICENSE
+include README.md
+include pyproject.toml
+include endpoints.example.yaml
+include endpoints.ci.yaml
+graft tests
+graft docs
+global-exclude endpoints.yaml
+global-exclude endpoints.json
+global-exclude __pycache__
+global-exclude *.py[cod]

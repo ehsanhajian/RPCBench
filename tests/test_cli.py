@@ -3,6 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from rpcbench.cli import build_parser, main
+from rpcbench import __version__
+
+
+def test_cli_version(capsys) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--version"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert __version__ in out
+    assert "0.1.0" in out
 
 
 def test_cli_missing_file(capsys) -> None:
