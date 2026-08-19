@@ -1,0 +1,7 @@
+# Public Ethereum RPCs for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: publicnode
+    url: https://ethereum.publicnode.com
+  - name: drpc
+    url: https://eth.drpc.org
