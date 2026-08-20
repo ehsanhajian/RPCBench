@@ -14,7 +14,7 @@ def test_cli_version(capsys) -> None:
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert __version__ in out
-    assert "0.1.0" in out
+    assert "0.1.1" in out
 
 
 def test_cli_missing_file(capsys) -> None:
