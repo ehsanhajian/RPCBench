@@ -12,7 +12,7 @@ It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nod
 pip install rpcbench
 ```
 
-Python 3.10+. `rpcbench --version` prints `0.1.0`.
+Python 3.10+. `rpcbench --version` prints `0.1.1`.
 
 ```bash
 python3 -m venv .venv
