@@ -53,13 +53,14 @@ rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
 ```
 
-`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
+`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **P95 of successful samples** (warmup excluded); `--rank-by p50|p95|p99|mean|rps` overrides that (`throughput` is an alias for `rps`). Lower latency wins; higher rps wins. Ties break on mean, then config order. Failed endpoints (`n_ok=0`) are listed last and never take the winner slot. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
 
 ### Flags
 
 ```bash
 rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --timeout 10 --budget 128
 rpcbench compare --endpoints http://127.0.0.1:8545
+rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --verbose --json
 ```
 

@@ -10,6 +10,7 @@
   "budget": 32,
   "budget_remaining": 20,
   "concurrency": 1,
+  "rank_by": "p95",
   "summary": {
     "fastest": "fast",
     "ok": 2,
@@ -84,7 +85,12 @@
       "error_rate": 0.0,
       "errors": {},
       "mean_ms": 11.0,
+      "p50_ms": 10.0,
       "p95_ms": 12.0,
+      "p99_ms": 12.0,
+      "rps": 90.9090909090909,
+      "rank_by": "p95",
+      "rank_value": 12.0,
       "score": 1.0
     },
     {
@@ -96,7 +102,12 @@
       "error_rate": 0.0,
       "errors": {},
       "mean_ms": 45.0,
+      "p50_ms": 40.0,
       "p95_ms": 50.0,
+      "p99_ms": 50.0,
+      "rps": 22.22222222222222,
+      "rank_by": "p95",
+      "rank_value": 50.0,
       "score": 1.0
     },
     {
@@ -110,7 +121,12 @@
         "timeout": 1
       },
       "mean_ms": null,
+      "p50_ms": null,
       "p95_ms": null,
+      "p99_ms": null,
+      "rps": null,
+      "rank_by": "p95",
+      "rank_value": null,
       "score": 0.0
     }
   ],
