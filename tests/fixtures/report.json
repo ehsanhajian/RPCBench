@@ -18,6 +18,62 @@
       "dead"
     ]
   },
+  "comparison": [
+    {
+      "name": "slow",
+      "ok": true,
+      "n_ok": 2,
+      "n_fail": 0,
+      "error_rate": 0.0,
+      "mean_ms": 45.0,
+      "p50_ms": 40.0,
+      "p95_ms": 50.0,
+      "p99_ms": 50.0,
+      "rps": 22.22222222222222,
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": true,
+        "error_class": null
+      },
+      "last_error": null
+    },
+    {
+      "name": "fast",
+      "ok": true,
+      "n_ok": 2,
+      "n_fail": 0,
+      "error_rate": 0.0,
+      "mean_ms": 11.0,
+      "p50_ms": 10.0,
+      "p95_ms": 12.0,
+      "p99_ms": 12.0,
+      "rps": 90.9090909090909,
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": true,
+        "error_class": null
+      },
+      "last_error": null
+    },
+    {
+      "name": "dead",
+      "ok": false,
+      "n_ok": 0,
+      "n_fail": 1,
+      "error_rate": 1.0,
+      "mean_ms": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null,
+      "rps": null,
+      "capability": {
+        "method": "eth_blockNumber",
+        "responded": false,
+        "error_class": "timeout"
+      },
+      "last_error": "timeout: took too long"
+    }
+  ],
   "ranking": [
     {
       "rank": 1,

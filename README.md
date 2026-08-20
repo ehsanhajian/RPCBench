@@ -53,7 +53,7 @@ rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
 ```
 
-`run` and `compare` are the same command. They print **summary**, **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
+`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **mean of successful samples** (warmup excluded); failed endpoints are last; ties keep config order. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
 
 ### Flags
 
