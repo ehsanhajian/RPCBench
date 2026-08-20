@@ -2,11 +2,9 @@
 
 **Which RPC endpoint is fastest — for this call, from this machine?**
 
-RPCBench 0.1 is a small CLI that compares **EVM JSON-RPC over HTTP**: round-trip latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node).
+A small CLI that compares **EVM JSON-RPC over HTTP**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node).
 
-It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). How the three tools split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md).
-
-The longer product (other families, workload mixes, HTML/TUI, production verdict) lives in the [issue tracker](https://github.com/ehsanhajian/RPCBench/issues). Parent epic: [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
+It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
 ## Install
 
@@ -14,9 +12,7 @@ The longer product (other families, workload mixes, HTML/TUI, production verdict
 pip install rpcbench
 ```
 
-Requires Python 3.10+. `rpcbench --version` prints `0.1.0`.
-
-From a clone (contributors):
+Python 3.10+. `rpcbench --version` prints `0.1.0`.
 
 ```bash
 python3 -m venv .venv
@@ -24,7 +20,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-Pull requests and pushes to `main` run `pytest`, then a live smoke: `rpcbench run` against PublicNode and dRPC (`--samples 1 --warmup 0`). There is no local node in CI. The smoke passes if either public endpoint is ok.
+PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --warmup 0`). No local node in CI; the smoke passes if either public endpoint is ok.
 
 ## Quick start
 
@@ -53,25 +49,60 @@ rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
 ```
 
-`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Compare is **paired** by default: one shared read-only sequence, each sample raced to every provider at the same time (so heads and caches do not drift between A-then-B). `--sequential` restores back-to-back runs. Ranking is by **P95 of successful samples** (warmup excluded); `--rank-by p50|p95|p99|mean|rps` overrides that (`throughput` is an alias for `rps`). Lower latency wins; higher rps wins. Ties break on mean, then config order. Failed endpoints (`n_ok=0`) are listed last and never take the winner slot. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
+`run` and `compare` are the same command.
 
-### Flags
+## Report
+
+The CLI prints, in order:
+
+1. **Summary** — Fastest (P95 by default)
+2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place)
+3. **Ranking** — ordered by `--rank-by`; failed endpoints last, never Fastest
+4. **Providers** — redacted URL + `id=` hash, samples, errors
+5. **Capabilities** — who answered this method
+
+On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
+
+## How a run works
+
+- **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
+- **Warmup is excluded** from min/mean/max, percentiles, and error rate.
+- **P50/P95/P99** are nearest-rank over successful samples.
+- **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
+- **Ranking** is P95 of successes. Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. Ties: mean, then config order.
+- **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
+- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, and per-sample `pairs` (body hashes). Reliability `score` is success rate.
+
+## Flags
 
 ```bash
-rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --timeout 10 --budget 128
+rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --verbose --json
 ```
 
-`--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples. Error rate is failed/attempted with a class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected unless `--allow-writes`.
+| Flag | Default | |
+| --- | --- | --- |
+| `--samples` | 10 | Timed requests per endpoint after warmup |
+| `--warmup` | 1 | Requests excluded from stats |
+| `--timeout` | 10s | Per-request timeout |
+| `--budget` | 128 | Max HTTP requests for the whole run (hard cap `RPCBENCH_MAX_REQUESTS`, default 10000) |
+| `--max-duration` | 600s | Stop remaining work and still print a report (`0` = no limit) |
+| `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
+| `--seed` | 0 | Shared sequence stamp |
+| `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
+| `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
+| `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
+| `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
+| `--verbose` | off | Print each sample |
+| `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
+| `--sequential` | off | Run endpoints back-to-back instead of paired |
 
-`--json` prints a machine-readable report to stdout instead of the table. `-o FILE` writes that JSON to a file (the table still prints unless you also pass `--json`). JSON includes `mode`, `seed`, `sequence_id`, and per-sample `pairs` (body hashes) so a run can be reproduced. Sequential `rps` is `1000 / mean_ms`. Reliability `score` is success rate.
+## Safety
 
-`--budget` is the max HTTP requests for the whole run, including warmup (default 128, hard cap `RPCBENCH_MAX_REQUESTS` default 10000). `--max-duration` stops remaining work after N seconds and still prints the report (default 600; `0` = no limit). `--concurrency` caps how many providers are in flight in a paired wave (`0` = all, the default). That is a fairness wave, not a load burst. `--seed` stamps the shared sequence (default 0).
-
-Kill switch: set `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key.
+Kill switch: `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key.
 
 ## License
 
