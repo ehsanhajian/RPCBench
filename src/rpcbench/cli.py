@@ -10,7 +10,7 @@ from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.methods import MethodError, resolve_method
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by
-from rpcbench.run import run_endpoints
+from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 
 
@@ -98,8 +98,19 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
     run.add_argument(
         "--concurrency",
         type=int,
-        default=1,
-        help="Max in-flight requests (only 1 is supported)",
+        default=0,
+        help="Max in-flight requests per paired wave (0 = all providers; default: 0). Not a load burst.",
+    )
+    run.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Run endpoints one after another instead of racing each sample (default is paired)",
+    )
+    run.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Seed for the shared request sequence (default: 0)",
     )
     run.add_argument(
         "--rank-by",
@@ -161,15 +172,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.samples < 1
         or args.warmup < 0
         or args.max_duration < 0
+        or args.concurrency < 0
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
-            "--warmup >= 0, --budget >= 1, --max-duration >= 0",
+            "--warmup >= 0, --budget >= 1, --max-duration >= 0, "
+            "--concurrency >= 0",
             file=sys.stderr,
         )
-        return 2
-    if args.concurrency != 1:
-        print("rpcbench: only --concurrency 1 is supported", file=sys.stderr)
         return 2
     try:
         rank_by = normalize_rank_by(args.rank_by)
@@ -185,6 +195,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         budget=args.budget,
         max_duration=args.max_duration,
+        mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
+        seed=args.seed,
+        concurrency=args.concurrency,
     )
     payload = format_json(result, rank_by=rank_by) if (args.json or args.output) else None
     if args.output:

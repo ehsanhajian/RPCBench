@@ -53,7 +53,7 @@ rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
 ```
 
-`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Ranking is by **P95 of successful samples** (warmup excluded); `--rank-by p50|p95|p99|mean|rps` overrides that (`throughput` is an alias for `rps`). Lower latency wins; higher rps wins. Ties break on mean, then config order. Failed endpoints (`n_ok=0`) are listed last and never take the winner slot. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
+`run` and `compare` are the same command. They print **summary**, a **comparison table** (config order: p50/p95/p99, sequential rps, error rate, method capability), **ranking**, **per-provider metrics**, and **method coverage**. Compare is **paired** by default: one shared read-only sequence, each sample raced to every provider at the same time (so heads and caches do not drift between A-then-B). `--sequential` restores back-to-back runs. Ranking is by **P95 of successful samples** (warmup excluded); `--rank-by p50|p95|p99|mean|rps` overrides that (`throughput` is an alias for `rps`). Lower latency wins; higher rps wins. Ties break on mean, then config order. Failed endpoints (`n_ok=0`) are listed last and never take the winner slot. A provider that fails still appears in the comparison table with its error class. On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe disables this). Reports print a redacted URL plus a short hash (`id=`), never API keys, bearer tokens, or header values.
 
 ### Flags
 
@@ -61,14 +61,15 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head --timeout 10 --budget 128
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
+rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --verbose --json
 ```
 
 `--samples` timed requests per endpoint after `--warmup` (defaults: 10 and 1). Warmup is excluded from min/mean/max, percentiles, and error rate. P50/P95/P99 are nearest-rank over successful samples. Error rate is failed/attempted with a class breakdown (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed). `--verbose` prints each sample. `--preset` is `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address). Or pass `--method` and optional `--params` (JSON array). Write methods are rejected unless `--allow-writes`.
 
-`--json` prints a machine-readable report to stdout instead of the table. `-o FILE` writes that JSON to a file (the table still prints unless you also pass `--json`). Sequential `rps` is `1000 / mean_ms`. Reliability `score` is success rate.
+`--json` prints a machine-readable report to stdout instead of the table. `-o FILE` writes that JSON to a file (the table still prints unless you also pass `--json`). JSON includes `mode`, `seed`, `sequence_id`, and per-sample `pairs` (body hashes) so a run can be reproduced. Sequential `rps` is `1000 / mean_ms`. Reliability `score` is success rate.
 
-`--budget` is the max HTTP requests for the whole run, including warmup (default 128, hard cap `RPCBENCH_MAX_REQUESTS` default 10000). `--max-duration` stops remaining work after N seconds and still prints the report (default 600; `0` = no limit). `--concurrency` is 1.
+`--budget` is the max HTTP requests for the whole run, including warmup (default 128, hard cap `RPCBENCH_MAX_REQUESTS` default 10000). `--max-duration` stops remaining work after N seconds and still prints the report (default 600; `0` = no limit). `--concurrency` caps how many providers are in flight in a paired wave (`0` = all, the default). That is a fairness wave, not a load burst. `--seed` stamps the shared sequence (default 0).
 
 Kill switch: set `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key.
 
