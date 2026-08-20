@@ -82,6 +82,9 @@ def run_to_dict(result: RunResult) -> dict[str, Any]:
             "failed": len(fail_rows),
             "failed_names": [o.endpoint.name for o in fail_rows],
         },
+        "comparison": [
+            _comparison_entry(outcome, result.method) for outcome in result.outcomes
+        ],
         "ranking": ranking,
         "providers": providers,
         "capabilities": {
@@ -122,8 +125,15 @@ def format_run(
         "Summary",
     ]
     lines.extend(_summary_lines(ok_rows, fail_rows, len(result.outcomes), use_color))
+    name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
+    lines.extend(
+        [
+            "",
+            f"Comparison  (config order · same {result.method}, samples, and budget)",
+        ]
+    )
+    lines.extend(_comparison_lines(result, name_w, use_color))
     lines.extend(["", "Ranking  (by mean latency; failed last)"])
-    name_w = max((len(o.endpoint.name) for o in ranked), default=4)
     rank_n = 0
     for outcome in ranked:
         if outcome.stats.n_ok:
@@ -168,6 +178,75 @@ def _summary_lines(
     else:
         lines.append(f"  Failed   0/{total}")
     return lines
+
+
+def _comparison_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    header = (
+        f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
+        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'rps':>6}  cap"
+    )
+    lines = [header]
+    for outcome in result.outcomes:
+        lines.append(_comparison_line(outcome, name_w, use_color))
+    return lines
+
+
+def _comparison_line(outcome: EndpointOutcome, name_w: int, use_color: bool) -> str:
+    stats = outcome.stats
+    ok = stats.n_ok > 0
+    raw_status = f"{'ok' if ok else 'fail':<6}"
+    status = _paint(raw_status, _GREEN if ok else _RED, enabled=use_color)
+    attempted = stats.n_ok + stats.n_fail
+    n = f"{stats.n_ok}/{attempted}"
+    name = _paint(
+        f"{outcome.endpoint.name:<{name_w}}",
+        _GREEN if ok else _RED,
+        enabled=use_color,
+    )
+    cap = "yes" if ok else _miss_class(outcome)
+    return (
+        f"  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
+        f"{_cell_ms(stats.p50_ms)}  {_cell_ms(stats.p95_ms)}  "
+        f"{_cell_ms(stats.p99_ms)}  {_cell_rps(stats.mean_ms)}  {cap}"
+    )
+
+
+def _cell_ms(value: float | None) -> str:
+    if value is None:
+        return f"{'—':>8}"
+    return f"{value:6.1f}ms"
+
+
+def _cell_rps(mean_ms: float | None) -> str:
+    if not mean_ms:
+        return f"{'—':>6}"
+    return f"{1000.0 / mean_ms:>6.1f}"
+
+
+def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
+    stats = outcome.stats
+    rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
+    responded = stats.n_ok > 0
+    return {
+        "name": outcome.endpoint.name,
+        "ok": responded,
+        "n_ok": stats.n_ok,
+        "n_fail": stats.n_fail,
+        "error_rate": stats.error_rate,
+        "mean_ms": stats.mean_ms,
+        "p50_ms": stats.p50_ms,
+        "p95_ms": stats.p95_ms,
+        "p99_ms": stats.p99_ms,
+        "rps": rps,
+        "capability": {
+            "method": method,
+            "responded": responded,
+            "error_class": None if responded else _miss_class(outcome),
+        },
+        "last_error": _last_error(outcome) or None,
+    }
 
 
 def _ranking_line(

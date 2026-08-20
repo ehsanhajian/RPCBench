@@ -75,6 +75,12 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert [row["name"] for row in data["ranking"]] == ["fast", "slow", "dead"]
     assert data["ranking"][0]["rank"] == 1
     assert data["ranking"][2]["rank"] is None
+    assert [row["name"] for row in data["comparison"]] == ["slow", "fast", "dead"]
+    assert data["comparison"][0]["capability"]["responded"] is True
+    assert data["comparison"][2]["ok"] is False
+    assert data["comparison"][2]["capability"]["error_class"] == "timeout"
+    assert data["comparison"][0]["p50_ms"] == 40.0
+    assert data["comparison"][1]["rps"] == 1000.0 / 11.0
     fast = data["providers"][0]
     assert fast["name"] == "fast"
     assert fast["url"] == "http://127.0.0.1/fast"

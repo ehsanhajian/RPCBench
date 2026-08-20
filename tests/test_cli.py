@@ -90,6 +90,7 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "err=" in out
     assert "Fastest" in out
     assert "Ranking" in out
+    assert "Comparison" in out
     assert "Capabilities" in out
     assert "↳ Next:" not in out
 
@@ -253,6 +254,7 @@ def test_cli_compare_prints_report(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "Fastest  ok" in out
     assert "Ranking" in out
+    assert "Comparison" in out
 
 
 def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None:

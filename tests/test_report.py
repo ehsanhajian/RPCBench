@@ -68,11 +68,19 @@ def test_report_makes_winner_obvious() -> None:
     )
     text = format_run(result, color=False)
     assert "Summary" in text
+    assert "Comparison" in text
     assert "Ranking" in text
     assert "Providers" in text
     assert "Capabilities" in text
     assert "Fastest  fast" in text
     assert "Failed   1/3    dead" in text
+    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    assert compare.index("slow") < compare.index("fast") < compare.index("dead")
+    assert "p50" in compare and "p95" in compare and "p99" in compare
+    assert "rps" in compare
+    assert "cap" in compare
+    assert "yes" in compare
+    assert "timeout" in compare
     summary, ranking, _ = text.split("Ranking", 1)[0], text.split("Ranking", 1)[1], None
     assert summary.index("fast") < summary.index("Failed")
     first_rank_line = [ln for ln in ranking.splitlines() if ln.strip()][1]
@@ -83,6 +91,22 @@ def test_report_makes_winner_obvious() -> None:
     assert "severity" not in text.lower()
     assert "finding" not in text.lower()
     assert "id=" in text
+
+
+def test_comparison_table_keeps_failed_rows() -> None:
+    text = format_run(
+        _result(
+            _outcome("alive", (_ok(10.0),)),
+            _outcome("dead", (_fail("connection", "refused"),)),
+        ),
+        color=False,
+    )
+    block = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    assert "alive" in block
+    assert "dead" in block
+    assert "fail" in block
+    assert "connection" in block
+    assert "yes" in block
 
 
 def test_all_failed_has_no_winner() -> None:
