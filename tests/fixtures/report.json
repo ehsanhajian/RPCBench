@@ -9,7 +9,10 @@
   "timeout": 10.0,
   "budget": 32,
   "budget_remaining": 20,
-  "concurrency": 1,
+  "concurrency": 0,
+  "mode": "paired",
+  "seed": 0,
+  "sequence_id": "",
   "rank_by": "p95",
   "summary": {
     "fastest": "fast",
@@ -286,5 +289,6 @@
         "error_class": "timeout"
       }
     ]
-  }
+  },
+  "pairs": []
 }

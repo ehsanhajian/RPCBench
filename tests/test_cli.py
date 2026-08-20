@@ -34,7 +34,9 @@ def test_cli_defaults() -> None:
     assert ns.verbose is False
     assert ns.allow_writes is False
     assert ns.max_duration == 600.0
-    assert ns.concurrency == 1
+    assert ns.concurrency == 0
+    assert ns.sequential is False
+    assert ns.seed == 0
     assert ns.json is False
     assert ns.output is None
     assert ns.rank_by == "p95"
@@ -410,17 +412,59 @@ def test_cli_budget_hard_cap(monkeypatch, capsys) -> None:
     assert "hard cap" in capsys.readouterr().err
 
 
-def test_cli_rejects_concurrency(tmp_path: Path, capsys) -> None:
+def test_cli_rejects_negative_concurrency(tmp_path: Path, capsys) -> None:
     cfg = tmp_path / "e.yaml"
     cfg.write_text(
         "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--concurrency", "8", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--concurrency", "-1", "--samples", "1"]
     )
     assert code == 2
-    assert "concurrency 1" in capsys.readouterr().err
+    assert "concurrency" in capsys.readouterr().err
+
+
+def test_cli_allows_concurrency_wave_cap(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--concurrency",
+            "8",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert "Mode      paired" in capsys.readouterr().out
 
 
 def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -467,6 +511,10 @@ def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "RPCBench" not in out
     data = json.loads(out)
     assert data["schema"] == 1
+    assert data["mode"] == "paired"
+    assert data["seed"] == 0
+    assert data["sequence_id"]
+    assert data["pairs"]
     assert data["summary"]["fastest"] == "ok"
     assert data["providers"][0]["id"]
     assert data["ranking"][0]["name"] == "ok"
@@ -575,5 +623,50 @@ def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "Rank by mean" in out
     assert "Ranking  (by mean; failed last)" in out
+
+
+def test_cli_sequential(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--sequential",
+            "--seed",
+            "9",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Mode      sequential" in out
+    assert "seed=9" in out
 
 

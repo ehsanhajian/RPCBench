@@ -76,6 +76,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "Capabilities" in text
     assert "Fastest  fast" in text
     assert "Rank by p95" in text
+    assert "Mode      paired" in text
     assert "Ranking  (by p95; failed last)" in text
     assert "Failed   1/3    dead" in text
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]

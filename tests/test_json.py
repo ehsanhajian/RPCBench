@@ -69,6 +69,11 @@ def test_json_report_matches_fixture() -> None:
 def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     data = run_to_dict(_sample_result())
     assert data["schema"] == 1
+    assert data["mode"] == "paired"
+    assert data["seed"] == 0
+    assert data["sequence_id"] == ""
+    assert data["pairs"] == []
+    assert data["concurrency"] == 0
     assert data["rank_by"] == "p95"
     assert data["ranking"][0]["rank_by"] == "p95"
     assert data["ranking"][0]["rank_value"] == 12.0
@@ -145,3 +150,39 @@ def test_json_redacts_url_secrets() -> None:
     assert "[redacted]" in blob
     data = json.loads(blob)
     assert data["providers"][0]["id"] == outcome.endpoint.url_id
+
+
+def test_json_includes_seed_sequence_and_pairs() -> None:
+    import httpx
+
+    from rpcbench.config import parse_endpoints
+    from rpcbench.run import make_sequence_id, run_endpoints
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=2, warmup=0, budget=8, seed=11, client=client
+    )
+    data = run_to_dict(result)
+    assert data["mode"] == "paired"
+    assert data["seed"] == 11
+    assert data["sequence_id"] == make_sequence_id(
+        seed=11, method="eth_blockNumber", params=[], warmup=0, samples=2
+    )
+    assert len(data["pairs"]) == 2
+    assert data["pairs"][0]["kind"] == "sample"
+    assert data["pairs"][0]["index"] == 0
+    assert data["pairs"][0]["bodies"]["a"]
+    assert data["pairs"][0]["bodies"]["a"] == data["pairs"][0]["bodies"]["b"]

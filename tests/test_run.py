@@ -8,7 +8,7 @@ import pytest
 from rpcbench.config import parse_endpoints
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
 from rpcbench.report import format_run
-from rpcbench.run import percentile, run_endpoints, summarize
+from rpcbench.run import make_sequence_id, percentile, run_endpoints, summarize
 
 
 def test_probe_success() -> None:
@@ -101,7 +101,9 @@ def test_budget_skips_later_endpoints() -> None:
         }
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    result = run_endpoints(cfg, samples=1, warmup=0, budget=1, client=client)
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=1, mode="sequential", client=client
+    )
     assert result.outcomes[0].stats.n_ok == 1
     assert result.outcomes[1].samples[-1].error_class == "budget"
     text = format_run(result, color=False)
@@ -298,7 +300,9 @@ def test_bad_url_run_is_100_percent_error() -> None:
     cfg = parse_endpoints(
         {"endpoints": [{"name": "bad", "url": "http://["}]}
     )
-    result = run_endpoints(cfg, samples=4, warmup=0, budget=8)
+    result = run_endpoints(
+        cfg, samples=4, warmup=0, budget=8, mode="sequential"
+    )
     stats = result.outcomes[0].stats
     assert stats.n_ok == 0
     assert stats.error_rate == 1.0
@@ -415,11 +419,219 @@ def test_max_duration_skips_later_endpoints(monkeypatch) -> None:
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
     result = run_endpoints(
-        cfg, samples=1, warmup=0, budget=8, max_duration=1.0, client=client
+        cfg,
+        samples=1,
+        warmup=0,
+        budget=8,
+        max_duration=1.0,
+        mode="sequential",
+        client=client,
     )
     assert result.outcomes[0].stats.n_ok == 1
     assert result.outcomes[1].samples[-1].error_class == "duration"
     text = format_run(result, color=False)
     assert "duration=" in text
     assert "Summary" in text
+
+
+def test_probe_body_hash_is_stable() -> None:
+    import hashlib
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x10"}
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    first = probe("http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0)
+    second = probe("http://127.0.0.1:8545", "eth_blockNumber", client=client, retries=0)
+    blob = json.dumps("0x10", sort_keys=True, default=str, separators=(",", ":"))
+    expected = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+    assert first.body_hash == second.body_hash == expected
+
+
+def test_paired_races_providers_per_sample() -> None:
+    import threading
+
+    inflight = {"n": 0, "max": 0}
+    lock = threading.Lock()
+    barrier = threading.Barrier(2, timeout=2)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        with lock:
+            inflight["n"] += 1
+            inflight["max"] = max(inflight["max"], inflight["n"])
+        barrier.wait()
+        with lock:
+            inflight["n"] -= 1
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=2, warmup=0, budget=16, client=client
+    )
+    assert result.mode == "paired"
+    assert inflight["max"] == 2
+    assert len(result.pairs) == 2
+    assert [len(o.samples) for o in result.outcomes] == [2, 2]
+
+
+def test_sequential_does_not_overlap_providers() -> None:
+    import threading
+    import time
+
+    inflight = {"n": 0, "max": 0}
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        with lock:
+            inflight["n"] += 1
+            inflight["max"] = max(inflight["max"], inflight["n"])
+        time.sleep(0.03)
+        with lock:
+            inflight["n"] -= 1
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=2, warmup=0, budget=16, mode="sequential", client=client
+    )
+    assert result.mode == "sequential"
+    assert inflight["max"] == 1
+    assert result.pairs == ()
+
+
+def test_sequence_id_stable_for_same_seed() -> None:
+    kwargs = dict(
+        seed=7, method="eth_blockNumber", params=[], warmup=1, samples=10
+    )
+    assert make_sequence_id(**kwargs) == make_sequence_id(**kwargs)
+    assert make_sequence_id(**kwargs) != make_sequence_id(
+        seed=8, method="eth_blockNumber", params=[], warmup=1, samples=10
+    )
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://["}]}
+    )
+    first = run_endpoints(cfg, samples=1, warmup=0, budget=4, seed=3)
+    second = run_endpoints(cfg, samples=1, warmup=0, budget=4, seed=3)
+    assert first.sequence_id == second.sequence_id
+    assert first.sequence_id == make_sequence_id(
+        seed=3, method="eth_blockNumber", params=[], warmup=0, samples=1
+    )
+
+
+def test_paired_counts_stay_aligned_when_one_side_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("/bad"):
+            raise httpx.ConnectError("nope")
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "ok", "url": "http://127.0.0.1:8545/ok"},
+                {"name": "bad", "url": "http://127.0.0.1:8545/bad"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=3, warmup=1, budget=16, client=client)
+    assert [len(o.warmup) for o in result.outcomes] == [1, 1]
+    assert [len(o.samples) for o in result.outcomes] == [3, 3]
+    assert len(result.pairs) == 3
+    assert result.outcomes[0].stats.n_ok == 3
+    assert result.outcomes[1].stats.n_ok == 0
+    bodies = dict(result.pairs[0].bodies)
+    assert bodies["ok"]
+    assert bodies["bad"] is None
+
+
+def test_paired_budget_aligns_counts() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=1, warmup=0, budget=1, client=client)
+    assert [len(o.samples) for o in result.outcomes] == [1, 1]
+    classes = {o.samples[0].error_class for o in result.outcomes}
+    oks = sum(1 for o in result.outcomes if o.stats.n_ok)
+    assert oks == 1
+    assert None in classes
+    assert "budget" in classes
+
+
+def test_paired_duration_skips_remaining_wave(monkeypatch) -> None:
+    clock = {"t": 0.0}
+
+    def now() -> float:
+        return clock["t"]
+
+    monkeypatch.setattr("rpcbench.run.time.monotonic", now)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        clock["t"] = 5.0
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "a", "url": "http://127.0.0.1:1"},
+                {"name": "b", "url": "http://127.0.0.1:2"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=2, warmup=0, budget=16, max_duration=1.0, client=client
+    )
+    assert [len(o.samples) for o in result.outcomes] == [2, 2]
+    assert result.outcomes[0].samples[0].ok
+    assert result.outcomes[1].samples[0].ok
+    assert result.outcomes[0].samples[1].error_class == "duration"
+    assert result.outcomes[1].samples[1].error_class == "duration"
+
+
+def test_paired_invalid_url_keeps_sample_count() -> None:
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "bad", "url": "http://["}]}
+    )
+    result = run_endpoints(cfg, samples=4, warmup=0, budget=8)
+    stats = result.outcomes[0].stats
+    assert stats.n_ok == 0
+    assert stats.n_fail == 4
+    assert dict(stats.by_class) == {"invalid_url": 4}
 

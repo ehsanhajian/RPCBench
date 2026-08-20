@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -37,17 +40,20 @@ class RequestBudget:
             raise ValueError("budget must be at least 1")
         self.max_requests = max_requests
         self.used = 0
+        self._lock = threading.Lock()
 
     @property
     def remaining(self) -> int:
-        return max(0, self.max_requests - self.used)
+        with self._lock:
+            return max(0, self.max_requests - self.used)
 
     def consume(self) -> None:
-        if self.used >= self.max_requests:
-            raise BudgetExceeded(
-                f"request budget exceeded ({self.max_requests})"
-            )
-        self.used += 1
+        with self._lock:
+            if self.used >= self.max_requests:
+                raise BudgetExceeded(
+                    f"request budget exceeded ({self.max_requests})"
+                )
+            self.used += 1
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,7 @@ class ProbeResult:
     error: str | None
     error_class: str | None
     attempts: int
+    body_hash: str | None = None
 
 
 def probe(
@@ -211,6 +218,7 @@ def probe(
                 error=None,
                 error_class=None,
                 attempts=attempts,
+                body_hash=_body_hash(payload.get("result")),
             )
         return ProbeResult(
             ok=False,
@@ -224,3 +232,8 @@ def probe(
     finally:
         if owns:
             http.close()
+
+
+def _body_hash(value: Any) -> str:
+    blob = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]

@@ -127,7 +127,10 @@ def run_to_dict(
         "timeout": result.timeout,
         "budget": result.budget,
         "budget_remaining": result.budget_remaining,
-        "concurrency": 1,
+        "concurrency": result.concurrency,
+        "mode": result.mode,
+        "seed": result.seed,
+        "sequence_id": result.sequence_id,
         "rank_by": rank_by,
         "summary": {
             "fastest": ok_rows[0].endpoint.name if ok_rows else None,
@@ -149,6 +152,15 @@ def run_to_dict(
                 for o in fail_rows
             ],
         },
+        "pairs": [
+            {
+                "index": pair.index,
+                "kind": pair.kind,
+                "method": pair.method,
+                "bodies": dict(pair.bodies),
+            }
+            for pair in result.pairs
+        ],
     }
 
 
@@ -178,6 +190,9 @@ def format_run(
         f"Timeout {result.timeout:g}s  ·  "
         f"Budget {result.budget} ({result.budget_remaining} left)  ·  "
         f"Rank by {label}",
+        f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
+        f"seq={result.sequence_id or '—'}  ·  "
+        f"concurrency={_concurrency_label(result.concurrency)}",
         "",
         "Summary",
     ]
@@ -186,7 +201,7 @@ def format_run(
     lines.extend(
         [
             "",
-            f"Comparison  (config order · same {result.method}, samples, and budget)",
+            f"Comparison  (config order · {result.mode} · same {result.method}, samples, and budget)",
         ]
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
@@ -528,3 +543,9 @@ def _pct(rate: float | None) -> str:
     if rate is None:
         return "n/a"
     return f"{100 * rate:.0f}%"
+
+
+def _concurrency_label(concurrency: int) -> str:
+    if concurrency <= 0:
+        return "all"
+    return str(concurrency)
