@@ -9,7 +9,7 @@ from pathlib import Path
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.methods import MethodError, resolve_method
-from rpcbench.report import format_json, format_run
+from rpcbench.report import RankError, format_json, format_run, normalize_rank_by
 from rpcbench.run import run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 
@@ -102,6 +102,12 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Max in-flight requests (only 1 is supported)",
     )
     run.add_argument(
+        "--rank-by",
+        default="p95",
+        metavar="KEY",
+        help="Ranking key: p95 (default), p50, p99, mean, or rps (throughput). Failed endpoints are listed last.",
+    )
+    run.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -146,7 +152,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             params_json=args.params,
             allow_writes=args.allow_writes,
         )
-    except (ConfigError, MethodError, SafetyError) as exc:
+    except (ConfigError, MethodError, SafetyError, RankError) as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
     if (
@@ -165,6 +171,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.concurrency != 1:
         print("rpcbench: only --concurrency 1 is supported", file=sys.stderr)
         return 2
+    try:
+        rank_by = normalize_rank_by(args.rank_by)
+    except RankError as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
     result = run_endpoints(
         config,
         method=method,
@@ -175,7 +186,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         budget=args.budget,
         max_duration=args.max_duration,
     )
-    payload = format_json(result) if (args.json or args.output) else None
+    payload = format_json(result, rank_by=rank_by) if (args.json or args.output) else None
     if args.output:
         path = Path(args.output)
         try:
@@ -186,7 +197,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.json:
         sys.stdout.write(payload or "")
     else:
-        sys.stdout.write(format_run(result, verbose=args.verbose))
+        sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by))
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1

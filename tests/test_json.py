@@ -69,6 +69,9 @@ def test_json_report_matches_fixture() -> None:
 def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     data = run_to_dict(_sample_result())
     assert data["schema"] == 1
+    assert data["rank_by"] == "p95"
+    assert data["ranking"][0]["rank_by"] == "p95"
+    assert data["ranking"][0]["rank_value"] == 12.0
     assert data["tool"] == "rpcbench"
     assert data["summary"]["fastest"] == "fast"
     assert data["summary"]["failed_names"] == ["dead"]

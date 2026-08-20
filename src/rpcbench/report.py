@@ -12,9 +12,33 @@ from rpcbench.run import EndpointOutcome, RunResult
 
 SCHEMA_VERSION = 1
 
+DEFAULT_RANK_BY = "p95"
+RANK_BY_KEYS = ("p50", "p95", "p99", "mean", "rps")
+RANK_BY_ALIASES = {"throughput": "rps"}
+_RANK_LABELS = {
+    "p50": "p50",
+    "p95": "p95",
+    "p99": "p99",
+    "mean": "mean",
+    "rps": "rps",
+}
+
 _GREEN = "32"
 _RED = "31"
 _BOLD = "1"
+
+
+class RankError(ValueError):
+    pass
+
+
+def normalize_rank_by(raw: str) -> str:
+    key = raw.strip().lower()
+    key = RANK_BY_ALIASES.get(key, key)
+    if key not in RANK_BY_KEYS:
+        known = ", ".join((*RANK_BY_KEYS, "throughput"))
+        raise RankError(f"unknown --rank-by {raw!r} (try {known})")
+    return key
 
 
 def color_enabled(explicit: bool | None = None) -> bool:
@@ -34,23 +58,51 @@ def _paint(text: str, *codes: str, enabled: bool) -> str:
     return f"\033[{prefix}m{text}\033[0m"
 
 
-def rank_outcomes(result: RunResult) -> tuple[EndpointOutcome, ...]:
-    """Successful endpoints by mean latency, then failures in config order."""
+def rank_outcomes(
+    result: RunResult, *, rank_by: str = DEFAULT_RANK_BY
+) -> tuple[EndpointOutcome, ...]:
+    """Successful endpoints by rank key, then failures in config order."""
+    key_name = normalize_rank_by(rank_by)
 
-    def key(item: tuple[int, EndpointOutcome]) -> tuple[int, float, int]:
+    def key(item: tuple[int, EndpointOutcome]) -> tuple[int, float, float, int]:
         index, outcome = item
         stats = outcome.stats
-        if stats.n_ok == 0 or stats.mean_ms is None:
-            return (1, 0.0, index)
-        return (0, stats.mean_ms, index)
+        value = _rank_value(stats, key_name)
+        if value is None:
+            return (1, 0.0, 0.0, index)
+        mean = stats.mean_ms if stats.mean_ms is not None else 0.0
+        if key_name == "rps":
+            return (0, -value, mean, index)
+        return (0, value, mean, index)
 
     indexed = list(enumerate(result.outcomes))
     return tuple(outcome for _, outcome in sorted(indexed, key=key))
 
 
-def run_to_dict(result: RunResult) -> dict[str, Any]:
+def _rank_value(stats: Any, rank_by: str) -> float | None:
+    if stats.n_ok == 0:
+        return None
+    if rank_by == "p50":
+        return stats.p50_ms
+    if rank_by == "p95":
+        return stats.p95_ms
+    if rank_by == "p99":
+        return stats.p99_ms
+    if rank_by == "mean":
+        return stats.mean_ms
+    if rank_by == "rps":
+        if not stats.mean_ms:
+            return None
+        return 1000.0 / stats.mean_ms
+    return None
+
+
+def run_to_dict(
+    result: RunResult, *, rank_by: str = DEFAULT_RANK_BY
+) -> dict[str, Any]:
     """Stable JSON object. Redacted URL + hash only; complete enough to rebuild the CLI summary."""
-    ranked = rank_outcomes(result)
+    rank_by = normalize_rank_by(rank_by)
+    ranked = rank_outcomes(result, rank_by=rank_by)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     ranking: list[dict[str, Any]] = []
@@ -62,7 +114,7 @@ def run_to_dict(result: RunResult) -> dict[str, Any]:
             rank: int | None = rank_n
         else:
             rank = None
-        ranking.append(_ranking_entry(outcome, rank))
+        ranking.append(_ranking_entry(outcome, rank, rank_by))
         providers.append(_provider_entry(outcome, rank, result.method))
     return {
         "tool": "rpcbench",
@@ -76,6 +128,7 @@ def run_to_dict(result: RunResult) -> dict[str, Any]:
         "budget": result.budget,
         "budget_remaining": result.budget_remaining,
         "concurrency": 1,
+        "rank_by": rank_by,
         "summary": {
             "fastest": ok_rows[0].endpoint.name if ok_rows else None,
             "ok": len(ok_rows),
@@ -99,8 +152,8 @@ def run_to_dict(result: RunResult) -> dict[str, Any]:
     }
 
 
-def format_json(result: RunResult) -> str:
-    return json.dumps(run_to_dict(result), indent=2, allow_nan=False) + "\n"
+def format_json(result: RunResult, *, rank_by: str = DEFAULT_RANK_BY) -> str:
+    return json.dumps(run_to_dict(result, rank_by=rank_by), indent=2, allow_nan=False) + "\n"
 
 
 def format_run(
@@ -108,23 +161,27 @@ def format_run(
     *,
     verbose: bool = False,
     color: bool | None = None,
+    rank_by: str = DEFAULT_RANK_BY,
 ) -> str:
+    rank_by = normalize_rank_by(rank_by)
     use_color = color_enabled(color)
-    ranked = rank_outcomes(result)
+    ranked = rank_outcomes(result, rank_by=rank_by)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     params = f" {list(result.params)}" if result.params else ""
+    label = _RANK_LABELS[rank_by]
     lines = [
         "RPCBench",
         "=" * 72,
         f"Method    {result.method}{params}",
         f"Samples   {result.samples} after {result.warmup} warmup  ·  "
         f"Timeout {result.timeout:g}s  ·  "
-        f"Budget {result.budget} ({result.budget_remaining} left)",
+        f"Budget {result.budget} ({result.budget_remaining} left)  ·  "
+        f"Rank by {label}",
         "",
         "Summary",
     ]
-    lines.extend(_summary_lines(ok_rows, fail_rows, len(result.outcomes), use_color))
+    lines.extend(_summary_lines(ok_rows, fail_rows, len(result.outcomes), use_color, rank_by))
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
         [
@@ -133,7 +190,7 @@ def format_run(
         ]
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
-    lines.extend(["", "Ranking  (by mean latency; failed last)"])
+    lines.extend(["", f"Ranking  (by {label}; failed last)"])
     rank_n = 0
     for outcome in ranked:
         if outcome.stats.n_ok:
@@ -141,7 +198,7 @@ def format_run(
             mark = f"{rank_n:>3}"
         else:
             mark = "  —"
-        lines.append(_ranking_line(outcome, mark, name_w, use_color))
+        lines.append(_ranking_line(outcome, mark, name_w, use_color, rank_by))
     lines.extend(["", "Providers"])
     for outcome in ranked:
         lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
@@ -160,16 +217,20 @@ def _summary_lines(
     fail_rows: list[EndpointOutcome],
     total: int,
     use_color: bool,
+    rank_by: str,
 ) -> list[str]:
     lines: list[str] = []
     if ok_rows:
         fastest = ok_rows[0]
         stats = fastest.stats
         name = _paint(fastest.endpoint.name, _BOLD, _GREEN, enabled=use_color)
-        lines.append(
-            f"  Fastest  {name}  mean={stats.mean_ms:.1f}ms  "
-            f"p95={stats.p95_ms:.1f}ms  err={_pct(stats.error_rate)}"
-        )
+        bits = [_rank_metric_text(stats, rank_by)]
+        if rank_by != "mean":
+            bits.append(f"mean={stats.mean_ms:.1f}ms")
+        if rank_by != "p95":
+            bits.append(f"p95={stats.p95_ms:.1f}ms")
+        bits.append(f"err={_pct(stats.error_rate)}")
+        lines.append(f"  Fastest  {name}  " + "  ".join(bits))
     else:
         lines.append("  Fastest  none  (all endpoints failed)")
     if fail_rows:
@@ -249,8 +310,21 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
     }
 
 
+def _rank_metric_text(stats: Any, rank_by: str) -> str:
+    value = _rank_value(stats, rank_by)
+    if value is None:
+        return f"{_RANK_LABELS[rank_by]}=n/a"
+    if rank_by == "rps":
+        return f"rps={value:.1f}"
+    return f"{_RANK_LABELS[rank_by]}={value:.1f}ms"
+
+
 def _ranking_line(
-    outcome: EndpointOutcome, mark: str, name_w: int, use_color: bool
+    outcome: EndpointOutcome,
+    mark: str,
+    name_w: int,
+    use_color: bool,
+    rank_by: str,
 ) -> str:
     stats = outcome.stats
     ok = stats.n_ok > 0
@@ -264,9 +338,15 @@ def _ranking_line(
         enabled=use_color,
     )
     if ok:
+        extra_mean = ""
+        if rank_by != "mean":
+            extra_mean = f"  mean={stats.mean_ms:.1f}ms"
+        extra_p95 = ""
+        if rank_by != "p95":
+            extra_p95 = f"  p95={stats.p95_ms:.1f}ms"
         return (
             f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
-            f"{classes}  mean={stats.mean_ms:.1f}ms  p95={stats.p95_ms:.1f}ms"
+            f"{classes}  {_rank_metric_text(stats, rank_by)}{extra_mean}{extra_p95}"
         )
     err = _last_error(outcome)
     extra = f"  {err}" if err else ""
@@ -345,7 +425,9 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
     return lines
 
 
-def _ranking_entry(outcome: EndpointOutcome, rank: int | None) -> dict[str, Any]:
+def _ranking_entry(
+    outcome: EndpointOutcome, rank: int | None, rank_by: str
+) -> dict[str, Any]:
     stats = outcome.stats
     return {
         "rank": rank,
@@ -356,7 +438,12 @@ def _ranking_entry(outcome: EndpointOutcome, rank: int | None) -> dict[str, Any]
         "error_rate": stats.error_rate,
         "errors": dict(stats.by_class),
         "mean_ms": stats.mean_ms,
+        "p50_ms": stats.p50_ms,
         "p95_ms": stats.p95_ms,
+        "p99_ms": stats.p99_ms,
+        "rps": (1000.0 / stats.mean_ms) if stats.mean_ms else None,
+        "rank_by": rank_by,
+        "rank_value": _rank_value(stats, rank_by),
         "score": _success_rate(stats.error_rate),
     }
 

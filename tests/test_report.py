@@ -52,12 +52,14 @@ def _result(*outcomes: EndpointOutcome) -> RunResult:
     )
 
 
-def test_rank_fastest_mean_first_failures_last() -> None:
+def test_rank_fastest_p95_first_failures_last() -> None:
     slow = _outcome("slow", (_ok(40.0), _ok(50.0), _ok(60.0)))
     fast = _outcome("fast", (_ok(10.0), _ok(12.0), _ok(14.0)))
     dead = _outcome("dead", (_fail(), _fail(), _fail()))
     ranked = rank_outcomes(_result(slow, dead, fast))
     assert [o.endpoint.name for o in ranked] == ["fast", "slow", "dead"]
+    assert ranked[0].stats.n_ok > 0
+    assert ranked[-1].stats.n_ok == 0
 
 
 def test_report_makes_winner_obvious() -> None:
@@ -73,6 +75,8 @@ def test_report_makes_winner_obvious() -> None:
     assert "Providers" in text
     assert "Capabilities" in text
     assert "Fastest  fast" in text
+    assert "Rank by p95" in text
+    assert "Ranking  (by p95; failed last)" in text
     assert "Failed   1/3    dead" in text
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
@@ -135,6 +139,48 @@ def test_ties_and_failures_keep_config_order() -> None:
     dead2 = _outcome("dead2", (_fail(),))
     ranked = rank_outcomes(_result(dead1, b, dead2, a))
     assert [o.endpoint.name for o in ranked] == ["b", "a", "dead1", "dead2"]
+
+
+def test_rank_by_p95_differs_from_mean() -> None:
+    # mean favors spiky (33ms); p95 favors smooth (50ms vs 80ms)
+    spiky = _outcome("spiky", (_ok(10.0), _ok(10.0), _ok(80.0)))
+    smooth = _outcome("smooth", (_ok(50.0), _ok(50.0), _ok(50.0)))
+    result = _result(spiky, smooth)
+    assert [o.endpoint.name for o in rank_outcomes(result)] == ["smooth", "spiky"]
+    assert [o.endpoint.name for o in rank_outcomes(result, rank_by="mean")] == [
+        "spiky",
+        "smooth",
+    ]
+    assert [o.endpoint.name for o in rank_outcomes(result, rank_by="rps")] == [
+        "spiky",
+        "smooth",
+    ]
+    text = format_run(result, color=False, rank_by="p95")
+    ranking = text.split("Ranking", 1)[1]
+    first = [ln for ln in ranking.splitlines() if ln.strip()][1]
+    assert "smooth" in first
+    assert "dead" not in first
+
+
+def test_rank_by_throughput_alias() -> None:
+    slow = _outcome("slow", (_ok(40.0), _ok(50.0)))
+    fast = _outcome("fast", (_ok(10.0), _ok(12.0)))
+    ranked = rank_outcomes(_result(slow, fast), rank_by="throughput")
+    assert [o.endpoint.name for o in ranked] == ["fast", "slow"]
+
+
+def test_failed_never_takes_winner_slot() -> None:
+    dead = _outcome("dead", (_fail(),))
+    ok = _outcome("ok", (_ok(90.0), _ok(91.0)))
+    ranked = rank_outcomes(_result(dead, ok))
+    assert ranked[0].endpoint.name == "ok"
+    text = format_run(_result(dead, ok), color=False)
+    assert "Fastest  ok" in text
+    ranking = text.split("Ranking", 1)[1]
+    lines = [ln for ln in ranking.splitlines() if ln.strip()]
+    assert "ok" in lines[1]
+    assert "dead" in lines[2]
+    assert lines[2].strip().startswith("—") or "  —" in lines[2]
 
 
 def test_partial_success_sorts_with_ok_group() -> None:
