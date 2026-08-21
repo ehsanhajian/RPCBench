@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from rpcbench.config import Endpoint
 from rpcbench.report import format_json, format_run, run_to_dict
 from rpcbench.rpc import ProbeResult
@@ -98,7 +100,12 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert perf["mean_ms"] == 11.0
     assert perf["p50_ms"] == 10.0
     assert perf["p95_ms"] == 12.0
+    assert perf["jitter_ms"] == pytest.approx(2.0 ** 0.5)
     assert perf["rps"] == 1000.0 / 11.0
+    assert perf["histogram"][0] == {"label": "<50ms", "lt_ms": 50.0, "n": 2}
+    assert data["histogram_buckets"][0] == {"label": "<50ms", "lt_ms": 50.0}
+    assert data["histogram_buckets"][-1] == {"label": "≥1s", "lt_ms": None}
+    assert data["comparison"][1]["histogram"][0]["n"] == 2
     assert fast["reliability"]["score"] == 1.0
     assert fast["capability"]["responded"] is True
     assert data["capabilities"]["responded"] == 2
@@ -186,3 +193,27 @@ def test_json_includes_seed_sequence_and_pairs() -> None:
     assert data["pairs"][0]["index"] == 0
     assert data["pairs"][0]["bodies"]["a"]
     assert data["pairs"][0]["bodies"]["a"] == data["pairs"][0]["bodies"]["b"]
+
+
+def test_json_bimodal_histogram() -> None:
+    samples = tuple([_ok(20.0)] * 8 + [_ok(1500.0)] * 8)
+    result = RunResult(
+        method="eth_blockNumber",
+        params=(),
+        samples=16,
+        warmup=0,
+        timeout=10.0,
+        budget=32,
+        outcomes=(_outcome("spiky", samples),),
+        budget_remaining=16,
+    )
+    data = run_to_dict(result)
+    hist = {row["label"]: row["n"] for row in data["providers"][0]["performance"]["histogram"]}
+    assert hist == {
+        "<50ms": 8,
+        "<100ms": 0,
+        "<250ms": 0,
+        "<1s": 0,
+        "≥1s": 8,
+    }
+    assert data["providers"][0]["performance"]["jitter_ms"] is not None

@@ -14,6 +14,28 @@
   "seed": 0,
   "sequence_id": "",
   "rank_by": "p95",
+  "histogram_buckets": [
+    {
+      "label": "<50ms",
+      "lt_ms": 50.0
+    },
+    {
+      "label": "<100ms",
+      "lt_ms": 100.0
+    },
+    {
+      "label": "<250ms",
+      "lt_ms": 250.0
+    },
+    {
+      "label": "<1s",
+      "lt_ms": 1000.0
+    },
+    {
+      "label": "\u22651s",
+      "lt_ms": null
+    }
+  ],
   "summary": {
     "fastest": "fast",
     "ok": 2,
@@ -33,6 +55,34 @@
       "p50_ms": 40.0,
       "p95_ms": 50.0,
       "p99_ms": 50.0,
+      "jitter_ms": 7.0710678118654755,
+      "histogram": [
+        {
+          "label": "<50ms",
+          "lt_ms": 50.0,
+          "n": 1
+        },
+        {
+          "label": "<100ms",
+          "lt_ms": 100.0,
+          "n": 1
+        },
+        {
+          "label": "<250ms",
+          "lt_ms": 250.0,
+          "n": 0
+        },
+        {
+          "label": "<1s",
+          "lt_ms": 1000.0,
+          "n": 0
+        },
+        {
+          "label": "\u22651s",
+          "lt_ms": null,
+          "n": 0
+        }
+      ],
       "rps": 22.22222222222222,
       "capability": {
         "method": "eth_blockNumber",
@@ -51,6 +101,34 @@
       "p50_ms": 10.0,
       "p95_ms": 12.0,
       "p99_ms": 12.0,
+      "jitter_ms": 1.4142135623730951,
+      "histogram": [
+        {
+          "label": "<50ms",
+          "lt_ms": 50.0,
+          "n": 2
+        },
+        {
+          "label": "<100ms",
+          "lt_ms": 100.0,
+          "n": 0
+        },
+        {
+          "label": "<250ms",
+          "lt_ms": 250.0,
+          "n": 0
+        },
+        {
+          "label": "<1s",
+          "lt_ms": 1000.0,
+          "n": 0
+        },
+        {
+          "label": "\u22651s",
+          "lt_ms": null,
+          "n": 0
+        }
+      ],
       "rps": 90.9090909090909,
       "capability": {
         "method": "eth_blockNumber",
@@ -69,6 +147,34 @@
       "p50_ms": null,
       "p95_ms": null,
       "p99_ms": null,
+      "jitter_ms": null,
+      "histogram": [
+        {
+          "label": "<50ms",
+          "lt_ms": 50.0,
+          "n": 0
+        },
+        {
+          "label": "<100ms",
+          "lt_ms": 100.0,
+          "n": 0
+        },
+        {
+          "label": "<250ms",
+          "lt_ms": 250.0,
+          "n": 0
+        },
+        {
+          "label": "<1s",
+          "lt_ms": 1000.0,
+          "n": 0
+        },
+        {
+          "label": "\u22651s",
+          "lt_ms": null,
+          "n": 0
+        }
+      ],
       "rps": null,
       "capability": {
         "method": "eth_blockNumber",
@@ -91,6 +197,7 @@
       "p50_ms": 10.0,
       "p95_ms": 12.0,
       "p99_ms": 12.0,
+      "jitter_ms": 1.4142135623730951,
       "rps": 90.9090909090909,
       "rank_by": "p95",
       "rank_value": 12.0,
@@ -108,6 +215,7 @@
       "p50_ms": 40.0,
       "p95_ms": 50.0,
       "p99_ms": 50.0,
+      "jitter_ms": 7.0710678118654755,
       "rps": 22.22222222222222,
       "rank_by": "p95",
       "rank_value": 50.0,
@@ -127,6 +235,7 @@
       "p50_ms": null,
       "p95_ms": null,
       "p99_ms": null,
+      "jitter_ms": null,
       "rps": null,
       "rank_by": "p95",
       "rank_value": null,
@@ -149,7 +258,35 @@
         "p50_ms": 10.0,
         "p95_ms": 12.0,
         "p99_ms": 12.0,
-        "rps": 90.9090909090909
+        "jitter_ms": 1.4142135623730951,
+        "rps": 90.9090909090909,
+        "histogram": [
+          {
+            "label": "<50ms",
+            "lt_ms": 50.0,
+            "n": 2
+          },
+          {
+            "label": "<100ms",
+            "lt_ms": 100.0,
+            "n": 0
+          },
+          {
+            "label": "<250ms",
+            "lt_ms": 250.0,
+            "n": 0
+          },
+          {
+            "label": "<1s",
+            "lt_ms": 1000.0,
+            "n": 0
+          },
+          {
+            "label": "\u22651s",
+            "lt_ms": null,
+            "n": 0
+          }
+        ]
       },
       "errors": {
         "error_rate": 0.0,
@@ -199,7 +336,35 @@
         "p50_ms": 40.0,
         "p95_ms": 50.0,
         "p99_ms": 50.0,
-        "rps": 22.22222222222222
+        "jitter_ms": 7.0710678118654755,
+        "rps": 22.22222222222222,
+        "histogram": [
+          {
+            "label": "<50ms",
+            "lt_ms": 50.0,
+            "n": 1
+          },
+          {
+            "label": "<100ms",
+            "lt_ms": 100.0,
+            "n": 1
+          },
+          {
+            "label": "<250ms",
+            "lt_ms": 250.0,
+            "n": 0
+          },
+          {
+            "label": "<1s",
+            "lt_ms": 1000.0,
+            "n": 0
+          },
+          {
+            "label": "\u22651s",
+            "lt_ms": null,
+            "n": 0
+          }
+        ]
       },
       "errors": {
         "error_rate": 0.0,
@@ -249,7 +414,35 @@
         "p50_ms": null,
         "p95_ms": null,
         "p99_ms": null,
-        "rps": null
+        "jitter_ms": null,
+        "rps": null,
+        "histogram": [
+          {
+            "label": "<50ms",
+            "lt_ms": 50.0,
+            "n": 0
+          },
+          {
+            "label": "<100ms",
+            "lt_ms": 100.0,
+            "n": 0
+          },
+          {
+            "label": "<250ms",
+            "lt_ms": 250.0,
+            "n": 0
+          },
+          {
+            "label": "<1s",
+            "lt_ms": 1000.0,
+            "n": 0
+          },
+          {
+            "label": "\u22651s",
+            "lt_ms": null,
+            "n": 0
+          }
+        ]
       },
       "errors": {
         "error_rate": 1.0,

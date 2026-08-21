@@ -8,7 +8,7 @@ import sys
 from typing import Any
 
 from rpcbench import __version__
-from rpcbench.run import EndpointOutcome, RunResult
+from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
 
 SCHEMA_VERSION = 1
 
@@ -132,6 +132,7 @@ def run_to_dict(
         "seed": result.seed,
         "sequence_id": result.sequence_id,
         "rank_by": rank_by,
+        "histogram_buckets": _histogram_bucket_defs(),
         "summary": {
             "fastest": ok_rows[0].endpoint.name if ok_rows else None,
             "ok": len(ok_rows),
@@ -222,7 +223,8 @@ def format_run(
     lines.append("")
     lines.append(
         f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded  ·  "
-        "err=failed/attempted  ·  min/mean/max and p50/p95/p99 of successful samples"
+        "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
+        "and histogram of successful samples"
     )
     return "\n".join(lines) + "\n"
 
@@ -261,7 +263,7 @@ def _comparison_lines(
 ) -> list[str]:
     header = (
         f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
-        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'rps':>6}  cap"
+        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  cap"
     )
     lines = [header]
     for outcome in result.outcomes:
@@ -285,7 +287,8 @@ def _comparison_line(outcome: EndpointOutcome, name_w: int, use_color: bool) -> 
     return (
         f"  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
         f"{_cell_ms(stats.p50_ms)}  {_cell_ms(stats.p95_ms)}  "
-        f"{_cell_ms(stats.p99_ms)}  {_cell_rps(stats.mean_ms)}  {cap}"
+        f"{_cell_ms(stats.p99_ms)}  {_cell_ms(stats.jitter_ms)}  "
+        f"{_cell_rps(stats.mean_ms)}  {cap}"
     )
 
 
@@ -315,6 +318,8 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         "p50_ms": stats.p50_ms,
         "p95_ms": stats.p95_ms,
         "p99_ms": stats.p99_ms,
+        "jitter_ms": stats.jitter_ms,
+        "histogram": _histogram_json(stats.histogram),
         "rps": rps,
         "capability": {
             "method": method,
@@ -390,12 +395,14 @@ def _provider_lines(
     if stats.min_ms is not None:
         lines.append(
             f"{indent}min={stats.min_ms:.1f}ms  "
-            f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms"
+            f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms  "
+            f"jitter={_jitter_text(stats.jitter_ms)}"
         )
         lines.append(
             f"{indent}p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  "
             f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
         )
+        lines.append(f"{indent}hist  {_histogram_text(stats.histogram)}")
     else:
         err = _last_error(outcome)
         if err:
@@ -456,6 +463,7 @@ def _ranking_entry(
         "p50_ms": stats.p50_ms,
         "p95_ms": stats.p95_ms,
         "p99_ms": stats.p99_ms,
+        "jitter_ms": stats.jitter_ms,
         "rps": (1000.0 / stats.mean_ms) if stats.mean_ms else None,
         "rank_by": rank_by,
         "rank_value": _rank_value(stats, rank_by),
@@ -484,7 +492,9 @@ def _provider_entry(
             "p50_ms": stats.p50_ms,
             "p95_ms": stats.p95_ms,
             "p99_ms": stats.p99_ms,
+            "jitter_ms": stats.jitter_ms,
             "rps": rps,
+            "histogram": _histogram_json(stats.histogram),
         },
         "errors": {
             "error_rate": stats.error_rate,
@@ -549,3 +559,29 @@ def _concurrency_label(concurrency: int) -> str:
     if concurrency <= 0:
         return "all"
     return str(concurrency)
+
+
+def _jitter_text(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.1f}ms"
+
+
+def _histogram_text(histogram: tuple[tuple[str, int], ...]) -> str:
+    return "  ".join(f"{label}={count}" for label, count in histogram)
+
+
+def _histogram_bucket_defs() -> list[dict[str, Any]]:
+    edges: tuple[float | None, ...] = (*HISTOGRAM_EDGES_MS, None)
+    return [
+        {"label": label, "lt_ms": edge}
+        for label, edge in zip(HISTOGRAM_LABELS, edges, strict=True)
+    ]
+
+
+def _histogram_json(histogram: tuple[tuple[str, int], ...]) -> list[dict[str, Any]]:
+    edges: tuple[float | None, ...] = (*HISTOGRAM_EDGES_MS, None)
+    return [
+        {"label": label, "lt_ms": edge, "n": count}
+        for (label, count), edge in zip(histogram, edges, strict=True)
+    ]

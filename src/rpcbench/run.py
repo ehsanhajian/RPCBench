@@ -27,6 +27,9 @@ _CLASS_ORDER = (
 _STOP_CLASSES = {"invalid_url", "budget", "duration"}
 MODE_PAIRED = "paired"
 MODE_SEQUENTIAL = "sequential"
+# Exclusive upper bounds; last bucket is ≥ the final edge. Shared with CLI/JSON/HTML.
+HISTOGRAM_EDGES_MS: tuple[float, ...] = (50.0, 100.0, 250.0, 1000.0)
+HISTOGRAM_LABELS: tuple[str, ...] = ("<50ms", "<100ms", "<250ms", "<1s", "≥1s")
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,8 @@ class LatencyStats:
     p50_ms: float | None
     p95_ms: float | None
     p99_ms: float | None
+    jitter_ms: float | None
+    histogram: tuple[tuple[str, int], ...]
 
 
 @dataclass(frozen=True)
@@ -110,6 +115,30 @@ def make_sequence_id(
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
 
 
+def sample_stddev(values: list[float]) -> float | None:
+    """Sample standard deviation (Bessel). None unless there are at least 2 values."""
+    if len(values) < 2:
+        return None
+    mean = sum(values) / len(values)
+    var = sum((x - mean) ** 2 for x in values) / (len(values) - 1)
+    return math.sqrt(var)
+
+
+def latency_histogram(values: list[float]) -> tuple[tuple[str, int], ...]:
+    """Coarse exclusive-upper-bound buckets. Empty input still returns zero counts."""
+    counts = [0] * len(HISTOGRAM_LABELS)
+    for value in values:
+        placed = False
+        for i, edge in enumerate(HISTOGRAM_EDGES_MS):
+            if value < edge:
+                counts[i] += 1
+                placed = True
+                break
+        if not placed:
+            counts[-1] += 1
+    return tuple(zip(HISTOGRAM_LABELS, counts, strict=True))
+
+
 def _count_classes(samples: tuple[ProbeResult, ...]) -> tuple[tuple[str, int], ...]:
     counts: dict[str, int] = {}
     for sample in samples:
@@ -139,6 +168,8 @@ def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
             p50_ms=None,
             p95_ms=None,
             p99_ms=None,
+            jitter_ms=None,
+            histogram=latency_histogram([]),
         )
     return LatencyStats(
         n_ok=len(ok),
@@ -151,6 +182,8 @@ def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
         p50_ms=percentile(ok, 0.50),
         p95_ms=percentile(ok, 0.95),
         p99_ms=percentile(ok, 0.99),
+        jitter_ms=sample_stddev(ok),
+        histogram=latency_histogram(ok),
     )
 
 

@@ -58,7 +58,7 @@ The CLI prints, in order:
 1. **Summary** — Fastest (P95 by default)
 2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place)
 3. **Ranking** — ordered by `--rank-by`; failed endpoints last, never Fastest
-4. **Providers** — redacted URL + `id=` hash, samples, errors
+4. **Providers** — redacted URL + `id=` hash, samples, errors, jitter, histogram
 5. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
@@ -66,12 +66,13 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 ## How a run works
 
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
-- **Warmup is excluded** from min/mean/max, percentiles, and error rate.
-- **P50/P95/P99** are nearest-rank over successful samples.
+- **Warmup is excluded** from min/mean/max, jitter, percentiles, error rate, and the histogram.
+- **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2).
+- **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
 - **Ranking** is P95 of successes. Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. Ties: mean, then config order.
 - **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
-- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, and per-sample `pairs` (body hashes). Reliability `score` is success rate.
+- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, and `histogram`. Reliability `score` is success rate.
 
 ## Flags
 
