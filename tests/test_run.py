@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 
 import httpx
 import pytest
@@ -155,7 +156,15 @@ def test_summarize_min_mean_max_ignores_failures() -> None:
     assert stats.min_ms == 10.0
     assert stats.mean_ms == 20.0
     assert stats.max_ms == 30.0
+    assert stats.jitter_ms == pytest.approx(math.sqrt(200.0))
     assert dict(stats.by_class) == {"timeout": 1}
+    assert dict(stats.histogram) == {
+        "<50ms": 2,
+        "<100ms": 0,
+        "<250ms": 0,
+        "<1s": 0,
+        "≥1s": 0,
+    }
 
 
 def test_summarize_all_fail() -> None:
@@ -167,6 +176,14 @@ def test_summarize_all_fail() -> None:
     assert stats.p50_ms is None
     assert stats.p95_ms is None
     assert stats.p99_ms is None
+    assert stats.jitter_ms is None
+    assert dict(stats.histogram) == {
+        "<50ms": 0,
+        "<100ms": 0,
+        "<250ms": 0,
+        "<1s": 0,
+        "≥1s": 0,
+    }
     assert dict(stats.by_class) == {"timeout": 2}
 
 
@@ -634,4 +651,27 @@ def test_paired_invalid_url_keeps_sample_count() -> None:
     assert stats.n_ok == 0
     assert stats.n_fail == 4
     assert dict(stats.by_class) == {"invalid_url": 4}
+
+
+def test_jitter_none_until_two_successes() -> None:
+    one = summarize((_ok(10.0),))
+    assert one.jitter_ms is None
+    assert dict(one.histogram)["<50ms"] == 1
+    two = summarize((_ok(10.0), _ok(10.0)))
+    assert two.jitter_ms == pytest.approx(0.0)
+
+
+def test_bimodal_histogram_splits_cache_and_miss() -> None:
+    stats = summarize(tuple([_ok(20.0)] * 8 + [_ok(800.0)] * 8))
+    assert dict(stats.histogram) == {
+        "<50ms": 8,
+        "<100ms": 0,
+        "<250ms": 0,
+        "<1s": 8,
+        "≥1s": 0,
+    }
+    assert stats.min_ms == 20.0
+    assert stats.max_ms == 800.0
+    assert stats.jitter_ms is not None
+    assert stats.jitter_ms > 300.0
 

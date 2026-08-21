@@ -82,6 +82,7 @@ def test_report_makes_winner_obvious() -> None:
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
     assert "p50" in compare and "p95" in compare and "p99" in compare
+    assert "jit" in compare
     assert "rps" in compare
     assert "cap" in compare
     assert "yes" in compare
@@ -90,6 +91,7 @@ def test_report_makes_winner_obvious() -> None:
     assert summary.index("fast") < summary.index("Failed")
     first_rank_line = [ln for ln in ranking.splitlines() if ln.strip()][1]
     assert "fast" in first_rank_line
+    assert "jitter=" in first_rank_line
     assert "timeout: took too long" in text
     assert "missed     dead (timeout)" in text
     assert "↳ Next:" not in text
@@ -228,3 +230,17 @@ def test_explicit_color_false_has_no_ansi() -> None:
     result = _result(_outcome("a", (_ok(10.0),)))
     assert "\033[" not in format_run(result, color=False)
     assert "\033[" in format_run(result, color=True)
+
+
+def test_bimodal_histogram_is_visible() -> None:
+    samples = tuple([_ok(20.0)] * 8 + [_ok(800.0)] * 8)
+    text = format_run(_result(_outcome("spiky", samples)), color=False)
+    assert "jitter=" in text
+    assert "hist  <50ms=8  <100ms=0  <250ms=0  <1s=8  ≥1s=0" in text
+    providers = text.split("Providers", 1)[1]
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "jitter=" in ranking
+    assert "<50ms=8" in providers
+    assert "<50ms=8" in providers
+    assert "<1s=8" in providers
+    assert "<100ms=0" in providers
