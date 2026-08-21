@@ -40,6 +40,7 @@ def test_cli_defaults() -> None:
     assert ns.json is False
     assert ns.output is None
     assert ns.rank_by == "p95"
+    assert ns.similar_band == 0.10
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -581,6 +582,17 @@ def test_cli_rejects_bad_rank_by(tmp_path: Path, capsys) -> None:
     assert "rank-by" in capsys.readouterr().err
 
 
+def test_cli_rejects_bad_similar_band(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--similar-band", "2"])
+    assert code == 2
+    assert "similar-band" in capsys.readouterr().err
+
+
 def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:
     import httpx
 
@@ -622,7 +634,7 @@ def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert "Rank by mean" in out
-    assert "Ranking  (by mean; failed last)" in out
+    assert "Ranking  (by mean; similar within 10%; ~ high err; failed last)" in out
 
 
 def test_cli_sequential(tmp_path: Path, monkeypatch, capsys) -> None:

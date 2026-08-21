@@ -4,7 +4,7 @@
 
 A small CLI that compares **EVM JSON-RPC over HTTP**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node).
 
-It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
+It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
 ## Install
 
@@ -55,9 +55,9 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 
 The CLI prints, in order:
 
-1. **Summary** — Fastest (P95 by default)
+1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
 2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place)
-3. **Ranking** — ordered by `--rank-by`; failed endpoints last, never Fastest
+3. **Ranking** — ordered by `--rank-by`; similar share a place; high error is `~`; failed last
 4. **Providers** — redacted URL + `id=` hash, samples, errors, jitter, histogram
 5. **Capabilities** — who answered this method
 
@@ -67,10 +67,10 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **Warmup is excluded** from min/mean/max, jitter, percentiles, error rate, and the histogram.
-- **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2).
+- **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
 - **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
-- **Ranking** is P95 of successes. Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. Ties: mean, then config order.
+- **Ranking** is P95 of successes. Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
 - **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
 - **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, and `histogram`. Reliability `score` is success rate.
 
@@ -94,6 +94,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
 | `--seed` | 0 | Shared sequence stamp |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
+| `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
