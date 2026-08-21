@@ -91,6 +91,7 @@ def test_report_makes_winner_obvious() -> None:
     assert summary.index("fast") < summary.index("Failed")
     first_rank_line = [ln for ln in ranking.splitlines() if ln.strip()][1]
     assert "fast" in first_rank_line
+    assert "jitter=" in first_rank_line
     assert "timeout: took too long" in text
     assert "missed     dead (timeout)" in text
     assert "↳ Next:" not in text
@@ -237,6 +238,9 @@ def test_bimodal_histogram_is_visible() -> None:
     assert "jitter=" in text
     assert "hist  <50ms=8  <100ms=0  <250ms=0  <1s=8  ≥1s=0" in text
     providers = text.split("Providers", 1)[1]
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "jitter=" in ranking
+    assert "<50ms=8" in providers
     assert "<50ms=8" in providers
     assert "<1s=8" in providers
     assert "<100ms=0" in providers

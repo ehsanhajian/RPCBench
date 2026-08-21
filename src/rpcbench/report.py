@@ -367,6 +367,7 @@ def _ranking_line(
         return (
             f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
             f"{classes}  {_rank_metric_text(stats, rank_by)}{extra_mean}{extra_p95}"
+            f"  jitter={_jitter_text(stats.jitter_ms)}"
         )
     err = _last_error(outcome)
     extra = f"  {err}" if err else ""
