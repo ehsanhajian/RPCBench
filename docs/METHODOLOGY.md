@@ -1,0 +1,33 @@
+# Methodology
+
+What RPCBench numbers are — and what they are not. Tool split: [BOUNDARY.md](BOUNDARY.md).
+
+## Clocks and samples
+
+Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitter, min/mean/max, and the histogram use **successful** samples only. Error rate is failed/attempted.
+
+## Paired compare
+
+Default compare is **paired**: one shared read-only sequence; each sample is raced to every provider. `--sequential` is A-then-B (heads and caches can drift).
+
+## Ranking and similar-band
+
+Default rank key is **P95** of successes (`--rank-by` for p50, p99, mean, or rps).
+
+**Similar-band** (default **10%**, `--similar-band 0.10`): two values are similar if the worse is within that fraction of the better. Similar endpoints **share a place**. Fastest is that place-1 set. 81ms vs 84ms is not a victory.
+
+An endpoint whose **error rate is above the same band** does not get a numbered place or Fastest. It is listed after placed rows as `~`. Failed endpoints (`n_ok=0`) stay last.
+
+We use this documented band instead of bootstrap confidence intervals. Typical `--samples 10` is too small for a stable P95 CI.
+
+## P99
+
+Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
+
+## Jitter and histogram
+
+Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.
+
+## Non-claims
+
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential `rps` is `1000 / mean_ms`, not parallel throughput.

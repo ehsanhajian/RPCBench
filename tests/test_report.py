@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from rpcbench.config import Endpoint
-from rpcbench.report import color_enabled, format_run, rank_outcomes
+from rpcbench.report import color_enabled, format_run, place_outcomes, rank_outcomes
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, summarize
 
@@ -76,8 +76,8 @@ def test_report_makes_winner_obvious() -> None:
     assert "Capabilities" in text
     assert "Fastest  fast" in text
     assert "Rank by p95" in text
-    assert "Mode      paired" in text
-    assert "Ranking  (by p95; failed last)" in text
+    assert "similar 10%" in text
+    assert "Ranking  (by p95; similar within 10%; ~ high err; failed last)" in text
     assert "Failed   1/3    dead" in text
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
@@ -186,12 +186,12 @@ def test_failed_never_takes_winner_slot() -> None:
     assert lines[2].strip().startswith("—") or "  —" in lines[2]
 
 
-def test_partial_success_sorts_with_ok_group() -> None:
+def test_partial_success_does_not_outrank_solid() -> None:
     flaky = _outcome("flaky", (_ok(8.0), _fail(), _fail()))
     solid = _outcome("solid", (_ok(20.0), _ok(22.0), _ok(24.0)))
     dead = _outcome("dead", (_fail(),))
     ranked = rank_outcomes(_result(solid, dead, flaky))
-    assert [o.endpoint.name for o in ranked] == ["flaky", "solid", "dead"]
+    assert [o.endpoint.name for o in ranked] == ["solid", "flaky", "dead"]
 
 
 def test_color_ok_green_fail_red() -> None:
@@ -244,3 +244,50 @@ def test_bimodal_histogram_is_visible() -> None:
     assert "<50ms=8" in providers
     assert "<1s=8" in providers
     assert "<100ms=0" in providers
+
+
+def test_close_p95_is_similar_not_a_false_winner() -> None:
+    a = _outcome("a", (_ok(81.0), _ok(81.0)))
+    b = _outcome("b", (_ok(84.0), _ok(84.0)))
+    result = _result(a, b)
+    placed = place_outcomes(result)
+    assert [row.rank for row in placed] == [1, 1]
+    assert all(row.similar for row in placed)
+    text = format_run(result, color=False)
+    assert "Fastest  a, b" in text
+    assert "similar within 10% p95" in text
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert ranking.count("  1  ") >= 2
+
+
+def test_far_p95_gets_distinct_places() -> None:
+    slow = _outcome("slow", (_ok(200.0), _ok(200.0)))
+    fast = _outcome("fast", (_ok(81.0), _ok(81.0)))
+    placed = place_outcomes(_result(slow, fast))
+    assert [row.outcome.endpoint.name for row in placed] == ["fast", "slow"]
+    assert [row.rank for row in placed] == [1, 2]
+    assert not any(row.similar for row in placed)
+
+
+def test_high_error_does_not_take_a_place() -> None:
+    merkle = _outcome("merkle", tuple([_ok(8.0)] * 2 + [_fail("http_4xx", "no")] * 8))
+    solid = _outcome("solid", tuple([_ok(20.0)] * 10))
+    placed = place_outcomes(_result(merkle, solid))
+    assert [row.outcome.endpoint.name for row in placed] == ["solid", "merkle"]
+    assert placed[0].rank == 1
+    assert placed[1].rank is None
+    assert placed[1].reliable is False
+    text = format_run(_result(merkle, solid), color=False)
+    assert "Fastest  solid" in text
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "~" in ranking
+    assert "merkle" in ranking
+
+
+def test_p99_flagged_when_n_too_small() -> None:
+    text = format_run(_result(_outcome("a", (_ok(10.0), _ok(12.0)))), color=False)
+    assert "need ≥100" in text
+    assert "P99 is the slowest sample until n≥100" in text
+    hundred = _outcome("big", tuple(_ok(10.0) for _ in range(100)))
+    text_ok = format_run(_result(hundred), color=False)
+    assert "need ≥100" not in text_ok.split("Providers", 1)[1]

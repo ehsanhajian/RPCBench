@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 from rpcbench import __version__
@@ -13,6 +15,8 @@ from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, 
 SCHEMA_VERSION = 1
 
 DEFAULT_RANK_BY = "p95"
+DEFAULT_SIMILAR_BAND = 0.10
+P99_MIN_N = 100
 RANK_BY_KEYS = ("p50", "p95", "p99", "mean", "rps")
 RANK_BY_ALIASES = {"throughput": "rps"}
 _RANK_LABELS = {
@@ -41,6 +45,122 @@ def normalize_rank_by(raw: str) -> str:
     return key
 
 
+def normalize_similar_band(raw: float) -> float:
+    if raw < 0 or raw > 1:
+        raise RankError("--similar-band must be between 0 and 1 (default 0.10 = 10%)")
+    return raw
+
+
+def p99_reliable(n_ok: int) -> bool:
+    """Nearest-rank P99 is the max until n ≥ 100."""
+    return n_ok >= P99_MIN_N
+
+
+def values_similar(
+    left: float, right: float, band: float, *, higher_is_better: bool
+) -> bool:
+    if left == right:
+        return True
+    lo, hi = (left, right) if left <= right else (right, left)
+    better = hi if higher_is_better else lo
+    if better == 0:
+        return hi == 0
+    return (hi - lo) / better <= band
+
+
+def reliable_for_place(stats: Any, similar_band: float) -> bool:
+    if stats.n_ok == 0:
+        return False
+    if stats.error_rate is not None and stats.error_rate > similar_band:
+        return False
+    return True
+
+
+@dataclass(frozen=True)
+class RankedPlace:
+    outcome: EndpointOutcome
+    rank: int | None
+    similar: bool
+    reliable: bool
+    p99_reliable: bool
+
+
+def rank_outcomes(
+    result: RunResult,
+    *,
+    rank_by: str = DEFAULT_RANK_BY,
+    similar_band: float = DEFAULT_SIMILAR_BAND,
+) -> tuple[EndpointOutcome, ...]:
+    """Reliable by rank key, then high-error rows, then failures. Config order on ties."""
+    return tuple(
+        row.outcome
+        for row in place_outcomes(
+            result, rank_by=rank_by, similar_band=similar_band
+        )
+    )
+
+
+def place_outcomes(
+    result: RunResult,
+    *,
+    rank_by: str = DEFAULT_RANK_BY,
+    similar_band: float = DEFAULT_SIMILAR_BAND,
+) -> tuple[RankedPlace, ...]:
+    key_name = normalize_rank_by(rank_by)
+    band = normalize_similar_band(similar_band)
+    higher = key_name == "rps"
+
+    def sort_key(item: tuple[int, EndpointOutcome]) -> tuple[int, float, float, int]:
+        index, outcome = item
+        stats = outcome.stats
+        value = _rank_value(stats, key_name)
+        if value is None:
+            return (2, 0.0, 0.0, index)
+        tier = 0 if reliable_for_place(stats, band) else 1
+        mean = stats.mean_ms if stats.mean_ms is not None else 0.0
+        if higher:
+            return (tier, -value, mean, index)
+        return (tier, value, mean, index)
+
+    ordered = [outcome for _, outcome in sorted(enumerate(result.outcomes), key=sort_key)]
+    rows: list[RankedPlace] = []
+    next_place = 1
+    leader_val: float | None = None
+    leader_place: int | None = None
+    for outcome in ordered:
+        stats = outcome.stats
+        value = _rank_value(stats, key_name)
+        p99_ok = p99_reliable(stats.n_ok)
+        if value is None:
+            rows.append(RankedPlace(outcome, None, False, False, p99_ok))
+            continue
+        if not reliable_for_place(stats, band):
+            rows.append(RankedPlace(outcome, None, False, False, p99_ok))
+            continue
+        if leader_val is not None and values_similar(
+            leader_val, value, band, higher_is_better=higher
+        ):
+            rows.append(RankedPlace(outcome, leader_place, True, True, p99_ok))
+            continue
+        leader_val = value
+        leader_place = next_place
+        next_place += 1
+        rows.append(RankedPlace(outcome, leader_place, False, True, p99_ok))
+    counts = Counter(row.rank for row in rows if row.rank is not None)
+    return tuple(
+        RankedPlace(
+            row.outcome,
+            row.rank,
+            counts.get(row.rank, 0) > 1,
+            row.reliable,
+            row.p99_reliable,
+        )
+        if row.rank is not None
+        else row
+        for row in rows
+    )
+
+
 def color_enabled(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return explicit
@@ -56,27 +176,6 @@ def _paint(text: str, *codes: str, enabled: bool) -> str:
         return text
     prefix = ";".join(codes)
     return f"\033[{prefix}m{text}\033[0m"
-
-
-def rank_outcomes(
-    result: RunResult, *, rank_by: str = DEFAULT_RANK_BY
-) -> tuple[EndpointOutcome, ...]:
-    """Successful endpoints by rank key, then failures in config order."""
-    key_name = normalize_rank_by(rank_by)
-
-    def key(item: tuple[int, EndpointOutcome]) -> tuple[int, float, float, int]:
-        index, outcome = item
-        stats = outcome.stats
-        value = _rank_value(stats, key_name)
-        if value is None:
-            return (1, 0.0, 0.0, index)
-        mean = stats.mean_ms if stats.mean_ms is not None else 0.0
-        if key_name == "rps":
-            return (0, -value, mean, index)
-        return (0, value, mean, index)
-
-    indexed = list(enumerate(result.outcomes))
-    return tuple(outcome for _, outcome in sorted(indexed, key=key))
 
 
 def _rank_value(stats: Any, rank_by: str) -> float | None:
@@ -98,24 +197,24 @@ def _rank_value(stats: Any, rank_by: str) -> float | None:
 
 
 def run_to_dict(
-    result: RunResult, *, rank_by: str = DEFAULT_RANK_BY
+    result: RunResult,
+    *,
+    rank_by: str = DEFAULT_RANK_BY,
+    similar_band: float = DEFAULT_SIMILAR_BAND,
 ) -> dict[str, Any]:
     """Stable JSON object. Redacted URL + hash only; complete enough to rebuild the CLI summary."""
     rank_by = normalize_rank_by(rank_by)
-    ranked = rank_outcomes(result, rank_by=rank_by)
+    band = normalize_similar_band(similar_band)
+    placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
+    ranked = tuple(row.outcome for row in placed)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
+    winners = [row for row in placed if row.rank == 1]
     ranking: list[dict[str, Any]] = []
     providers: list[dict[str, Any]] = []
-    rank_n = 0
-    for outcome in ranked:
-        if outcome.stats.n_ok:
-            rank_n += 1
-            rank: int | None = rank_n
-        else:
-            rank = None
-        ranking.append(_ranking_entry(outcome, rank, rank_by))
-        providers.append(_provider_entry(outcome, rank, result.method))
+    for row in placed:
+        ranking.append(_ranking_entry(row, rank_by))
+        providers.append(_provider_entry(row, result.method))
     return {
         "tool": "rpcbench",
         "version": __version__,
@@ -132,9 +231,12 @@ def run_to_dict(
         "seed": result.seed,
         "sequence_id": result.sequence_id,
         "rank_by": rank_by,
+        "similar_band": band,
         "histogram_buckets": _histogram_bucket_defs(),
         "summary": {
-            "fastest": ok_rows[0].endpoint.name if ok_rows else None,
+            "fastest": winners[0].outcome.endpoint.name if len(winners) == 1 else None,
+            "fastest_names": [row.outcome.endpoint.name for row in winners],
+            "fastest_similar": len(winners) > 1,
             "ok": len(ok_rows),
             "failed": len(fail_rows),
             "failed_names": [o.endpoint.name for o in fail_rows],
@@ -165,8 +267,20 @@ def run_to_dict(
     }
 
 
-def format_json(result: RunResult, *, rank_by: str = DEFAULT_RANK_BY) -> str:
-    return json.dumps(run_to_dict(result, rank_by=rank_by), indent=2, allow_nan=False) + "\n"
+def format_json(
+    result: RunResult,
+    *,
+    rank_by: str = DEFAULT_RANK_BY,
+    similar_band: float = DEFAULT_SIMILAR_BAND,
+) -> str:
+    return (
+        json.dumps(
+            run_to_dict(result, rank_by=rank_by, similar_band=similar_band),
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    )
 
 
 def format_run(
@@ -175,14 +289,18 @@ def format_run(
     verbose: bool = False,
     color: bool | None = None,
     rank_by: str = DEFAULT_RANK_BY,
+    similar_band: float = DEFAULT_SIMILAR_BAND,
 ) -> str:
     rank_by = normalize_rank_by(rank_by)
+    band = normalize_similar_band(similar_band)
     use_color = color_enabled(color)
-    ranked = rank_outcomes(result, rank_by=rank_by)
+    placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
+    ranked = tuple(row.outcome for row in placed)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     params = f" {list(result.params)}" if result.params else ""
     label = _RANK_LABELS[rank_by]
+    band_pct = f"{100 * band:.0f}%"
     lines = [
         "RPCBench",
         "=" * 72,
@@ -190,14 +308,16 @@ def format_run(
         f"Samples   {result.samples} after {result.warmup} warmup  ·  "
         f"Timeout {result.timeout:g}s  ·  "
         f"Budget {result.budget} ({result.budget_remaining} left)  ·  "
-        f"Rank by {label}",
+        f"Rank by {label}  ·  similar {band_pct}",
         f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
         f"seq={result.sequence_id or '—'}  ·  "
         f"concurrency={_concurrency_label(result.concurrency)}",
         "",
         "Summary",
     ]
-    lines.extend(_summary_lines(ok_rows, fail_rows, len(result.outcomes), use_color, rank_by))
+    lines.extend(
+        _summary_lines(placed, fail_rows, len(result.outcomes), use_color, rank_by, band)
+    )
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
         [
@@ -206,48 +326,65 @@ def format_run(
         ]
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
-    lines.extend(["", f"Ranking  (by {label}; failed last)"])
-    rank_n = 0
-    for outcome in ranked:
-        if outcome.stats.n_ok:
-            rank_n += 1
-            mark = f"{rank_n:>3}"
+    lines.extend(
+        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err; failed last)"]
+    )
+    for row in placed:
+        if row.rank is not None:
+            mark = f"{row.rank:>3}"
+        elif row.outcome.stats.n_ok:
+            mark = "  ~"
         else:
             mark = "  —"
-        lines.append(_ranking_line(outcome, mark, name_w, use_color, rank_by))
+        lines.append(_ranking_line(row.outcome, mark, name_w, use_color, rank_by))
     lines.extend(["", "Providers"])
     for outcome in ranked:
         lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
     lines.extend(["", "Capabilities"])
     lines.extend(_capability_lines(result, ranked))
     lines.append("")
+    extra_p99 = ""
+    if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
+        extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}"
     lines.append(
         f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded  ·  "
         "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
-        "and histogram of successful samples"
+        f"and histogram of successful samples  ·  similar-band {band_pct}"
+        f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
 
 
 def _summary_lines(
-    ok_rows: list[EndpointOutcome],
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
     fail_rows: list[EndpointOutcome],
     total: int,
     use_color: bool,
     rank_by: str,
+    similar_band: float,
 ) -> list[str]:
     lines: list[str] = []
-    if ok_rows:
-        fastest = ok_rows[0]
-        stats = fastest.stats
-        name = _paint(fastest.endpoint.name, _BOLD, _GREEN, enabled=use_color)
+    winners = [row for row in placed if row.rank == 1]
+    if winners:
+        names = ", ".join(
+            _paint(row.outcome.endpoint.name, _BOLD, _GREEN, enabled=use_color)
+            for row in winners
+        )
+        stats = winners[0].outcome.stats
         bits = [_rank_metric_text(stats, rank_by)]
         if rank_by != "mean":
             bits.append(f"mean={stats.mean_ms:.1f}ms")
         if rank_by != "p95":
             bits.append(f"p95={stats.p95_ms:.1f}ms")
         bits.append(f"err={_pct(stats.error_rate)}")
-        lines.append(f"  Fastest  {name}  " + "  ".join(bits))
+        extra = ""
+        if len(winners) > 1:
+            extra = (
+                f"  (similar within {100 * similar_band:.0f}% {_RANK_LABELS[rank_by]})"
+            )
+        lines.append(f"  Fastest  {names}  " + "  ".join(bits) + extra)
+    elif any(row.outcome.stats.n_ok for row in placed):
+        lines.append("  Fastest  none  (no reliable place)")
     else:
         lines.append("  Fastest  none  (all endpoints failed)")
     if fail_rows:
@@ -318,6 +455,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         "p50_ms": stats.p50_ms,
         "p95_ms": stats.p95_ms,
         "p99_ms": stats.p99_ms,
+        "p99_reliable": p99_reliable(stats.n_ok),
         "jitter_ms": stats.jitter_ms,
         "histogram": _histogram_json(stats.histogram),
         "rps": rps,
@@ -399,9 +537,11 @@ def _provider_lines(
             f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms  "
             f"jitter={_jitter_text(stats.jitter_ms)}"
         )
+        p99 = f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
+        if not p99_reliable(stats.n_ok):
+            p99 += f"; need ≥{P99_MIN_N}"
         lines.append(
-            f"{indent}p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  "
-            f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
+            f"{indent}p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  {p99}"
         )
         lines.append(f"{indent}hist  {_histogram_text(stats.histogram)}")
     else:
@@ -448,12 +588,13 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
     return lines
 
 
-def _ranking_entry(
-    outcome: EndpointOutcome, rank: int | None, rank_by: str
-) -> dict[str, Any]:
+def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
+    outcome = row.outcome
     stats = outcome.stats
     return {
-        "rank": rank,
+        "rank": row.rank,
+        "similar": row.similar,
+        "reliable": row.reliable,
         "name": outcome.endpoint.name,
         "ok": stats.n_ok > 0,
         "n_ok": stats.n_ok,
@@ -464,6 +605,7 @@ def _ranking_entry(
         "p50_ms": stats.p50_ms,
         "p95_ms": stats.p95_ms,
         "p99_ms": stats.p99_ms,
+        "p99_reliable": row.p99_reliable,
         "jitter_ms": stats.jitter_ms,
         "rps": (1000.0 / stats.mean_ms) if stats.mean_ms else None,
         "rank_by": rank_by,
@@ -472,9 +614,8 @@ def _ranking_entry(
     }
 
 
-def _provider_entry(
-    outcome: EndpointOutcome, rank: int | None, method: str
-) -> dict[str, Any]:
+def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
+    outcome = row.outcome
     stats = outcome.stats
     success = _success_rate(stats.error_rate)
     rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
@@ -482,7 +623,9 @@ def _provider_entry(
         "name": outcome.endpoint.name,
         "url": outcome.endpoint.display_url,
         "id": outcome.endpoint.url_id,
-        "rank": rank,
+        "rank": row.rank,
+        "similar": row.similar,
+        "reliable": row.reliable,
         "ok": stats.n_ok > 0,
         "performance": {
             "n_ok": stats.n_ok,
@@ -493,6 +636,7 @@ def _provider_entry(
             "p50_ms": stats.p50_ms,
             "p95_ms": stats.p95_ms,
             "p99_ms": stats.p99_ms,
+            "p99_reliable": row.p99_reliable,
             "jitter_ms": stats.jitter_ms,
             "rps": rps,
             "histogram": _histogram_json(stats.histogram),

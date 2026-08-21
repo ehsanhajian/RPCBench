@@ -14,6 +14,7 @@
   "seed": 0,
   "sequence_id": "",
   "rank_by": "p95",
+  "similar_band": 0.1,
   "histogram_buckets": [
     {
       "label": "<50ms",
@@ -38,6 +39,10 @@
   ],
   "summary": {
     "fastest": "fast",
+    "fastest_names": [
+      "fast"
+    ],
+    "fastest_similar": false,
     "ok": 2,
     "failed": 1,
     "failed_names": [
@@ -55,6 +60,7 @@
       "p50_ms": 40.0,
       "p95_ms": 50.0,
       "p99_ms": 50.0,
+      "p99_reliable": false,
       "jitter_ms": 7.0710678118654755,
       "histogram": [
         {
@@ -101,6 +107,7 @@
       "p50_ms": 10.0,
       "p95_ms": 12.0,
       "p99_ms": 12.0,
+      "p99_reliable": false,
       "jitter_ms": 1.4142135623730951,
       "histogram": [
         {
@@ -147,6 +154,7 @@
       "p50_ms": null,
       "p95_ms": null,
       "p99_ms": null,
+      "p99_reliable": false,
       "jitter_ms": null,
       "histogram": [
         {
@@ -187,6 +195,8 @@
   "ranking": [
     {
       "rank": 1,
+      "similar": false,
+      "reliable": true,
       "name": "fast",
       "ok": true,
       "n_ok": 2,
@@ -197,6 +207,7 @@
       "p50_ms": 10.0,
       "p95_ms": 12.0,
       "p99_ms": 12.0,
+      "p99_reliable": false,
       "jitter_ms": 1.4142135623730951,
       "rps": 90.9090909090909,
       "rank_by": "p95",
@@ -205,6 +216,8 @@
     },
     {
       "rank": 2,
+      "similar": false,
+      "reliable": true,
       "name": "slow",
       "ok": true,
       "n_ok": 2,
@@ -215,6 +228,7 @@
       "p50_ms": 40.0,
       "p95_ms": 50.0,
       "p99_ms": 50.0,
+      "p99_reliable": false,
       "jitter_ms": 7.0710678118654755,
       "rps": 22.22222222222222,
       "rank_by": "p95",
@@ -223,6 +237,8 @@
     },
     {
       "rank": null,
+      "similar": false,
+      "reliable": false,
       "name": "dead",
       "ok": false,
       "n_ok": 0,
@@ -235,6 +251,7 @@
       "p50_ms": null,
       "p95_ms": null,
       "p99_ms": null,
+      "p99_reliable": false,
       "jitter_ms": null,
       "rps": null,
       "rank_by": "p95",
@@ -248,6 +265,8 @@
       "url": "http://127.0.0.1/fast",
       "id": "cd87bc2f0598",
       "rank": 1,
+      "similar": false,
+      "reliable": true,
       "ok": true,
       "performance": {
         "n_ok": 2,
@@ -258,6 +277,7 @@
         "p50_ms": 10.0,
         "p95_ms": 12.0,
         "p99_ms": 12.0,
+        "p99_reliable": false,
         "jitter_ms": 1.4142135623730951,
         "rps": 90.9090909090909,
         "histogram": [
@@ -326,6 +346,8 @@
       "url": "http://127.0.0.1/slow",
       "id": "7bf1deb8ca9b",
       "rank": 2,
+      "similar": false,
+      "reliable": true,
       "ok": true,
       "performance": {
         "n_ok": 2,
@@ -336,6 +358,7 @@
         "p50_ms": 40.0,
         "p95_ms": 50.0,
         "p99_ms": 50.0,
+        "p99_reliable": false,
         "jitter_ms": 7.0710678118654755,
         "rps": 22.22222222222222,
         "histogram": [
@@ -404,6 +427,8 @@
       "url": "http://127.0.0.1/dead",
       "id": "6012748c2a5d",
       "rank": null,
+      "similar": false,
+      "reliable": false,
       "ok": false,
       "performance": {
         "n_ok": 0,
@@ -414,6 +439,7 @@
         "p50_ms": null,
         "p95_ms": null,
         "p99_ms": null,
+        "p99_reliable": false,
         "jitter_ms": null,
         "rps": null,
         "histogram": [

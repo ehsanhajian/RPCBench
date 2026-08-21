@@ -9,7 +9,7 @@ from pathlib import Path
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.methods import MethodError, resolve_method
-from rpcbench.report import RankError, format_json, format_run, normalize_rank_by
+from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 
@@ -119,6 +119,13 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Ranking key: p95 (default), p50, p99, mean, or rps (throughput). Failed endpoints are listed last.",
     )
     run.add_argument(
+        "--similar-band",
+        type=float,
+        default=0.10,
+        metavar="FRAC",
+        help="Relative similar-band on the rank key (default: 0.10 = 10%%). High error rate above this band is not a numbered place.",
+    )
+    run.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -183,6 +190,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     try:
         rank_by = normalize_rank_by(args.rank_by)
+        similar_band = normalize_similar_band(args.similar_band)
     except RankError as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
@@ -199,7 +207,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         seed=args.seed,
         concurrency=args.concurrency,
     )
-    payload = format_json(result, rank_by=rank_by) if (args.json or args.output) else None
+    payload = format_json(result, rank_by=rank_by, similar_band=similar_band) if (args.json or args.output) else None
     if args.output:
         path = Path(args.output)
         try:
@@ -210,7 +218,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.json:
         sys.stdout.write(payload or "")
     else:
-        sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by))
+        sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1
