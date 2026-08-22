@@ -8,7 +8,7 @@ from pathlib import Path
 
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
-from rpcbench.methods import MethodError, resolve_method
+from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
@@ -51,7 +51,13 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--preset",
         default=None,
         metavar="NAME",
-        help="Read-only method pack: head, chainId, or balance",
+        help="Read-only method pack: head, chainId, or balance. Do not combine with --profile.",
+    )
+    run.add_argument(
+        "--profile",
+        default=None,
+        metavar="NAME",
+        help="Workload profile: mix (head, chainId, block, balance, call, bounded logs)",
     )
     run.add_argument(
         "--params",
@@ -68,7 +74,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--samples",
         type=int,
         default=10,
-        help="Timed samples per endpoint after warmup (default: 10)",
+        help="Timed samples per method after warmup (default: 10)",
     )
     run.add_argument(
         "--warmup",
@@ -162,14 +168,30 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
         return 2
     try:
-        check_budget(args.budget)
         config = load_targets(args.endpoints)
-        method, params = resolve_method(
+        method, workload = resolve_workload(
+            profile=args.profile,
             method=args.method,
             preset=args.preset,
             params_json=args.params,
             allow_writes=args.allow_writes,
         )
+        needed = (
+            len(config.endpoints)
+            * len(workload)
+            * (args.samples + args.warmup)
+        )
+        budget = args.budget
+        if args.profile == "mix" and needed > budget:
+            if args.budget == 128:
+                budget = needed
+            else:
+                raise SafetyError(
+                    f"mix needs {needed} requests "
+                    f"({len(workload)} methods × {args.samples + args.warmup} × "
+                    f"{len(config.endpoints)} endpoints); pass --budget {needed}"
+                )
+        check_budget(budget)
     except (ConfigError, MethodError, SafetyError, RankError) as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
@@ -194,6 +216,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     except RankError as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
+    params = list(workload[0].params) if len(workload) == 1 else []
     result = run_endpoints(
         config,
         method=method,
@@ -201,7 +224,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         samples=args.samples,
         warmup=args.warmup,
         timeout=args.timeout,
-        budget=args.budget,
+        budget=budget,
+        workload=workload,
+        profile="mix" if method == "mix" else "single",
         max_duration=args.max_duration,
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,

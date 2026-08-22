@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from rpcbench.methods import PRESETS, MethodError, _WRITE_PREFIXES, resolve_method
+from rpcbench.methods import (
+    MIX_PROFILE,
+    PRESETS,
+    MethodError,
+    _WRITE_PREFIXES,
+    resolve_method,
+    resolve_workload,
+)
 
 
 def test_default_is_eth_blockNumber() -> None:
@@ -62,3 +69,43 @@ def test_params_must_be_json_array() -> None:
     )
     assert method == "eth_getBalance"
     assert params == ["0x0", "latest"]
+
+
+def test_mix_profile_has_head_state_call_logs() -> None:
+    names = {spec.name for spec in MIX_PROFILE}
+    methods = {spec.method for spec in MIX_PROFILE}
+    assert names >= {"head", "balance", "call", "logs"}
+    assert methods >= {
+        "eth_blockNumber",
+        "eth_getBalance",
+        "eth_call",
+        "eth_getLogs",
+    }
+    logs = next(spec for spec in MIX_PROFILE if spec.name == "logs")
+    filt = logs.params[0]
+    assert isinstance(filt, dict)
+    assert filt["fromBlock"] == "latest"
+    assert filt["toBlock"] == "latest"
+    assert "address" in filt
+
+
+def test_resolve_workload_mix() -> None:
+    label, steps = resolve_workload(
+        profile="mix", method=None, preset=None, params_json=None
+    )
+    assert label == "mix"
+    assert steps == MIX_PROFILE
+
+
+def test_profile_conflicts_with_method() -> None:
+    with pytest.raises(MethodError, match="without --method"):
+        resolve_workload(
+            profile="mix", method="eth_chainId", preset=None, params_json=None
+        )
+
+
+def test_profile_rejects_params() -> None:
+    with pytest.raises(MethodError, match="fixed"):
+        resolve_workload(
+            profile="mix", method=None, preset=None, params_json="[]"
+        )

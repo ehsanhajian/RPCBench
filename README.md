@@ -26,6 +26,7 @@ PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --
 
 ```bash
 rpcbench compare --endpoints https://ethereum.publicnode.com --samples 5 --warmup 1
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget 512
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -58,8 +59,9 @@ The CLI prints, in order:
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
 2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place)
 3. **Ranking** — ordered by `--rank-by`; similar share a place; high error is `~`; failed last
-4. **Providers** — redacted URL + `id=` hash, samples, errors, jitter, histogram
-5. **Capabilities** — who answered this method
+4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
+5. **Providers** — redacted URL + `id=` hash, samples, errors, jitter, histogram
+6. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -70,7 +72,8 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 - **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
 - **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
-- **Ranking** is P95 of successes. Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
+- **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **Ranking** is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
 - **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
 - **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, and `histogram`. Reliability `score` is success rate.
 
@@ -78,6 +81,7 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 
 ```bash
 rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head
+rpcbench run --endpoints endpoints.yaml --profile mix --budget 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --sequential
@@ -86,7 +90,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--samples` | 10 | Timed requests per endpoint after warmup |
+| `--samples` | 10 | Timed requests per method after warmup |
 | `--warmup` | 1 | Requests excluded from stats |
 | `--timeout` | 10s | Per-request timeout |
 | `--budget` | 128 | Max HTTP requests for the whole run (hard cap `RPCBENCH_MAX_REQUESTS`, default 10000) |
@@ -96,6 +100,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
+| `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Print each sample |

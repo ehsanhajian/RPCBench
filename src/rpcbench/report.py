@@ -221,6 +221,15 @@ def run_to_dict(
         "schema": SCHEMA_VERSION,
         "method": result.method,
         "params": list(result.params),
+        "profile": result.profile,
+        "workload": [
+            {
+                "name": spec.name,
+                "method": spec.method,
+                "params": list(spec.params),
+            }
+            for spec in result.workload
+        ],
         "samples": result.samples,
         "warmup": result.warmup,
         "timeout": result.timeout,
@@ -245,6 +254,7 @@ def run_to_dict(
             _comparison_entry(outcome, result.method) for outcome in result.outcomes
         ],
         "ranking": ranking,
+        "methods": _methods_json(result),
         "providers": providers,
         "capabilities": {
             "method": result.method,
@@ -301,10 +311,12 @@ def format_run(
     params = f" {list(result.params)}" if result.params else ""
     label = _RANK_LABELS[rank_by]
     band_pct = f"{100 * band:.0f}%"
+    method_line = _method_header(result, params)
+    compare_what = "mix" if result.profile == "mix" else result.method
     lines = [
         "RPCBench",
         "=" * 72,
-        f"Method    {result.method}{params}",
+        method_line,
         f"Samples   {result.samples} after {result.warmup} warmup  ·  "
         f"Timeout {result.timeout:g}s  ·  "
         f"Budget {result.budget} ({result.budget_remaining} left)  ·  "
@@ -322,7 +334,7 @@ def format_run(
     lines.extend(
         [
             "",
-            f"Comparison  (config order · {result.mode} · same {result.method}, samples, and budget)",
+            f"Comparison  (config order · {result.mode} · same {compare_what}, samples, and budget)",
         ]
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
@@ -337,6 +349,9 @@ def format_run(
         else:
             mark = "  —"
         lines.append(_ranking_line(row.outcome, mark, name_w, use_color, rank_by))
+    if result.profile == "mix" or len(result.workload) > 1:
+        lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
+        lines.extend(_methods_lines(result, name_w, use_color))
     lines.extend(["", "Providers"])
     for outcome in ranked:
         lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
@@ -393,6 +408,64 @@ def _summary_lines(
     else:
         lines.append(f"  Failed   0/{total}")
     return lines
+
+
+def _method_header(result: RunResult, params: str) -> str:
+    if result.profile == "mix" and result.workload:
+        steps = ", ".join(spec.name for spec in result.workload)
+        return f"Method    mix  ·  {steps}"
+    return f"Method    {result.method}{params}"
+
+
+def _methods_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    step_w = max((len(spec.name) for spec in result.workload), default=4)
+    method_w = max((len(spec.method) for spec in result.workload), default=6)
+    header = (
+        f"  {'endpoint':<{name_w}}  {'step':<{step_w}}  {'method':<{method_w}}  "
+        f"{'n':>7}  {'err':>4}  {'p50':>8}  {'p95':>8}  {'p99':>8}"
+    )
+    lines = [header]
+    lookup = {spec.name: spec.method for spec in result.workload}
+    for outcome in result.outcomes:
+        hue = _GREEN if outcome.stats.n_ok else _RED
+        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        for step, stats in outcome.by_method:
+            attempted = stats.n_ok + stats.n_fail
+            n = f"{stats.n_ok}/{attempted}" if attempted else "—"
+            p99 = _cell_ms(stats.p99_ms)
+            lines.append(
+                f"  {name}  {step:<{step_w}}  {lookup.get(step, step):<{method_w}}  "
+                f"{n:>7}  {_pct(stats.error_rate):>4}  "
+                f"{_cell_ms(stats.p50_ms):>8}  {_cell_ms(stats.p95_ms):>8}  "
+                f"{p99:>8}"
+            )
+    return lines
+
+
+def _methods_json(result: RunResult) -> list[dict[str, Any]]:
+    lookup = {spec.name: spec.method for spec in result.workload}
+    rows: list[dict[str, Any]] = []
+    for outcome in result.outcomes:
+        for step, stats in outcome.by_method:
+            rows.append(
+                {
+                    "name": outcome.endpoint.name,
+                    "step": step,
+                    "method": lookup.get(step, step),
+                    "n_ok": stats.n_ok,
+                    "n_fail": stats.n_fail,
+                    "error_rate": stats.error_rate,
+                    "p50_ms": stats.p50_ms,
+                    "p95_ms": stats.p95_ms,
+                    "p99_ms": stats.p99_ms,
+                    "p99_reliable": p99_reliable(stats.n_ok),
+                    "mean_ms": stats.mean_ms,
+                    "jitter_ms": stats.jitter_ms,
+                }
+            )
+    return rows
 
 
 def _comparison_lines(
@@ -560,13 +633,14 @@ def _provider_lines(
 def _sample_lines(hits: tuple, indent: str) -> list[str]:
     lines: list[str] = []
     for i, hit in enumerate(hits, start=1):
+        tag = f"  {hit.method}" if hit.method else ""
         if hit.ok and hit.latency_ms is not None:
-            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms")
+            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms{tag}")
         else:
             cls = hit.error_class or "error"
             msg = hit.error or ""
             lat = f"{hit.latency_ms:.1f}ms  " if hit.latency_ms is not None else ""
-            lines.append(f"{indent}  {i:>3}  {lat}{cls}  {msg}".rstrip())
+            lines.append(f"{indent}  {i:>3}  {lat}{cls}  {msg}{tag}".rstrip())
     return lines
 
 
@@ -667,6 +741,7 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "error": hit.error,
         "error_class": hit.error_class,
         "attempts": hit.attempts,
+        "method": hit.method,
     }
 
 

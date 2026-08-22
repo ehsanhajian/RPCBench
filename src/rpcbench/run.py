@@ -7,9 +7,10 @@ import json
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from rpcbench.config import BenchConfig, Endpoint
+from rpcbench.methods import CallSpec
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
 
 
@@ -54,6 +55,7 @@ class EndpointOutcome:
     warmup: tuple[ProbeResult, ...]
     samples: tuple[ProbeResult, ...]
     stats: LatencyStats
+    by_method: tuple[tuple[str, LatencyStats], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,8 @@ class RunResult:
     sequence_id: str = ""
     pairs: tuple[PairRecord, ...] = ()
     concurrency: int = 0
+    profile: str = "single"
+    workload: tuple[CallSpec, ...] = ()
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -99,6 +103,7 @@ def make_sequence_id(
     params: list[object],
     warmup: int,
     samples: int,
+    workload: list[object] | None = None,
 ) -> str:
     blob = json.dumps(
         {
@@ -107,6 +112,7 @@ def make_sequence_id(
             "params": params,
             "warmup": warmup,
             "samples": samples,
+            **({"workload": workload} if workload else {}),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -187,6 +193,50 @@ def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
     )
 
 
+def expand_steps(
+    workload: tuple[CallSpec, ...], warmup: int, samples: int
+) -> list[tuple[str, int, CallSpec]]:
+    """Warmup rounds of the mix, then timed rounds. Index is per-kind."""
+    steps: list[tuple[str, int, CallSpec]] = []
+    warm_i = 0
+    for _ in range(warmup):
+        for spec in workload:
+            steps.append(("warmup", warm_i, spec))
+            warm_i += 1
+    sample_i = 0
+    for _ in range(samples):
+        for spec in workload:
+            steps.append(("sample", sample_i, spec))
+            sample_i += 1
+    return steps
+
+
+def _tag(hit: ProbeResult, method: str) -> ProbeResult:
+    return hit if hit.method == method else replace(hit, method=method)
+
+
+def _by_method(
+    samples: tuple[ProbeResult, ...], workload: tuple[CallSpec, ...]
+) -> tuple[tuple[str, LatencyStats], ...]:
+    if not workload:
+        return ()
+    buckets: dict[str, list[ProbeResult]] = {spec.name: [] for spec in workload}
+    method_to_name = {spec.method: spec.name for spec in workload}
+    for hit in samples:
+        name = method_to_name.get(hit.method or "")
+        if name is None:
+            continue
+        buckets[name].append(hit)
+    return tuple((name, summarize(tuple(buckets[name]))) for name in buckets)
+
+
+def _workload_blob(workload: tuple[CallSpec, ...]) -> list[dict[str, object]]:
+    return [
+        {"name": spec.name, "method": spec.method, "params": list(spec.params)}
+        for spec in workload
+    ]
+
+
 def run_endpoints(
     config: BenchConfig,
     *,
@@ -201,6 +251,8 @@ def run_endpoints(
     seed: int = 0,
     concurrency: int = 0,
     client=None,
+    workload: tuple[CallSpec, ...] | None = None,
+    profile: str = "single",
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -212,8 +264,9 @@ def run_endpoints(
         raise ValueError("concurrency must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
         raise ValueError("mode must be paired or sequential")
-    purse = RequestBudget(budget)
     rpc_params = list(params or [])
+    steps = workload or (CallSpec("head", method, tuple(rpc_params)),)
+    purse = RequestBudget(budget)
     deadline = None if max_duration <= 0 else time.monotonic() + max_duration
     seq_id = make_sequence_id(
         seed=seed,
@@ -221,12 +274,12 @@ def run_endpoints(
         params=rpc_params,
         warmup=warmup,
         samples=samples,
+        workload=_workload_blob(steps) if len(steps) > 1 else None,
     )
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
             config,
-            method=method,
-            params=rpc_params,
+            workload=steps,
             samples=samples,
             warmup=warmup,
             timeout=timeout,
@@ -237,8 +290,7 @@ def run_endpoints(
     else:
         outcomes, pairs = _run_paired(
             config,
-            method=method,
-            params=rpc_params,
+            workload=steps,
             samples=samples,
             warmup=warmup,
             timeout=timeout,
@@ -261,6 +313,8 @@ def run_endpoints(
         sequence_id=seq_id,
         pairs=tuple(pairs),
         concurrency=concurrency,
+        profile=profile,
+        workload=steps,
     )
 
 
@@ -268,7 +322,7 @@ def _expired(deadline: float | None) -> bool:
     return deadline is not None and time.monotonic() >= deadline
 
 
-def _skipped(error_class: str, error: str) -> ProbeResult:
+def _skipped(error_class: str, error: str, method: str | None = None) -> ProbeResult:
     return ProbeResult(
         ok=False,
         reachable=False,
@@ -277,38 +331,55 @@ def _skipped(error_class: str, error: str) -> ProbeResult:
         error=error,
         error_class=error_class,
         attempts=0,
+        method=method,
     )
 
 
 def _hit(
     endpoint: Endpoint,
     *,
-    method: str,
-    params: list[object],
+    spec: CallSpec,
     timeout: float,
     budget: RequestBudget,
     deadline: float | None,
     client,
 ) -> ProbeResult:
     if _expired(deadline):
-        return _skipped("duration", "max duration exceeded")
-    return probe(
-        endpoint.url,
-        method,
-        params=params,
-        timeout=timeout,
-        retries=0,
-        budget=budget,
-        client=client,
-        headers=endpoint.headers,
+        return _skipped("duration", "max duration exceeded", spec.method)
+    return _tag(
+        probe(
+            endpoint.url,
+            spec.method,
+            params=list(spec.params),
+            timeout=timeout,
+            retries=0,
+            budget=budget,
+            client=client,
+            headers=endpoint.headers,
+        ),
+        spec.method,
+    )
+
+
+def _finish_outcome(
+    endpoint: Endpoint,
+    warmup_hits: tuple[ProbeResult, ...],
+    measured: tuple[ProbeResult, ...],
+    workload: tuple[CallSpec, ...],
+) -> EndpointOutcome:
+    return EndpointOutcome(
+        endpoint=endpoint,
+        warmup=warmup_hits,
+        samples=measured,
+        stats=summarize(measured),
+        by_method=_by_method(measured, workload),
     )
 
 
 def _run_sequential(
     config: BenchConfig,
     *,
-    method: str,
-    params: list[object],
+    workload: tuple[CallSpec, ...],
     samples: int,
     warmup: int,
     timeout: float,
@@ -321,8 +392,7 @@ def _run_sequential(
         outcomes.append(
             _run_one(
                 endpoint,
-                method=method,
-                params=params,
+                workload=workload,
                 samples=samples,
                 warmup=warmup,
                 timeout=timeout,
@@ -337,8 +407,7 @@ def _run_sequential(
 def _run_paired(
     config: BenchConfig,
     *,
-    method: str,
-    params: list[object],
+    workload: tuple[CallSpec, ...],
     samples: int,
     warmup: int,
     timeout: float,
@@ -351,26 +420,28 @@ def _run_paired(
     warmups: dict[str, list[ProbeResult]] = {ep.name: [] for ep in endpoints}
     measured: dict[str, list[ProbeResult]] = {ep.name: [] for ep in endpoints}
     pairs: list[PairRecord] = []
-    steps: list[tuple[str, int]] = [("warmup", i) for i in range(warmup)]
-    steps.extend(("sample", i) for i in range(samples))
+    plan = expand_steps(workload, warmup, samples)
     n = max(1, len(endpoints))
     workers = n if concurrency <= 0 else max(1, min(concurrency, n))
 
-    def fire(endpoint: Endpoint) -> ProbeResult:
-        return probe(
-            endpoint.url,
-            method,
-            params=params,
-            timeout=timeout,
-            retries=0,
-            budget=budget,
-            client=client,
-            headers=endpoint.headers,
+    def fire(endpoint: Endpoint, spec: CallSpec) -> ProbeResult:
+        return _tag(
+            probe(
+                endpoint.url,
+                spec.method,
+                params=list(spec.params),
+                timeout=timeout,
+                retries=0,
+                budget=budget,
+                client=client,
+                headers=endpoint.headers,
+            ),
+            spec.method,
         )
 
-    for kind, index in steps:
+    for kind, index, spec in plan:
         if _expired(deadline):
-            miss = _skipped("duration", "max duration exceeded")
+            miss = _skipped("duration", "max duration exceeded", spec.method)
             for endpoint in endpoints:
                 if kind == "warmup":
                     warmups[endpoint.name].append(miss)
@@ -381,17 +452,17 @@ def _run_paired(
                     PairRecord(
                         index=index,
                         kind=kind,
-                        method=method,
+                        method=spec.method,
                         bodies=tuple((ep.name, None) for ep in endpoints),
                     )
                 )
             continue
         hits: dict[str, ProbeResult] = {}
         if len(endpoints) == 1:
-            hits[endpoints[0].name] = fire(endpoints[0])
+            hits[endpoints[0].name] = fire(endpoints[0], spec)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futs = {ep.name: pool.submit(fire, ep) for ep in endpoints}
+                futs = {ep.name: pool.submit(fire, ep, spec) for ep in endpoints}
                 for name, fut in futs.items():
                     hits[name] = fut.result()
         for endpoint in endpoints:
@@ -405,18 +476,18 @@ def _run_paired(
                 PairRecord(
                     index=index,
                     kind=kind,
-                    method=method,
+                    method=spec.method,
                     bodies=tuple(
                         (ep.name, hits[ep.name].body_hash) for ep in endpoints
                     ),
                 )
             )
     outcomes = [
-        EndpointOutcome(
-            endpoint=endpoint,
-            warmup=tuple(warmups[endpoint.name]),
-            samples=tuple(measured[endpoint.name]),
-            stats=summarize(tuple(measured[endpoint.name])),
+        _finish_outcome(
+            endpoint,
+            tuple(warmups[endpoint.name]),
+            tuple(measured[endpoint.name]),
+            workload,
         )
         for endpoint in endpoints
     ]
@@ -426,8 +497,7 @@ def _run_paired(
 def _run_one(
     endpoint: Endpoint,
     *,
-    method: str,
-    params: list[object],
+    workload: tuple[CallSpec, ...],
     samples: int,
     warmup: int,
     timeout: float,
@@ -438,50 +508,29 @@ def _run_one(
     warmup_hits: list[ProbeResult] = []
     measured: list[ProbeResult] = []
     stop = False
+    plan = expand_steps(workload, warmup, samples)
 
     if _expired(deadline):
-        measured.append(_skipped("duration", "max duration exceeded"))
-        return EndpointOutcome(
-            endpoint=endpoint,
-            warmup=(),
-            samples=tuple(measured),
-            stats=summarize(tuple(measured)),
-        )
-    for _ in range(warmup):
+        first = workload[0].method if workload else None
+        measured.append(_skipped("duration", "max duration exceeded", first))
+        return _finish_outcome(endpoint, (), tuple(measured), workload)
+    for kind, _index, spec in plan:
+        if stop:
+            break
         hit = _hit(
             endpoint,
-            method=method,
-            params=params,
+            spec=spec,
             timeout=timeout,
             budget=budget,
             deadline=deadline,
             client=client,
         )
-        warmup_hits.append(hit)
+        if kind == "warmup":
+            warmup_hits.append(hit)
+        else:
+            measured.append(hit)
         if hit.error_class in _STOP_CLASSES:
             stop = True
-            break
-    if not stop:
-        for _ in range(samples):
-            hit = _hit(
-                endpoint,
-                method=method,
-                params=params,
-                timeout=timeout,
-                budget=budget,
-                deadline=deadline,
-                client=client,
-            )
-            measured.append(hit)
-            if hit.error_class in _STOP_CLASSES:
-                break
-    elif not measured:
-        last = warmup_hits[-1] if warmup_hits else None
-        if last is not None and last.error_class in _STOP_CLASSES:
-            measured.append(last)
-    return EndpointOutcome(
-        endpoint=endpoint,
-        warmup=tuple(warmup_hits),
-        samples=tuple(measured),
-        stats=summarize(tuple(measured)),
-    )
+            if kind == "warmup" and not measured:
+                measured.append(hit)
+    return _finish_outcome(endpoint, tuple(warmup_hits), tuple(measured), workload)
