@@ -76,6 +76,8 @@ def test_report_makes_winner_obvious() -> None:
     assert "Capabilities" in text
     assert "Fastest  fast" in text
     assert "Rank by p95" in text
+    assert "size standard" in text
+    assert "requests 32" in text
     assert "similar 10%" in text
     assert "Ranking  (by p95; similar within 10%; ~ high err; failed last)" in text
     assert "Failed   1/3    dead" in text

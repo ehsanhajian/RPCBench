@@ -39,5 +39,5 @@ jobs:
           --endpoints endpoints.ci.yaml
           --samples 1
           --warmup 0
-          --budget 8
+          --max-requests 8
           --timeout 15

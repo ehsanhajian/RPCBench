@@ -26,15 +26,15 @@ def test_cli_missing_file(capsys) -> None:
 
 def test_cli_defaults() -> None:
     ns = build_parser().parse_args(["run", "--endpoints", "x.yaml"])
-    assert ns.samples == 10
-    assert ns.warmup == 1
-    assert ns.budget == 128
+    assert ns.samples is None
+    assert ns.warmup is None
+    assert ns.max_requests == 128
+    assert ns.sample_budget == "standard"
     assert ns.method is None
     assert ns.preset is None
     assert ns.verbose is False
     assert ns.allow_writes is False
-    assert ns.max_duration == 600.0
-    assert ns.concurrency == 0
+    assert ns.concurrency is None
     assert ns.sequential is False
     assert ns.seed == 0
     assert ns.json is False
@@ -42,6 +42,92 @@ def test_cli_defaults() -> None:
     assert ns.rank_by == "p95"
     assert ns.similar_band == 0.10
     assert ns.profile is None
+    assert ns.timeout is None
+    assert ns.max_duration is None
+
+
+def test_cli_sample_budget_short() -> None:
+    from rpcbench.cli import SAMPLE_BUDGETS, apply_sample_budget
+
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--budget", "short"]
+    )
+    apply_sample_budget(ns)
+    assert ns.sample_budget == "short"
+    assert ns.samples == SAMPLE_BUDGETS["short"]["samples"]
+    assert ns.warmup == 0
+    assert ns.timeout == 5.0
+    assert ns.max_duration == 30.0
+    assert ns.concurrency == 0
+
+
+def test_cli_sample_budget_long_is_more_samples_only() -> None:
+    from rpcbench.cli import apply_sample_budget
+
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--budget", "long"]
+    )
+    apply_sample_budget(ns)
+    assert ns.samples == 50
+    assert ns.warmup == 2
+    assert ns.max_duration == 1800.0
+
+
+def test_cli_samples_override_budget() -> None:
+    from rpcbench.cli import apply_sample_budget
+
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--budget", "short", "--samples", "7"]
+    )
+    apply_sample_budget(ns)
+    assert ns.samples == 7
+    assert ns.warmup == 0
+
+
+def test_cli_rejects_numeric_budget(capsys) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--endpoints", "http://127.0.0.1:8545", "--budget", "128"])
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_cli_short_budget_two_endpoints(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n"
+        "  - name: a\n    url: http://127.0.0.1:1\n"
+        "  - name: b\n    url: http://127.0.0.1:2\n",
+        encoding="utf-8",
+    )
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(["run", "--endpoints", str(cfg), "--budget", "short"])
+    assert code == 0
+    assert calls["n"] == 6
+    out = capsys.readouterr().out
+    assert "size short" in out
+    assert "Samples   3 after 0 warmup" in out
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -408,7 +494,7 @@ def test_cli_kill_switch_file(tmp_path: Path, monkeypatch, capsys) -> None:
 def test_cli_budget_hard_cap(monkeypatch, capsys) -> None:
     monkeypatch.setenv("RPCBENCH_MAX_REQUESTS", "4")
     code = main(
-        ["run", "--endpoints", "http://127.0.0.1:8545", "--budget", "5"]
+        ["run", "--endpoints", "http://127.0.0.1:8545", "--max-requests", "5"]
     )
     assert code == 2
     assert "hard cap" in capsys.readouterr().err
@@ -626,14 +712,14 @@ def test_cli_mix_budget_too_low(tmp_path: Path, capsys) -> None:
             "1",
             "--warmup",
             "0",
-            "--budget",
+            "--max-requests",
             "4",
         ]
     )
     assert code == 2
     err = capsys.readouterr().err
     assert "mix needs 12 requests" in err
-    assert "--budget 12" in err
+    assert "--max-requests 12" in err
 
 
 def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -683,6 +769,68 @@ def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Method    mix" in out
     assert "Methods  (per-method" in out
     assert methods == [
+        "eth_blockNumber",
+        "eth_chainId",
+        "eth_getBlockByNumber",
+        "eth_getBalance",
+        "eth_call",
+        "eth_getLogs",
+    ]
+
+
+def test_cli_long_mix_does_not_add_archive_or_ws(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--budget",
+            "long",
+            "--profile",
+            "mix",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert "eth_getLogs" in methods
+    assert "eth_call" in methods
+    assert not any("trace" in m or "debug" in m for m in methods)
+    assert "eth_getBlockByNumber" in methods
+    unique = list(dict.fromkeys(methods))
+    assert unique == [
         "eth_blockNumber",
         "eth_chainId",
         "eth_getBlockByNumber",

@@ -8,6 +8,7 @@
   "workload": [],
   "samples": 2,
   "warmup": 0,
+  "sample_budget": "standard",
   "timeout": 10.0,
   "budget": 32,
   "budget_remaining": 20,

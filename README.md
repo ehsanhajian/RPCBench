@@ -22,11 +22,11 @@ pip install -e ".[dev]"
 
 PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --warmup 0`). No local node in CI; the smoke passes if either public endpoint is ok.
 
-## Quick start
+## Start
 
 ```bash
-rpcbench compare --endpoints https://ethereum.publicnode.com --samples 5 --warmup 1
-rpcbench compare --endpoints endpoints.yaml --profile mix --budget 512
+rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -72,6 +72,7 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 - **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
 - **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
+- **`--budget short|standard|long`** sets sample count, warmup, timeout, and max duration (standard is the default: 10 samples, 1 warmup). `--samples` / `--warmup` / `--timeout` / `--max-duration` override. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks. HTTP cap is **`--max-requests`**.
 - **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Ranking** is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
 - **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
@@ -80,8 +81,8 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 ## Flags
 
 ```bash
-rpcbench run --endpoints endpoints.yaml --samples 10 --warmup 1 --preset head
-rpcbench run --endpoints endpoints.yaml --profile mix --budget 512
+rpcbench run --endpoints endpoints.yaml --budget short
+rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --sequential
@@ -90,12 +91,13 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--samples` | 10 | Timed requests per method after warmup |
-| `--warmup` | 1 | Requests excluded from stats |
-| `--timeout` | 10s | Per-request timeout |
-| `--budget` | 128 | Max HTTP requests for the whole run (hard cap `RPCBENCH_MAX_REQUESTS`, default 10000) |
-| `--max-duration` | 600s | Stop remaining work and still print a report (`0` = no limit) |
-| `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
+| `--budget` | `standard` | Sample size: `short` (3 samples, 0 warmup, 30s cap), `standard` (10 / 1, 600s), `long` (50 / 2, 1800s). Not a scan profile |
+| `--samples` | from `--budget` | Timed requests per method after warmup |
+| `--warmup` | from `--budget` | Requests excluded from stats |
+| `--timeout` | from `--budget` | Per-request timeout |
+| `--max-requests` | 128 | Max HTTP requests for the whole run (hard cap `RPCBENCH_MAX_REQUESTS`, default 10000) |
+| `--max-duration` | from `--budget` | Stop remaining work and still print a report (`0` = no limit) |
+| `--concurrency` | from `--budget` (`0`) | Paired-wave cap (`0` = all providers). Not a load burst |
 | `--seed` | 0 | Shared sequence stamp |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |

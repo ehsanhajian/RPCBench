@@ -14,6 +14,33 @@ from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 
 
+SAMPLE_BUDGETS: dict[str, dict[str, int | float]] = {
+    # Sample count / duration. Not Nodeprobe Quick|Standard|Deep.
+    "short": {
+        "samples": 3,
+        "warmup": 0,
+        "timeout": 5.0,
+        "max_duration": 30.0,
+        "concurrency": 0,
+    },
+    "standard": {
+        "samples": 10,
+        "warmup": 1,
+        "timeout": 10.0,
+        "max_duration": 600.0,
+        "concurrency": 0,
+    },
+    "long": {
+        "samples": 50,
+        "warmup": 2,
+        "timeout": 15.0,
+        "max_duration": 1800.0,
+        "concurrency": 0,
+    },
+}
+DEFAULT_MAX_REQUESTS_FLAG = 128
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rpcbench",
@@ -71,41 +98,53 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Allow write methods (eth_send*, personal_*, …). Default is read-only.",
     )
     run.add_argument(
+        "--budget",
+        choices=tuple(SAMPLE_BUDGETS),
+        default="standard",
+        dest="sample_budget",
+        help=(
+            "Sample budget: short, standard (default), or long. "
+            "Sets samples, warmup, timeout, and max duration. "
+            "Not a Nodeprobe scan profile. HTTP cap is --max-requests."
+        ),
+    )
+    run.add_argument(
         "--samples",
         type=int,
-        default=10,
-        help="Timed samples per method after warmup (default: 10)",
+        default=None,
+        help="Timed samples per method after warmup (default: from --budget)",
     )
     run.add_argument(
         "--warmup",
         type=int,
-        default=1,
-        help="Warmup requests excluded from stats (default: 1)",
+        default=None,
+        help="Warmup requests excluded from stats (default: from --budget)",
     )
     run.add_argument(
         "--timeout",
         type=float,
-        default=10.0,
-        help="Per-request timeout in seconds (default: 10)",
+        default=None,
+        help="Per-request timeout in seconds (default: from --budget)",
     )
     run.add_argument(
-        "--budget",
+        "--max-requests",
         type=int,
-        default=128,
+        default=DEFAULT_MAX_REQUESTS_FLAG,
+        dest="max_requests",
         help="Max HTTP requests for the whole run, including warmup (default: 128)",
     )
     run.add_argument(
         "--max-duration",
         type=float,
-        default=600.0,
+        default=None,
         metavar="SEC",
-        help="Stop the run after this many seconds and still print a report (default: 600; 0 = no limit)",
+        help="Stop the run after this many seconds and still print a report (default: from --budget; 0 = no limit)",
     )
     run.add_argument(
         "--concurrency",
         type=int,
-        default=0,
-        help="Max in-flight requests per paired wave (0 = all providers; default: 0). Not a load burst.",
+        default=None,
+        help="Max in-flight requests per paired wave (0 = all providers; default: from --budget). Not a load burst.",
     )
     run.add_argument(
         "--sequential",
@@ -150,6 +189,22 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
     )
 
 
+def apply_sample_budget(args: argparse.Namespace) -> argparse.Namespace:
+    """Fill samples/warmup/timeout/max-duration/concurrency from --budget unless set."""
+    spec = SAMPLE_BUDGETS[args.sample_budget]
+    if args.samples is None:
+        args.samples = int(spec["samples"])
+    if args.warmup is None:
+        args.warmup = int(spec["warmup"])
+    if args.timeout is None:
+        args.timeout = float(spec["timeout"])
+    if args.max_duration is None:
+        args.max_duration = float(spec["max_duration"])
+    if args.concurrency is None:
+        args.concurrency = int(spec["concurrency"])
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -168,6 +223,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
         return 2
     try:
+        apply_sample_budget(args)
         config = load_targets(args.endpoints)
         method, workload = resolve_workload(
             profile=args.profile,
@@ -181,23 +237,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
             * len(workload)
             * (args.samples + args.warmup)
         )
-        budget = args.budget
-        if args.profile == "mix" and needed > budget:
-            if args.budget == 128:
-                budget = needed
+        max_requests = args.max_requests
+        if args.profile == "mix" and needed > max_requests:
+            if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
+                max_requests = needed
             else:
                 raise SafetyError(
                     f"mix needs {needed} requests "
                     f"({len(workload)} methods × {args.samples + args.warmup} × "
-                    f"{len(config.endpoints)} endpoints); pass --budget {needed}"
+                    f"{len(config.endpoints)} endpoints); pass --max-requests {needed}"
                 )
-        check_budget(budget)
+        check_budget(max_requests)
     except (ConfigError, MethodError, SafetyError, RankError) as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
     if (
         args.timeout <= 0
-        or args.budget < 1
+        or args.max_requests < 1
         or args.samples < 1
         or args.warmup < 0
         or args.max_duration < 0
@@ -205,7 +261,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
-            "--warmup >= 0, --budget >= 1, --max-duration >= 0, "
+            "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
             "--concurrency >= 0",
             file=sys.stderr,
         )
@@ -224,9 +280,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         samples=args.samples,
         warmup=args.warmup,
         timeout=args.timeout,
-        budget=budget,
+        budget=max_requests,
         workload=workload,
         profile="mix" if method == "mix" else "single",
+        sample_budget=args.sample_budget,
         max_duration=args.max_duration,
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,

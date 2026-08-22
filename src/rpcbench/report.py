@@ -232,6 +232,7 @@ def run_to_dict(
         ],
         "samples": result.samples,
         "warmup": result.warmup,
+        "sample_budget": result.sample_budget,
         "timeout": result.timeout,
         "budget": result.budget,
         "budget_remaining": result.budget_remaining,
@@ -318,8 +319,9 @@ def format_run(
         "=" * 72,
         method_line,
         f"Samples   {result.samples} after {result.warmup} warmup  ·  "
+        f"size {result.sample_budget}  ·  "
         f"Timeout {result.timeout:g}s  ·  "
-        f"Budget {result.budget} ({result.budget_remaining} left)  ·  "
+        f"requests {result.budget} ({result.budget_remaining} left)  ·  "
         f"Rank by {label}  ·  similar {band_pct}",
         f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
         f"seq={result.sequence_id or '—'}  ·  "

@@ -83,6 +83,7 @@ class RunResult:
     concurrency: int = 0
     profile: str = "single"
     workload: tuple[CallSpec, ...] = ()
+    sample_budget: str = "standard"
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -253,6 +254,7 @@ def run_endpoints(
     client=None,
     workload: tuple[CallSpec, ...] | None = None,
     profile: str = "single",
+    sample_budget: str = "standard",
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -315,6 +317,7 @@ def run_endpoints(
         concurrency=concurrency,
         profile=profile,
         workload=steps,
+        sample_budget=sample_budget,
     )
 
 
