@@ -6,6 +6,23 @@ What RPCBench numbers are — and what they are not. Tool split: [BOUNDARY.md](B
 
 Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitter, min/mean/max, and the histogram use **successful** samples only. Error rate is failed/attempted.
 
+## Method mix
+
+Default CLI is still one method (`eth_blockNumber`). **`--profile mix`** is the documented production-like workload. `--samples` and `--warmup` apply **per method**. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table is per step.
+
+Fixed payloads (same on every provider):
+
+| Step | Method | Params |
+| --- | --- | --- |
+| head | `eth_blockNumber` | `[]` |
+| chainId | `eth_chainId` | `[]` |
+| block | `eth_getBlockByNumber` | `["latest", false]` |
+| balance | `eth_getBalance` | `[0x000…0000, "latest"]` |
+| call | `eth_call` | `[{"to": 0x000…0000, "data": "0x"}, "latest"]` |
+| logs | `eth_getLogs` | `[{fromBlock, toBlock: "latest", address: 0x000…0000}]` |
+
+Logs are one block and one address. No unbounded scans. No writes.
+
 ## Paired compare
 
 Default compare is **paired**: one shared read-only sequence; each sample is raced to every provider. `--sequential` is A-then-B (heads and caches can drift).

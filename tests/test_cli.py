@@ -41,6 +41,7 @@ def test_cli_defaults() -> None:
     assert ns.output is None
     assert ns.rank_by == "p95"
     assert ns.similar_band == 0.10
+    assert ns.profile is None
 
 
 def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -591,6 +592,104 @@ def test_cli_rejects_bad_similar_band(tmp_path: Path, capsys) -> None:
     code = main(["run", "--endpoints", str(cfg), "--similar-band", "2"])
     assert code == 2
     assert "similar-band" in capsys.readouterr().err
+
+
+def test_cli_rejects_profile_with_method(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--profile", "mix", "--method", "eth_chainId"]
+    )
+    assert code == 2
+    assert "profile" in capsys.readouterr().err
+
+
+def test_cli_mix_budget_too_low(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n"
+        "  - name: a\n    url: http://127.0.0.1:1\n"
+        "  - name: b\n    url: http://127.0.0.1:2\n",
+        encoding="utf-8",
+    )
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--profile",
+            "mix",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--budget",
+            "4",
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "mix needs 12 requests" in err
+    assert "--budget 12" in err
+
+
+def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--profile",
+            "mix",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Method    mix" in out
+    assert "Methods  (per-method" in out
+    assert methods == [
+        "eth_blockNumber",
+        "eth_chainId",
+        "eth_getBlockByNumber",
+        "eth_getBalance",
+        "eth_call",
+        "eth_getLogs",
+    ]
 
 
 def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -675,3 +675,48 @@ def test_bimodal_histogram_splits_cache_and_miss() -> None:
     assert stats.jitter_ms is not None
     assert stats.jitter_ms > 300.0
 
+
+def test_mix_runs_each_method_and_breaks_down() -> None:
+    from rpcbench.methods import MIX_PROFILE
+    from rpcbench.report import format_run
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen.append(payload["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg,
+        method="mix",
+        samples=2,
+        warmup=1,
+        budget=32,
+        client=client,
+        workload=MIX_PROFILE,
+        profile="mix",
+    )
+    assert result.profile == "mix"
+    assert len(result.workload) == 6
+    assert [spec.method for spec in MIX_PROFILE] == seen[:6]
+    assert len(seen) == 18
+    outcome = result.outcomes[0]
+    assert outcome.stats.n_ok == 12
+    assert [name for name, _ in outcome.by_method] == [s.name for s in MIX_PROFILE]
+    assert all(stats.n_ok == 2 for _, stats in outcome.by_method)
+    assert [pair.method for pair in result.pairs] == [
+        spec.method for spec in MIX_PROFILE
+    ] * 2
+    text = format_run(result, color=False)
+    assert "Method    mix" in text
+    assert "Methods  (per-method; ranking uses the whole mix)" in text
+    assert "eth_getLogs" in text
+    assert "eth_call" in text
+

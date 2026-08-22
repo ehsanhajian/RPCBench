@@ -78,6 +78,8 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["concurrency"] == 0
     assert data["rank_by"] == "p95"
     assert data["similar_band"] == 0.10
+    assert data["profile"] == "single"
+    assert data["methods"] == []
     assert data["summary"]["fastest_similar"] is False
     assert data["summary"]["fastest_names"] == ["fast"]
     assert data["ranking"][0]["similar"] is False
@@ -224,3 +226,36 @@ def test_json_bimodal_histogram() -> None:
         "≥1s": 8,
     }
     assert data["providers"][0]["performance"]["jitter_ms"] is not None
+
+
+def test_json_mix_includes_workload_and_per_method() -> None:
+    from rpcbench.methods import MIX_PROFILE
+    from rpcbench.config import parse_endpoints
+    from rpcbench.run import run_endpoints
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    result = run_endpoints(
+        cfg,
+        method="mix",
+        samples=1,
+        warmup=0,
+        budget=16,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        workload=MIX_PROFILE,
+        profile="mix",
+    )
+    data = run_to_dict(result)
+    assert data["profile"] == "mix"
+    assert [row["name"] for row in data["workload"]] == [s.name for s in MIX_PROFILE]
+    assert [row["step"] for row in data["methods"]] == [s.name for s in MIX_PROFILE]
+    assert data["methods"][0]["method"] == "eth_blockNumber"
+    assert data["methods"][-1]["method"] == "eth_getLogs"
+    assert all(row["n_ok"] == 1 for row in data["methods"])

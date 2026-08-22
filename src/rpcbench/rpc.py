@@ -66,6 +66,7 @@ class ProbeResult:
     error_class: str | None
     attempts: int
     body_hash: str | None = None
+    method: str | None = None
 
 
 def probe(
