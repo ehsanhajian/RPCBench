@@ -49,6 +49,6 @@ def check_budget(budget: int) -> None:
     cap = max_requests()
     if budget > cap:
         raise SafetyError(
-            f"--budget {budget} exceeds hard cap {cap} "
+            f"--max-requests {budget} exceeds hard cap {cap} "
             f"(set {MAX_REQUESTS_ENV} to raise it)"
         )

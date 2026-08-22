@@ -23,6 +23,20 @@ Fixed payloads (same on every provider):
 
 Logs are one block and one address. No unbounded scans. No writes.
 
+## Sample budgets
+
+`--budget short|standard|long` is how long we sample, not a Nodeprobe scan profile.
+
+| Budget | Samples | Warmup | Timeout | Max duration | Concurrency |
+| --- | --- | --- | --- | --- | --- |
+| **short** | 3 | 0 | 5s | 30s | all providers (`0`) |
+| **standard** (default) | 10 | 1 | 10s | 600s | all providers (`0`) |
+| **long** | 50 | 2 | 15s | 1800s | all providers (`0`) |
+
+`--samples`, `--warmup`, `--timeout`, `--max-duration`, and `--concurrency` override the table. HTTP cap is `--max-requests` (default 128).
+
+`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--profile mix` already includes bounded logs; there is no tracing mix yet).
+
 ## Paired compare
 
 Default compare is **paired**: one shared read-only sequence; each sample is raced to every provider. `--sequential` is A-then-B (heads and caches can drift).
