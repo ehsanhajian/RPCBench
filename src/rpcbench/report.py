@@ -68,10 +68,19 @@ def values_similar(
     return (hi - lo) / better <= band
 
 
-def reliable_for_place(stats: Any, similar_band: float) -> bool:
+def is_stale(outcome: EndpointOutcome) -> bool:
+    fresh = outcome.freshness
+    return fresh is not None and fresh.verdict == "stale"
+
+
+def reliable_for_place(
+    stats: Any, similar_band: float, outcome: EndpointOutcome | None = None
+) -> bool:
     if stats.n_ok == 0:
         return False
     if stats.error_rate is not None and stats.error_rate > similar_band:
+        return False
+    if outcome is not None and is_stale(outcome):
         return False
     return True
 
@@ -116,7 +125,7 @@ def place_outcomes(
         value = _rank_value(stats, key_name)
         if value is None:
             return (2, 0.0, 0.0, index)
-        tier = 0 if reliable_for_place(stats, band) else 1
+        tier = 0 if reliable_for_place(stats, band, outcome) else 1
         mean = stats.mean_ms if stats.mean_ms is not None else 0.0
         if higher:
             return (tier, -value, mean, index)
@@ -134,7 +143,7 @@ def place_outcomes(
         if value is None:
             rows.append(RankedPlace(outcome, None, False, False, p99_ok))
             continue
-        if not reliable_for_place(stats, band):
+        if not reliable_for_place(stats, band, outcome):
             rows.append(RankedPlace(outcome, None, False, False, p99_ok))
             continue
         if leader_val is not None and values_similar(
@@ -242,6 +251,9 @@ def run_to_dict(
         "sequence_id": result.sequence_id,
         "rank_by": rank_by,
         "similar_band": band,
+        "stale_blocks": result.stale_blocks,
+        "block_time_s": result.block_time_s,
+        "cohort_height": result.cohort_height,
         "histogram_buckets": _histogram_bucket_defs(),
         "summary": {
             "fastest": winners[0].outcome.endpoint.name if len(winners) == 1 else None,
@@ -250,6 +262,7 @@ def run_to_dict(
             "ok": len(ok_rows),
             "failed": len(fail_rows),
             "failed_names": [o.endpoint.name for o in fail_rows],
+            "stale_names": [o.endpoint.name for o in ranked if is_stale(o)],
         },
         "comparison": [
             _comparison_entry(outcome, result.method) for outcome in result.outcomes
@@ -341,7 +354,7 @@ def format_run(
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
     lines.extend(
-        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err; failed last)"]
+        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err or stale; failed last)"]
     )
     for row in placed:
         if row.rank is not None:
@@ -366,7 +379,9 @@ def format_run(
     lines.append(
         f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded  ·  "
         "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
-        f"and histogram of successful samples  ·  similar-band {band_pct}"
+        f"and histogram of successful samples  ·  similar-band {band_pct}  ·  "
+        f"stale >{result.stale_blocks} blocks vs cohort median "
+        f"({result.block_time_s:g}s/block)"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -409,6 +424,10 @@ def _summary_lines(
         lines.append(f"  Failed   {len(fail_rows)}/{total}    {names}")
     else:
         lines.append(f"  Failed   0/{total}")
+    stale_rows = [row.outcome for row in placed if is_stale(row.outcome)]
+    if stale_rows:
+        names = ", ".join(o.endpoint.name for o in stale_rows)
+        lines.append(f"  Stale    {len(stale_rows)}/{total}    {names}")
     return lines
 
 
@@ -475,7 +494,8 @@ def _comparison_lines(
 ) -> list[str]:
     header = (
         f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
-        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  cap"
+        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  "
+        f"{'head':>8}  {'lag':>4}  fresh  cap"
     )
     lines = [header]
     for outcome in result.outcomes:
@@ -500,7 +520,8 @@ def _comparison_line(outcome: EndpointOutcome, name_w: int, use_color: bool) -> 
         f"  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
         f"{_cell_ms(stats.p50_ms)}  {_cell_ms(stats.p95_ms)}  "
         f"{_cell_ms(stats.p99_ms)}  {_cell_ms(stats.jitter_ms)}  "
-        f"{_cell_rps(stats.mean_ms)}  {cap}"
+        f"{_cell_rps(stats.mean_ms)}  {_cell_head(outcome)}  "
+        f"{_cell_lag(outcome)}  {_cell_fresh(outcome)}  {cap}"
     )
 
 
@@ -508,6 +529,31 @@ def _cell_ms(value: float | None) -> str:
     if value is None:
         return f"{'—':>8}"
     return f"{value:6.1f}ms"
+
+
+def _cell_head(outcome: EndpointOutcome) -> str:
+    fresh = outcome.freshness
+    if fresh is None or fresh.height is None:
+        return f"{'—':>8}"
+    return f"{fresh.height:>8}"
+
+
+def _cell_lag(outcome: EndpointOutcome) -> str:
+    fresh = outcome.freshness
+    if fresh is None or fresh.lag_blocks is None:
+        return f"{'—':>4}"
+    return f"{fresh.lag_blocks:>4}"
+
+
+def _cell_fresh(outcome: EndpointOutcome) -> str:
+    fresh = outcome.freshness
+    if fresh is None:
+        return f"{'—':<5}"
+    if fresh.verdict == "stale":
+        return f"{'stale':<5}"
+    if fresh.verdict == "fresh":
+        return f"{'yes':<5}"
+    return f"{'—':<5}"
 
 
 def _cell_rps(mean_ms: float | None) -> str:
@@ -540,6 +586,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
             "error_class": None if responded else _miss_class(outcome),
         },
         "last_error": _last_error(outcome) or None,
+        "freshness": _freshness_json(outcome),
     }
 
 
@@ -581,6 +628,7 @@ def _ranking_line(
             f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
             f"{classes}  {_rank_metric_text(stats, rank_by)}{extra_mean}{extra_p95}"
             f"  jitter={_jitter_text(stats.jitter_ms)}"
+            f"{_fresh_rank_note(outcome)}"
         )
     err = _last_error(outcome)
     extra = f"  {err}" if err else ""
@@ -619,6 +667,9 @@ def _provider_lines(
             f"{indent}p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  {p99}"
         )
         lines.append(f"{indent}hist  {_histogram_text(stats.histogram)}")
+        fresh_line = _freshness_provider_line(outcome)
+        if fresh_line:
+            lines.append(f"{indent}{fresh_line}")
     else:
         err = _last_error(outcome)
         if err:
@@ -687,6 +738,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "rank_by": rank_by,
         "rank_value": _rank_value(stats, rank_by),
         "score": _success_rate(stats.error_rate),
+        "freshness": _freshness_json(outcome),
     }
 
 
@@ -729,6 +781,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
             "method": method,
             "responded": stats.n_ok > 0,
         },
+        "freshness": _freshness_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -745,6 +798,41 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "attempts": hit.attempts,
         "method": hit.method,
     }
+
+
+def _freshness_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
+    fresh = outcome.freshness
+    if fresh is None:
+        return None
+    return {
+        "height": fresh.height,
+        "height_hex": fresh.height_hex,
+        "lag_blocks": fresh.lag_blocks,
+        "lag_s": fresh.lag_s,
+        "verdict": fresh.verdict,
+        "cohort_height": fresh.cohort_height,
+    }
+
+
+def _fresh_rank_note(outcome: EndpointOutcome) -> str:
+    if is_stale(outcome):
+        return "  stale"
+    return ""
+
+
+def _freshness_provider_line(outcome: EndpointOutcome) -> str:
+    fresh = outcome.freshness
+    if fresh is None:
+        return ""
+    if fresh.verdict == "unknown":
+        return "head=—  lag=—  fresh=unknown"
+    lag = "—" if fresh.lag_blocks is None else str(fresh.lag_blocks)
+    extra = ""
+    if fresh.lag_s is not None and fresh.lag_blocks:
+        extra = f" (~{fresh.lag_s:g}s)"
+    return (
+        f"head={fresh.height}  lag={lag}{extra}  fresh={fresh.verdict}"
+    )
 
 
 def _success_rate(error_rate: float | None) -> float | None:

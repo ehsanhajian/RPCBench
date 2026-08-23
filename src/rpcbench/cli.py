@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
+from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
@@ -171,6 +172,20 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Relative similar-band on the rank key (default: 0.10 = 10%%). High error rate above this band is not a numbered place.",
     )
     run.add_argument(
+        "--stale-blocks",
+        type=int,
+        default=DEFAULT_STALE_BLOCKS,
+        metavar="N",
+        help="Head lag (blocks vs cohort median) above this is stale (default: 2). Set per chain.",
+    )
+    run.add_argument(
+        "--block-time",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help=f"Seconds per block for lag time (default: {DEFAULT_BLOCK_TIME_S:g} or a known chain from eth_chainId).",
+    )
+    run.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -237,6 +252,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             * len(workload)
             * (args.samples + args.warmup)
         )
+        if not any(spec.method == "eth_blockNumber" for spec in workload):
+            needed += len(config.endpoints)
         max_requests = args.max_requests
         if args.profile == "mix" and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
@@ -258,11 +275,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.warmup < 0
         or args.max_duration < 0
         or args.concurrency < 0
+        or args.stale_blocks < 0
+        or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
-            "--concurrency >= 0",
+            "--concurrency >= 0, --stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
         )
         return 2
@@ -284,6 +303,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         workload=workload,
         profile="mix" if method == "mix" else "single",
         sample_budget=args.sample_budget,
+        stale_blocks=args.stale_blocks,
+        block_time_s=args.block_time,
         max_duration=args.max_duration,
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,

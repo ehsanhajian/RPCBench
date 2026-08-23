@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rpcbench.config import Endpoint
+from rpcbench.freshness import Freshness
 from rpcbench.report import color_enabled, format_run, place_outcomes, rank_outcomes
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, summarize
@@ -30,12 +31,33 @@ def _fail(error_class: str = "connection", error: str = "refused") -> ProbeResul
     )
 
 
-def _outcome(name: str, samples: tuple[ProbeResult, ...]) -> EndpointOutcome:
+def _fresh(
+    height: int | None,
+    lag: int | None,
+    verdict: str,
+    cohort: int | None = 100,
+) -> Freshness:
+    return Freshness(
+        height=height,
+        height_hex=None if height is None else hex(height),
+        lag_blocks=lag,
+        lag_s=None if lag is None else lag * 12.0,
+        verdict=verdict,
+        cohort_height=cohort,
+    )
+
+
+def _outcome(
+    name: str,
+    samples: tuple[ProbeResult, ...],
+    freshness: Freshness | None = None,
+) -> EndpointOutcome:
     return EndpointOutcome(
         endpoint=Endpoint(name=name, url=f"http://127.0.0.1/{name}"),
         warmup=(),
         samples=samples,
         stats=summarize(samples),
+        freshness=freshness,
     )
 
 
@@ -79,13 +101,14 @@ def test_report_makes_winner_obvious() -> None:
     assert "size standard" in text
     assert "requests 32" in text
     assert "similar 10%" in text
-    assert "Ranking  (by p95; similar within 10%; ~ high err; failed last)" in text
+    assert "Ranking  (by p95; similar within 10%; ~ high err or stale; failed last)" in text
     assert "Failed   1/3    dead" in text
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
     assert "p50" in compare and "p95" in compare and "p99" in compare
     assert "jit" in compare
     assert "rps" in compare
+    assert "head" in compare and "lag" in compare and "fresh" in compare
     assert "cap" in compare
     assert "yes" in compare
     assert "timeout" in compare
@@ -284,6 +307,36 @@ def test_high_error_does_not_take_a_place() -> None:
     ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
     assert "~" in ranking
     assert "merkle" in ranking
+
+
+def test_stale_cannot_be_fastest() -> None:
+    lagged = _outcome(
+        "lagged",
+        (_ok(8.0), _ok(8.0)),
+        freshness=_fresh(97, 3, "stale"),
+    )
+    tip = _outcome(
+        "tip",
+        (_ok(20.0), _ok(20.0)),
+        freshness=_fresh(100, 0, "fresh"),
+    )
+    result = _result(lagged, tip)
+    placed = place_outcomes(result)
+    assert [row.outcome.endpoint.name for row in placed] == ["tip", "lagged"]
+    assert placed[0].rank == 1
+    assert placed[1].rank is None
+    assert placed[1].reliable is False
+    text = format_run(result, color=False)
+    assert "Fastest  tip" in text
+    assert "Stale    1/2    lagged" in text
+    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    assert "stale" in compare
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "~" in ranking
+    assert "lagged" in ranking
+    assert "  stale" in ranking
+    assert "head=97  lag=3 (~36s)  fresh=stale" in text
+    assert "stale >2 blocks vs cohort median" in text
 
 
 def test_p99_flagged_when_n_too_small() -> None:
