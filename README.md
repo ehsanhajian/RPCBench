@@ -57,8 +57,8 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 The CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
-2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place)
-3. **Ranking** — ordered by `--rank-by`; similar share a place; high error is `~`; failed last
+2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh)
+3. **Ranking** — ordered by `--rank-by`; similar share a place; high error or stale is `~`; failed last
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 5. **Providers** — redacted URL + `id=` hash, samples, errors, jitter, histogram
 6. **Capabilities** — who answered this method
@@ -74,9 +74,10 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many samples to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
 - **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
-- **Ranking** is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
+- **Ranking** is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band, or a **stale** head, is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
+- **Freshness** is lag vs the cohort’s upper-median `eth_blockNumber` in the same window. Default `--stale-blocks 2`. Lag time uses `--block-time` or a known chain from `eth_chainId` already in the mix (12s on Ethereum). Extra head reads happen only when the workload has no `eth_blockNumber`; they are not mixed into latency stats.
 - **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
-- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, and `histogram`. Reliability `score` is success rate.
+- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, and `freshness`. Reliability `score` is success rate.
 
 ## Flags
 
@@ -109,6 +110,8 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--seed` | 0 | Shared sequence stamp |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |
+| `--stale-blocks` | `2` | Head lag (blocks vs cohort median) above this is stale. Set per chain |
+| `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
 | `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |

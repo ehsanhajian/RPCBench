@@ -237,7 +237,7 @@ def test_run_sends_configured_method() -> None:
         {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    run_endpoints(
+    result = run_endpoints(
         cfg,
         method="eth_chainId",
         params=[],
@@ -246,7 +246,8 @@ def test_run_sends_configured_method() -> None:
         budget=4,
         client=client,
     )
-    assert seen == ["eth_chainId"]
+    assert seen == ["eth_chainId", "eth_blockNumber"]
+    assert [hit.method for hit in result.outcomes[0].samples] == ["eth_chainId"]
 
 
 def test_percentile_nearest_rank() -> None:
@@ -719,4 +720,141 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     assert "Methods  (per-method; ranking uses the whole mix)" in text
     assert "eth_getLogs" in text
     assert "eth_call" in text
+
+
+def test_freshness_uses_first_blockNumber_sample() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content)["method"])
+        height = "0x61" if str(request.url).endswith("/lag") else "0x64"
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": height}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "tip", "url": "http://127.0.0.1:8545/tip"},
+                {"name": "lag", "url": "http://127.0.0.1:8545/lag"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=2, warmup=0, budget=16, client=client)
+    assert seen == ["eth_blockNumber"] * 4
+    assert result.cohort_height == 100
+    by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
+    assert by_name["tip"] is not None and by_name["tip"].verdict == "fresh"
+    assert by_name["tip"].lag_blocks == 0
+    assert by_name["lag"] is not None and by_name["lag"].verdict == "stale"
+    assert by_name["lag"].lag_blocks == 3
+    assert by_name["lag"].lag_s == 36.0
+    assert [len(o.samples) for o in result.outcomes] == [2, 2]
+
+
+def test_extra_head_wave_stays_out_of_latency_stats() -> None:
+    from rpcbench.methods import CallSpec
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = json.loads(request.content)["method"]
+        seen.append(method)
+        if method == "eth_blockNumber":
+            height = "0x5f" if str(request.url).endswith("/lag") else "0x64"
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": height}
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x0"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "tip", "url": "http://127.0.0.1:8545/tip"},
+                {"name": "lag", "url": "http://127.0.0.1:8545/lag"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg,
+        method="eth_getBalance",
+        samples=1,
+        warmup=0,
+        budget=16,
+        client=client,
+        workload=(CallSpec("balance", "eth_getBalance", ()),),
+        stale_blocks=2,
+    )
+    assert seen.count("eth_getBalance") == 2
+    assert seen.count("eth_blockNumber") == 2
+    assert all(hit.method == "eth_getBalance" for o in result.outcomes for hit in o.samples)
+    assert [o.stats.n_ok for o in result.outcomes] == [1, 1]
+    by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
+    assert by_name["lag"] is not None and by_name["lag"].verdict == "stale"
+    assert by_name["lag"].lag_blocks == 5
+
+
+def test_stale_blocks_tolerance_is_configurable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        height = "0x5f" if str(request.url).endswith("/lag") else "0x64"
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": height}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "tip", "url": "http://127.0.0.1:8545/tip"},
+                {"name": "lag", "url": "http://127.0.0.1:8545/lag"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=8, client=client, stale_blocks=10
+    )
+    by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
+    assert by_name["lag"] is not None and by_name["lag"].lag_blocks == 5
+    assert by_name["lag"].verdict == "fresh"
+    text = format_run(result, color=False)
+    assert "Stale" not in text.split("Comparison", 1)[0]
+
+
+def test_mix_uses_chainId_block_time_without_extra_head() -> None:
+    from rpcbench.methods import MIX_PROFILE
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = json.loads(request.content)["method"]
+        seen.append(method)
+        result = "0x89" if method == "eth_chainId" else "0x64"
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": result}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg,
+        method="mix",
+        samples=1,
+        warmup=0,
+        budget=16,
+        client=client,
+        workload=MIX_PROFILE,
+        profile="mix",
+    )
+    assert len(seen) == 6
+    assert seen.count("eth_blockNumber") == 1
+    assert result.block_time_s == 2.0
+    assert result.outcomes[0].freshness is not None
+    assert result.outcomes[0].freshness.height == 100
+    assert result.outcomes[0].freshness.verdict == "fresh"
 

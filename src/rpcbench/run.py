@@ -10,6 +10,14 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 from rpcbench.config import BenchConfig, Endpoint
+from rpcbench.freshness import (
+    DEFAULT_BLOCK_TIME_S,
+    DEFAULT_STALE_BLOCKS,
+    Freshness,
+    assess_freshness,
+    block_time_for_chain,
+    parse_block_height,
+)
 from rpcbench.methods import CallSpec
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
 
@@ -56,6 +64,7 @@ class EndpointOutcome:
     samples: tuple[ProbeResult, ...]
     stats: LatencyStats
     by_method: tuple[tuple[str, LatencyStats], ...] = ()
+    freshness: Freshness | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +93,9 @@ class RunResult:
     profile: str = "single"
     workload: tuple[CallSpec, ...] = ()
     sample_budget: str = "standard"
+    stale_blocks: int = DEFAULT_STALE_BLOCKS
+    block_time_s: float = DEFAULT_BLOCK_TIME_S
+    cohort_height: int | None = None
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -255,6 +267,8 @@ def run_endpoints(
     workload: tuple[CallSpec, ...] | None = None,
     profile: str = "single",
     sample_budget: str = "standard",
+    stale_blocks: int = DEFAULT_STALE_BLOCKS,
+    block_time_s: float | None = None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -301,6 +315,30 @@ def run_endpoints(
             concurrency=concurrency,
             client=client,
         )
+    extra_heads: dict[str, ProbeResult] = {}
+    if not any(spec.method == "eth_blockNumber" for spec in steps):
+        extra_heads = _probe_heads(
+            config,
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=concurrency,
+            client=client,
+        )
+    chain_id = _sample_chain_id(outcomes)
+    resolved_time = block_time_for_chain(chain_id, block_time_s)
+    heights = {
+        outcome.endpoint.name: _head_height(outcome, method, extra_heads)
+        for outcome in outcomes
+    }
+    judged = assess_freshness(
+        heights, stale_blocks=stale_blocks, block_time_s=resolved_time
+    )
+    outcomes = [
+        replace(outcome, freshness=judged[outcome.endpoint.name])
+        for outcome in outcomes
+    ]
+    tip = next((row.cohort_height for row in judged.values()), None)
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -318,7 +356,92 @@ def run_endpoints(
         profile=profile,
         workload=steps,
         sample_budget=sample_budget,
+        stale_blocks=stale_blocks,
+        block_time_s=resolved_time,
+        cohort_height=tip,
     )
+
+
+def _sample_height(outcome: EndpointOutcome, run_method: str) -> int | None:
+    for hit in outcome.samples:
+        if not hit.ok:
+            continue
+        method = hit.method or run_method
+        if method != "eth_blockNumber":
+            continue
+        height = parse_block_height(hit.result)
+        if height is not None:
+            return height
+    return None
+
+
+def _head_height(
+    outcome: EndpointOutcome,
+    run_method: str,
+    extra: dict[str, ProbeResult],
+) -> int | None:
+    height = _sample_height(outcome, run_method)
+    if height is not None:
+        return height
+    hit = extra.get(outcome.endpoint.name)
+    if hit is None or not hit.ok:
+        return None
+    return parse_block_height(hit.result)
+
+
+def _sample_chain_id(outcomes: list[EndpointOutcome]) -> int | None:
+    for outcome in outcomes:
+        for hit in outcome.samples:
+            if not hit.ok:
+                continue
+            if (hit.method or "") != "eth_chainId":
+                continue
+            parsed = parse_block_height(hit.result)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _probe_heads(
+    config: BenchConfig,
+    *,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    concurrency: int,
+    client,
+) -> dict[str, ProbeResult]:
+    endpoints = list(config.endpoints)
+    hits: dict[str, ProbeResult] = {}
+    if _expired(deadline):
+        miss = _skipped("duration", "max duration exceeded", "eth_blockNumber")
+        return {ep.name: miss for ep in endpoints}
+    n = max(1, len(endpoints))
+    workers = n if concurrency <= 0 else max(1, min(concurrency, n))
+
+    def fire(endpoint: Endpoint) -> ProbeResult:
+        return _tag(
+            probe(
+                endpoint.url,
+                "eth_blockNumber",
+                params=[],
+                timeout=timeout,
+                retries=0,
+                budget=budget,
+                client=client,
+                headers=endpoint.headers,
+            ),
+            "eth_blockNumber",
+        )
+
+    if len(endpoints) == 1:
+        hits[endpoints[0].name] = fire(endpoints[0])
+        return hits
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {ep.name: pool.submit(fire, ep) for ep in endpoints}
+        for name, fut in futs.items():
+            hits[name] = fut.result()
+    return hits
 
 
 def _expired(deadline: float | None) -> bool:

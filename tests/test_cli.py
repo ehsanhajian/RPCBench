@@ -41,6 +41,8 @@ def test_cli_defaults() -> None:
     assert ns.output is None
     assert ns.rank_by == "p95"
     assert ns.similar_band == 0.10
+    assert ns.stale_blocks == 2
+    assert ns.block_time is None
     assert ns.profile is None
     assert ns.timeout is None
     assert ns.max_duration is None
@@ -229,7 +231,7 @@ def test_cli_preset_balance(tmp_path: Path, monkeypatch, capsys) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_getBalance"]
+    assert methods == ["eth_getBalance", "eth_blockNumber"]
     assert "eth_getBalance" in capsys.readouterr().out
 
 
@@ -276,7 +278,7 @@ def test_cli_method_flag(tmp_path: Path, monkeypatch) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_chainId"]
+    assert methods == ["eth_chainId", "eth_blockNumber"]
 
 
 def test_cli_rejects_write_method(tmp_path: Path, capsys) -> None:
@@ -472,7 +474,7 @@ def test_cli_allow_writes(tmp_path: Path, monkeypatch) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_sendRawTransaction"]
+    assert methods == ["eth_sendRawTransaction", "eth_blockNumber"]
 
 
 def test_cli_kill_switch_env(monkeypatch, capsys) -> None:
@@ -555,6 +557,19 @@ def test_cli_allows_concurrency_wave_cap(tmp_path: Path, monkeypatch, capsys) ->
     assert "Mode      paired" in capsys.readouterr().out
 
 
+def test_cli_rejects_negative_stale_blocks(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--stale-blocks", "-1", "--samples", "1"]
+    )
+    assert code == 2
+    assert "stale-blocks" in capsys.readouterr().err
+
+
 def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     import json
 
@@ -606,6 +621,13 @@ def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     assert data["summary"]["fastest"] == "ok"
     assert data["providers"][0]["id"]
     assert data["ranking"][0]["name"] == "ok"
+    assert data["stale_blocks"] == 2
+    assert data["block_time_s"] == 12.0
+    assert data["cohort_height"] == 42
+    assert data["summary"]["stale_names"] == []
+    assert data["comparison"][0]["freshness"]["verdict"] == "fresh"
+    assert data["comparison"][0]["freshness"]["height"] == 42
+    assert data["providers"][0]["freshness"]["lag_blocks"] == 0
 
 
 def test_cli_output_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -881,7 +903,7 @@ def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert "Rank by mean" in out
-    assert "Ranking  (by mean; similar within 10%; ~ high err; failed last)" in out
+    assert "Ranking  (by mean; similar within 10%; ~ high err or stale; failed last)" in out
 
 
 def test_cli_sequential(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -18,6 +18,9 @@
   "sequence_id": "",
   "rank_by": "p95",
   "similar_band": 0.1,
+  "stale_blocks": 2,
+  "block_time_s": 12.0,
+  "cohort_height": null,
   "histogram_buckets": [
     {
       "label": "<50ms",
@@ -50,7 +53,8 @@
     "failed": 1,
     "failed_names": [
       "dead"
-    ]
+    ],
+    "stale_names": []
   },
   "comparison": [
     {
@@ -98,7 +102,8 @@
         "responded": true,
         "error_class": null
       },
-      "last_error": null
+      "last_error": null,
+      "freshness": null
     },
     {
       "name": "fast",
@@ -145,7 +150,8 @@
         "responded": true,
         "error_class": null
       },
-      "last_error": null
+      "last_error": null,
+      "freshness": null
     },
     {
       "name": "dead",
@@ -192,7 +198,8 @@
         "responded": false,
         "error_class": "timeout"
       },
-      "last_error": "timeout: took too long"
+      "last_error": "timeout: took too long",
+      "freshness": null
     }
   ],
   "ranking": [
@@ -215,7 +222,8 @@
       "rps": 90.9090909090909,
       "rank_by": "p95",
       "rank_value": 12.0,
-      "score": 1.0
+      "score": 1.0,
+      "freshness": null
     },
     {
       "rank": 2,
@@ -236,7 +244,8 @@
       "rps": 22.22222222222222,
       "rank_by": "p95",
       "rank_value": 50.0,
-      "score": 1.0
+      "score": 1.0,
+      "freshness": null
     },
     {
       "rank": null,
@@ -259,7 +268,8 @@
       "rps": null,
       "rank_by": "p95",
       "rank_value": null,
-      "score": 0.0
+      "score": 0.0,
+      "freshness": null
     }
   ],
   "methods": [],
@@ -324,6 +334,7 @@
         "method": "eth_blockNumber",
         "responded": true
       },
+      "freshness": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -407,6 +418,7 @@
         "method": "eth_blockNumber",
         "responded": true
       },
+      "freshness": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -492,6 +504,7 @@
         "method": "eth_blockNumber",
         "responded": false
       },
+      "freshness": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [
