@@ -94,6 +94,9 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["ranking"][0]["consistency"] is None
     assert data["providers"][0]["consistency"] is None
     assert data["methods"] == []
+    assert data["tags"] == []
+    assert data["providers"][0]["client"] is None
+    assert data["providers"][0]["tags"] == []
     assert data["summary"]["fastest_similar"] is False
     assert data["summary"]["fastest_names"] == ["fast"]
     assert data["ranking"][0]["similar"] is False

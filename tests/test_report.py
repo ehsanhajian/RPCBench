@@ -127,7 +127,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "jit" in compare
     assert "rps" in compare
     assert "head" in compare and "lag" in compare and "fresh" in compare
-    assert "hash" in compare and "agree" in compare
+    assert "hash" in compare and "match" in compare
     assert "cap" in compare
     assert "yes" in compare
     assert "timeout" in compare
@@ -354,7 +354,7 @@ def test_stale_cannot_be_fastest() -> None:
     assert "~" in ranking
     assert "lagged" in ranking
     assert "  stale" in ranking
-    assert "head=97  lag=3 (~36s)  fresh=stale" in text
+    assert "head=97  lag=3 (~36s)  stale" in text
     assert "stale >2 blocks vs cohort median" in text
 
 
@@ -386,7 +386,7 @@ def test_disagree_cannot_be_fastest() -> None:
     assert "~" in ranking
     assert "wrong" in ranking
     assert "disagree" in ranking
-    assert f"hash={digest_b}  agree=disagree  pin=100" in text
+    assert f"hash={digest_b}  differs from group  at block 100" in text
 
 
 def test_p99_flagged_when_n_too_small() -> None:

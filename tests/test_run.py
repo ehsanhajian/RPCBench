@@ -193,9 +193,19 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
             200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
         )
 
-    # warmup 100ms (excluded), then 10 / 20 / 30 ms samples
-    marks = iter([0.0, 0.100, 0.100, 0.110, 0.110, 0.130, 0.130, 0.160, 0.160, 0.161])
-    monkeypatch.setattr("rpcbench.rpc.time.monotonic", lambda: next(marks))
+    # warmup 100ms (excluded), then 10 / 20 / 30 ms samples; extras after that.
+    times = [0.0, 0.100, 0.100, 0.110, 0.110, 0.130, 0.130, 0.160]
+    clock = {"i": 0, "t": 0.160}
+
+    def now() -> float:
+        if clock["i"] < len(times):
+            value = times[clock["i"]]
+            clock["i"] += 1
+            return value
+        clock["t"] += 0.001
+        return clock["t"]
+
+    monkeypatch.setattr("rpcbench.rpc.time.monotonic", now)
     cfg = parse_endpoints(
         {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
     )
@@ -243,10 +253,13 @@ def test_run_sends_configured_method() -> None:
         params=[],
         samples=1,
         warmup=0,
-        budget=4,
+        budget=16,
         client=client,
     )
-    assert seen == ["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber"]
+    assert seen[:1] == ["eth_chainId"]
+    assert "eth_blockNumber" in seen
+    assert "eth_getBlockByNumber" in seen
+    assert "web3_clientVersion" in seen
     assert [hit.method for hit in result.outcomes[0].samples] == ["eth_chainId"]
 
 
@@ -707,7 +720,7 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     assert result.profile == "mix"
     assert len(result.workload) == 6
     assert [spec.method for spec in MIX_PROFILE] == seen[:6]
-    assert len(seen) == 19
+    assert len(seen) == 23
     outcome = result.outcomes[0]
     assert outcome.stats.n_ok == 12
     assert [name for name, _ in outcome.by_method] == [s.name for s in MIX_PROFILE]
@@ -743,7 +756,8 @@ def test_freshness_uses_first_blockNumber_sample() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     result = run_endpoints(cfg, samples=2, warmup=0, budget=16, client=client)
     assert seen.count("eth_blockNumber") == 4
-    assert seen.count("eth_getBlockByNumber") == 2
+    assert seen.count("eth_getBlockByNumber") == 8
+    assert seen.count("web3_clientVersion") == 2
     assert result.cohort_height == 100
     by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
     assert by_name["tip"] is not None and by_name["tip"].verdict == "fresh"
@@ -792,7 +806,8 @@ def test_extra_head_wave_stays_out_of_latency_stats() -> None:
     )
     assert seen.count("eth_getBalance") == 2
     assert seen.count("eth_blockNumber") == 2
-    assert seen.count("eth_getBlockByNumber") == 2
+    assert seen.count("eth_getBlockByNumber") == 8
+    assert seen.count("web3_clientVersion") == 2
     assert all(hit.method == "eth_getBalance" for o in result.outcomes for hit in o.samples)
     assert [o.stats.n_ok for o in result.outcomes] == [1, 1]
     by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
@@ -853,9 +868,9 @@ def test_mix_uses_chainId_block_time_without_extra_head() -> None:
         workload=MIX_PROFILE,
         profile="mix",
     )
-    assert len(seen) == 7
+    assert len(seen) == 11
     assert seen.count("eth_blockNumber") == 1
-    assert seen.count("eth_getBlockByNumber") == 2
+    assert seen.count("eth_getBlockByNumber") == 5
     assert result.block_time_s == 2.0
     assert result.outcomes[0].freshness is not None
     assert result.outcomes[0].freshness.height == 100
@@ -879,6 +894,16 @@ def test_hash_wave_pins_cohort_and_flags_disagree() -> None:
                 200, json={"jsonrpc": "2.0", "id": 1, "result": "0x64"}
             )
         if method == "eth_getBlockByNumber":
+            tag = payload["params"][0]
+            if tag in ("latest", "safe", "finalized"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": _block_result(100, HASH_A),
+                    },
+                )
             digest = HASH_B if str(request.url).endswith("/wrong") else HASH_A
             assert payload["params"] == ["0x64", False]
             return httpx.Response(
@@ -953,7 +978,8 @@ def test_block_pin_overrides_cohort_head() -> None:
     result = run_endpoints(
         cfg, samples=1, warmup=0, budget=16, client=client, block_pin=16
     )
-    assert pins == ["0x10", "0x10"]
+    assert pins[:2] == ["0x10", "0x10"]
+    assert pins.count("latest") == 2
     assert result.pin_height == 16
     assert result.cohort_height == 100
     assert {o.consistency.verdict for o in result.outcomes} == {"agree"}
@@ -989,4 +1015,80 @@ def test_missing_block_hash_is_unknown_not_disagree() -> None:
     assert by_name["miss"] is not None and by_name["miss"].verdict == "unknown"
     text = format_run(result, color=False)
     assert "Disagree" not in text.split("Comparison", 1)[0]
+
+
+def test_client_label_and_tag_snapshots_are_not_ranked() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "web3_clientVersion":
+            label = (
+                "Geth/v1.14.12-stable"
+                if str(request.url).endswith("/geth")
+                else "erigon/2.60.0"
+            )
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": label}
+            )
+        if method == "eth_blockNumber":
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": "0x64"}
+            )
+        if method == "eth_getBlockByNumber":
+            tag = payload["params"][0]
+            if tag == "finalized" and str(request.url).endswith("/erigon"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "error": {"code": -32602, "message": "Unknown block tag"},
+                    },
+                )
+            height = {"latest": "0x64", "safe": "0x62", "finalized": "0x60"}.get(
+                tag, tag
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"number": height, "hash": HASH_A},
+                },
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "geth", "url": "http://127.0.0.1:8545/geth"},
+                {"name": "erigon", "url": "http://127.0.0.1:8545/erigon"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=1, warmup=0, budget=32, client=client)
+    by_name = {o.endpoint.name: o for o in result.outcomes}
+    assert by_name["geth"].client == "Geth/v1.14.12-stable"
+    assert by_name["erigon"].client == "erigon/2.60.0"
+    assert [snap.tag for snap in by_name["geth"].tags] == [
+        "latest",
+        "safe",
+        "finalized",
+    ]
+    assert by_name["geth"].tags[0].skipped is False
+    assert by_name["geth"].tags[0].height == 100
+    assert by_name["erigon"].tags[2].skipped is True
+    assert by_name["erigon"].tags[2].skip_reason == "unsupported"
+    assert all(hit.method == "eth_blockNumber" for o in result.outcomes for hit in o.samples)
+    text = format_run(result, color=False)
+    assert "Tags  (latest / safe / finalized snapshot; not mixed into ranking)" in text
+    assert "client=Geth/v1.14.12-stable" in text
+    assert "unsupported" in text
+    assert "severity" not in text.lower()
+    assert "finding" not in text.lower()
+    assert "disclosed" not in text.lower()
+    assert "cve" not in text.lower()
 

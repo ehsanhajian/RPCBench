@@ -127,7 +127,7 @@ def test_cli_short_budget_two_endpoints(tmp_path: Path, monkeypatch, capsys) -> 
     monkeypatch.setattr(cli, "run_endpoints", wrapped)
     code = main(["run", "--endpoints", str(cfg), "--budget", "short"])
     assert code == 0
-    assert calls["n"] == 8
+    assert calls["n"] == 16
     out = capsys.readouterr().out
     assert "size short" in out
     assert "Samples   3 after 0 warmup" in out
@@ -232,7 +232,15 @@ def test_cli_preset_balance(tmp_path: Path, monkeypatch, capsys) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_getBalance", "eth_blockNumber", "eth_getBlockByNumber"]
+    assert methods == [
+        "eth_getBalance",
+        "eth_blockNumber",
+        "eth_getBlockByNumber",
+        "web3_clientVersion",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+    ]
     assert "eth_getBalance" in capsys.readouterr().out
 
 
@@ -279,7 +287,15 @@ def test_cli_method_flag(tmp_path: Path, monkeypatch) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber"]
+    assert methods == [
+        "eth_chainId",
+        "eth_blockNumber",
+        "eth_getBlockByNumber",
+        "web3_clientVersion",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+    ]
 
 
 def test_cli_rejects_write_method(tmp_path: Path, capsys) -> None:
@@ -475,7 +491,15 @@ def test_cli_allow_writes(tmp_path: Path, monkeypatch) -> None:
         ]
     )
     assert code == 0
-    assert methods == ["eth_sendRawTransaction", "eth_blockNumber", "eth_getBlockByNumber"]
+    assert methods == [
+        "eth_sendRawTransaction",
+        "eth_blockNumber",
+        "eth_getBlockByNumber",
+        "web3_clientVersion",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
+    ]
 
 
 def test_cli_kill_switch_env(monkeypatch, capsys) -> None:
@@ -638,9 +662,10 @@ def test_cli_block_pin_is_passed(tmp_path: Path, monkeypatch, capsys) -> None:
         ]
     )
     assert code == 0
-    assert pins == ["0x10"]
+    assert pins[0] == "0x10"
+    assert "latest" in pins
     out = capsys.readouterr().out
-    assert "agree=agree" in out
+    assert "matches group" in out
     assert "hash at block 16" in out
 
 
@@ -706,6 +731,9 @@ def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     assert data["comparison"][0]["freshness"]["height"] == 42
     assert data["providers"][0]["freshness"]["lag_blocks"] == 0
     assert data["comparison"][0]["consistency"]["verdict"] == "unknown"
+    assert data["providers"][0]["client"] is None
+    assert {row["tag"] for row in data["tags"]} == {"latest", "safe", "finalized"}
+    assert all(row["skipped"] for row in data["tags"])
 
 
 def test_cli_output_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -818,8 +846,8 @@ def test_cli_mix_budget_too_low(tmp_path: Path, capsys) -> None:
     )
     assert code == 2
     err = capsys.readouterr().err
-    assert "mix needs 14 requests" in err
-    assert "--max-requests 14" in err
+    assert "mix needs 22 requests" in err
+    assert "--max-requests 22" in err
 
 
 def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -875,6 +903,10 @@ def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
         "eth_getBalance",
         "eth_call",
         "eth_getLogs",
+        "eth_getBlockByNumber",
+        "web3_clientVersion",
+        "eth_getBlockByNumber",
+        "eth_getBlockByNumber",
         "eth_getBlockByNumber",
     ]
 
@@ -938,6 +970,7 @@ def test_cli_long_mix_does_not_add_archive_or_ws(
         "eth_getBalance",
         "eth_call",
         "eth_getLogs",
+        "web3_clientVersion",
     ]
 
 

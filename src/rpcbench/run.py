@@ -26,6 +26,13 @@ from rpcbench.freshness import (
 )
 from rpcbench.methods import CallSpec
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
+from rpcbench.tags import (
+    BLOCK_TAGS,
+    CLIENT_METHOD,
+    TagSnapshot,
+    client_from_hit,
+    snapshots_from_hits,
+)
 
 
 _CLASS_ORDER = (
@@ -72,6 +79,8 @@ class EndpointOutcome:
     by_method: tuple[tuple[str, LatencyStats], ...] = ()
     freshness: Freshness | None = None
     consistency: Consistency | None = None
+    client: str | None = None
+    tags: tuple[TagSnapshot, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -379,6 +388,43 @@ def run_endpoints(
         for outcome in outcomes
     ]
     canon = next((row.canonical_hash for row in agreed.values()), None)
+    client_hits = _probe_wave(
+        config,
+        method=CLIENT_METHOD,
+        params=[],
+        timeout=timeout,
+        budget=purse,
+        deadline=deadline,
+        concurrency=wave_concurrency,
+        client=client,
+    )
+    tag_rows: dict[str, list[TagSnapshot]] = {
+        outcome.endpoint.name: [] for outcome in outcomes
+    }
+    for tag in BLOCK_TAGS:
+        hits = _probe_wave(
+            config,
+            method="eth_getBlockByNumber",
+            params=[tag, False],
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=wave_concurrency,
+            client=client,
+        )
+        judged_tags = snapshots_from_hits(
+            tag, hits, stale_blocks=stale_blocks, block_time_s=resolved_time
+        )
+        for name, snap in judged_tags.items():
+            tag_rows[name].append(snap)
+    outcomes = [
+        replace(
+            outcome,
+            client=client_from_hit(client_hits.get(outcome.endpoint.name)),
+            tags=tuple(tag_rows.get(outcome.endpoint.name, ())),
+        )
+        for outcome in outcomes
+    ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
