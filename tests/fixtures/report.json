@@ -282,6 +282,7 @@
     }
   ],
   "methods": [],
+  "tags": [],
   "providers": [
     {
       "name": "fast",
@@ -291,6 +292,7 @@
       "similar": false,
       "reliable": true,
       "ok": true,
+      "client": null,
       "performance": {
         "n_ok": 2,
         "n_fail": 0,
@@ -345,6 +347,7 @@
       },
       "freshness": null,
       "consistency": null,
+      "tags": [],
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -376,6 +379,7 @@
       "similar": false,
       "reliable": true,
       "ok": true,
+      "client": null,
       "performance": {
         "n_ok": 2,
         "n_fail": 0,
@@ -430,6 +434,7 @@
       },
       "freshness": null,
       "consistency": null,
+      "tags": [],
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -461,6 +466,7 @@
       "similar": false,
       "reliable": false,
       "ok": false,
+      "client": null,
       "performance": {
         "n_ok": 0,
         "n_fail": 1,
@@ -517,6 +523,7 @@
       },
       "freshness": null,
       "consistency": null,
+      "tags": [],
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [

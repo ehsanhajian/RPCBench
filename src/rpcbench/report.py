@@ -277,6 +277,7 @@ def run_to_dict(
         ],
         "ranking": ranking,
         "methods": _methods_json(result),
+        "tags": _tags_json(result),
         "providers": providers,
         "capabilities": {
             "method": result.method,
@@ -375,6 +376,11 @@ def format_run(
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
+    if any(outcome.tags for outcome in result.outcomes):
+        lines.extend(
+            ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
+        )
+        lines.extend(_tags_lines(result, name_w, use_color))
     lines.extend(["", "Providers"])
     for outcome in ranked:
         lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
@@ -390,7 +396,8 @@ def format_run(
         f"and histogram of successful samples  ·  similar-band {band_pct}  ·  "
         f"stale >{result.stale_blocks} blocks vs cohort median "
         f"({result.block_time_s:g}s/block)  ·  "
-        f"hash at block {result.pin_height if result.pin_height is not None else '—'}"
+        f"hash at block {result.pin_height if result.pin_height is not None else '—'}  ·  "
+        "client is a label only"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -478,6 +485,45 @@ def _methods_lines(
     return lines
 
 
+def _tags_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    header = (
+        f"  {'endpoint':<{name_w}}  {'tag':<10}  {'lat':>8}  "
+        f"{'head':>8}  {'lag':>4}  fresh  note"
+    )
+    lines = [header]
+    for outcome in result.outcomes:
+        hue = _GREEN if outcome.stats.n_ok else _RED
+        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        for snap in outcome.tags:
+            if snap.skipped:
+                note = snap.skip_reason or "skip"
+                lines.append(
+                    f"  {name}  {snap.tag:<10}  {_cell_ms(snap.latency_ms)}  "
+                    f"{'—':>8}  {'—':>4}  {'—':<5}  {note}"
+                )
+                continue
+            fresh = snap.freshness
+            lag = (
+                "—"
+                if fresh is None or fresh.lag_blocks is None
+                else str(fresh.lag_blocks)
+            )
+            verdict = "—"
+            if fresh is not None:
+                if fresh.verdict == "stale":
+                    verdict = "stale"
+                elif fresh.verdict == "fresh":
+                    verdict = "yes"
+            height = "—" if snap.height is None else str(snap.height)
+            lines.append(
+                f"  {name}  {snap.tag:<10}  {_cell_ms(snap.latency_ms)}  "
+                f"{height:>8}  {lag:>4}  {verdict:<5}"
+            )
+    return lines
+
+
 def _methods_json(result: RunResult) -> list[dict[str, Any]]:
     lookup = {spec.name: spec.method for spec in result.workload}
     rows: list[dict[str, Any]] = []
@@ -500,6 +546,38 @@ def _methods_json(result: RunResult) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def _tags_json(result: RunResult) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for outcome in result.outcomes:
+        for snap in outcome.tags:
+            rows.append(_tag_entry(outcome.endpoint.name, snap))
+    return rows
+
+
+def _tag_entry(name: str, snap: Any) -> dict[str, Any]:
+    fresh = snap.freshness
+    return {
+        "name": name,
+        "tag": snap.tag,
+        "ok": not snap.skipped,
+        "latency_ms": snap.latency_ms,
+        "height": snap.height,
+        "hash": snap.hash,
+        "skipped": snap.skipped,
+        "skip_reason": snap.skip_reason,
+        "freshness": None
+        if fresh is None
+        else {
+            "height": fresh.height,
+            "height_hex": fresh.height_hex,
+            "lag_blocks": fresh.lag_blocks,
+            "lag_s": fresh.lag_s,
+            "verdict": fresh.verdict,
+            "cohort_height": fresh.cohort_height,
+        },
+    }
 
 
 def _comparison_lines(
@@ -688,6 +766,8 @@ def _provider_lines(
     rate = f"err={_pct(stats.error_rate)}"
     classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
     lines.append(f"{indent}n={stats.n_ok}/{attempted}  {rate}{classes}")
+    if outcome.client:
+        lines.append(f"{indent}client={outcome.client}")
     if stats.min_ms is not None:
         lines.append(
             f"{indent}min={stats.min_ms:.1f}ms  "
@@ -793,6 +873,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
         "similar": row.similar,
         "reliable": row.reliable,
         "ok": stats.n_ok > 0,
+        "client": outcome.client,
         "performance": {
             "n_ok": stats.n_ok,
             "n_fail": stats.n_fail,
@@ -821,6 +902,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
         },
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
+        "tags": [_tag_entry(outcome.endpoint.name, snap) for snap in outcome.tags],
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],

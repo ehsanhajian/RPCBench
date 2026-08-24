@@ -71,6 +71,14 @@ After freshness, one paired `eth_getBlockByNumber(pin, false)` is sent to every 
 
 This is compare-time data agreement, not consensus fork choice and not a security finding.
 
+## Client label and block tags
+
+`web3_clientVersion` is stored as a **label** when the node volunteers a string. It is omitted when missing or not a client string. RPCBench does not flag outdated versions, CVEs, or “version disclosed” — that is Nodeprobe.
+
+**Tags** are one paired snapshot of `eth_getBlockByNumber` for `latest`, `safe`, and `finalized` (second param `false`). Extra tag reads are **not** mixed into ranking samples. Freshness is per tag vs that tag’s cohort median (finalized is behind `latest` by design). JSON-RPC errors on a tag are **skipped** with reason `unsupported`; an empty/`null` result is `empty`. A family that has no `safe`/`finalized` still ranks on the timed workload.
+
+To time a single tag with full `--samples`, pass `--method eth_getBlockByNumber --params '["finalized", false]'`.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.

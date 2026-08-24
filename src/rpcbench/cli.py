@@ -14,6 +14,7 @@ from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
+from rpcbench.tags import META_REQUESTS_PER_ENDPOINT
 
 
 SAMPLE_BUDGETS: dict[str, dict[str, int | float]] = {
@@ -265,6 +266,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if not any(spec.method == "eth_blockNumber" for spec in workload):
             needed += len(config.endpoints)
         needed += len(config.endpoints)
+        needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
         max_requests = args.max_requests
         if args.profile == "mix" and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
