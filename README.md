@@ -57,7 +57,7 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 The CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
-2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh / hash / agree)
+2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh / hash / match)
 3. **Ranking** — ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 5. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)

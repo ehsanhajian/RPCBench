@@ -665,7 +665,7 @@ def test_cli_block_pin_is_passed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert pins[0] == "0x10"
     assert "latest" in pins
     out = capsys.readouterr().out
-    assert "agree=agree" in out
+    assert "matches group" in out
     assert "hash at block 16" in out
 
 

@@ -586,7 +586,7 @@ def _comparison_lines(
     header = (
         f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
         f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  "
-        f"{'head':>8}  {'lag':>4}  fresh  {'hash':<10}  agree  cap"
+        f"{'head':>8}  {'lag':>4}  fresh  {'hash':<10}  match  cap"
     )
     lines = [header]
     for outcome in result.outcomes:
@@ -965,7 +965,13 @@ def _consistency_provider_line(outcome: EndpointOutcome) -> str:
         return ""
     digest = "—" if cons.hash is None else cons.hash
     pin = "—" if cons.pin_height is None else str(cons.pin_height)
-    return f"hash={digest}  agree={cons.verdict}  pin={pin}"
+    if cons.verdict == "agree":
+        status = "matches group"
+    elif cons.verdict == "disagree":
+        status = "differs from group"
+    else:
+        status = "unknown"
+    return f"hash={digest}  {status}  at block {pin}"
 
 
 def _freshness_provider_line(outcome: EndpointOutcome) -> str:
@@ -973,14 +979,16 @@ def _freshness_provider_line(outcome: EndpointOutcome) -> str:
     if fresh is None:
         return ""
     if fresh.verdict == "unknown":
-        return "head=—  lag=—  fresh=unknown"
+        return "head=—  lag=—  unknown"
     lag = "—" if fresh.lag_blocks is None else str(fresh.lag_blocks)
     extra = ""
     if fresh.lag_s is not None and fresh.lag_blocks:
         extra = f" (~{fresh.lag_s:g}s)"
-    return (
-        f"head={fresh.height}  lag={lag}{extra}  fresh={fresh.verdict}"
-    )
+    if fresh.verdict == "stale":
+        status = "stale"
+    else:
+        status = "caught up"
+    return f"head={fresh.height}  lag={lag}{extra}  {status}"
 
 
 def _success_rate(error_rate: float | None) -> float | None:
