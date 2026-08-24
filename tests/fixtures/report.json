@@ -21,6 +21,8 @@
   "stale_blocks": 2,
   "block_time_s": 12.0,
   "cohort_height": null,
+  "pin_height": null,
+  "canonical_hash": null,
   "histogram_buckets": [
     {
       "label": "<50ms",
@@ -54,7 +56,8 @@
     "failed_names": [
       "dead"
     ],
-    "stale_names": []
+    "stale_names": [],
+    "disagree_names": []
   },
   "comparison": [
     {
@@ -103,7 +106,8 @@
         "error_class": null
       },
       "last_error": null,
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     },
     {
       "name": "fast",
@@ -151,7 +155,8 @@
         "error_class": null
       },
       "last_error": null,
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     },
     {
       "name": "dead",
@@ -199,7 +204,8 @@
         "error_class": "timeout"
       },
       "last_error": "timeout: took too long",
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     }
   ],
   "ranking": [
@@ -223,7 +229,8 @@
       "rank_by": "p95",
       "rank_value": 12.0,
       "score": 1.0,
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     },
     {
       "rank": 2,
@@ -245,7 +252,8 @@
       "rank_by": "p95",
       "rank_value": 50.0,
       "score": 1.0,
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     },
     {
       "rank": null,
@@ -269,7 +277,8 @@
       "rank_by": "p95",
       "rank_value": null,
       "score": 0.0,
-      "freshness": null
+      "freshness": null,
+      "consistency": null
     }
   ],
   "methods": [],
@@ -335,6 +344,7 @@
         "responded": true
       },
       "freshness": null,
+      "consistency": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -419,6 +429,7 @@
         "responded": true
       },
       "freshness": null,
+      "consistency": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -505,6 +516,7 @@
         "responded": false
       },
       "freshness": null,
+      "consistency": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [

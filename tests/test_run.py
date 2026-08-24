@@ -194,7 +194,7 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
         )
 
     # warmup 100ms (excluded), then 10 / 20 / 30 ms samples
-    marks = iter([0.0, 0.100, 0.100, 0.110, 0.110, 0.130, 0.130, 0.160])
+    marks = iter([0.0, 0.100, 0.100, 0.110, 0.110, 0.130, 0.130, 0.160, 0.160, 0.161])
     monkeypatch.setattr("rpcbench.rpc.time.monotonic", lambda: next(marks))
     cfg = parse_endpoints(
         {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
@@ -246,7 +246,7 @@ def test_run_sends_configured_method() -> None:
         budget=4,
         client=client,
     )
-    assert seen == ["eth_chainId", "eth_blockNumber"]
+    assert seen == ["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber"]
     assert [hit.method for hit in result.outcomes[0].samples] == ["eth_chainId"]
 
 
@@ -707,7 +707,7 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     assert result.profile == "mix"
     assert len(result.workload) == 6
     assert [spec.method for spec in MIX_PROFILE] == seen[:6]
-    assert len(seen) == 18
+    assert len(seen) == 19
     outcome = result.outcomes[0]
     assert outcome.stats.n_ok == 12
     assert [name for name, _ in outcome.by_method] == [s.name for s in MIX_PROFILE]
@@ -742,7 +742,8 @@ def test_freshness_uses_first_blockNumber_sample() -> None:
     )
     client = httpx.Client(transport=httpx.MockTransport(handler))
     result = run_endpoints(cfg, samples=2, warmup=0, budget=16, client=client)
-    assert seen == ["eth_blockNumber"] * 4
+    assert seen.count("eth_blockNumber") == 4
+    assert seen.count("eth_getBlockByNumber") == 2
     assert result.cohort_height == 100
     by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
     assert by_name["tip"] is not None and by_name["tip"].verdict == "fresh"
@@ -791,6 +792,7 @@ def test_extra_head_wave_stays_out_of_latency_stats() -> None:
     )
     assert seen.count("eth_getBalance") == 2
     assert seen.count("eth_blockNumber") == 2
+    assert seen.count("eth_getBlockByNumber") == 2
     assert all(hit.method == "eth_getBalance" for o in result.outcomes for hit in o.samples)
     assert [o.stats.n_ok for o in result.outcomes] == [1, 1]
     by_name = {o.endpoint.name: o.freshness for o in result.outcomes}
@@ -851,10 +853,140 @@ def test_mix_uses_chainId_block_time_without_extra_head() -> None:
         workload=MIX_PROFILE,
         profile="mix",
     )
-    assert len(seen) == 6
+    assert len(seen) == 7
     assert seen.count("eth_blockNumber") == 1
+    assert seen.count("eth_getBlockByNumber") == 2
     assert result.block_time_s == 2.0
     assert result.outcomes[0].freshness is not None
     assert result.outcomes[0].freshness.height == 100
     assert result.outcomes[0].freshness.verdict == "fresh"
+
+
+HASH_A = "0x" + "aa" * 32
+HASH_B = "0x" + "bb" * 32
+
+
+def _block_result(height: int, digest: str) -> dict[str, str]:
+    return {"number": hex(height), "hash": digest}
+
+
+def test_hash_wave_pins_cohort_and_flags_disagree() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "eth_blockNumber":
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": "0x64"}
+            )
+        if method == "eth_getBlockByNumber":
+            digest = HASH_B if str(request.url).endswith("/wrong") else HASH_A
+            assert payload["params"] == ["0x64", False]
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": _block_result(100, digest),
+                },
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "right", "url": "http://127.0.0.1:8545/right"},
+                {"name": "also", "url": "http://127.0.0.1:8545/also"},
+                {"name": "wrong", "url": "http://127.0.0.1:8545/wrong"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=1, warmup=0, budget=16, client=client)
+    assert result.pin_height == 100
+    assert result.canonical_hash == HASH_A
+    by_name = {o.endpoint.name: o.consistency for o in result.outcomes}
+    assert by_name["right"] is not None and by_name["right"].verdict == "agree"
+    assert by_name["also"] is not None and by_name["also"].verdict == "agree"
+    assert by_name["wrong"] is not None and by_name["wrong"].verdict == "disagree"
+    assert [len(o.samples) for o in result.outcomes] == [1, 1, 1]
+    text = format_run(result, color=False)
+    assert "Disagree 1/3    wrong" in text
+    assert "wrong" not in text.split("Summary", 1)[1].split("Failed", 1)[0]
+
+
+def test_block_pin_overrides_cohort_head() -> None:
+    pins: list[object] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "eth_blockNumber":
+            height = "0x64" if str(request.url).endswith("/tip") else "0x63"
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": height}
+            )
+        if method == "eth_getBlockByNumber":
+            pins.append(payload["params"][0])
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": _block_result(16, HASH_A),
+                },
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "tip", "url": "http://127.0.0.1:8545/tip"},
+                {"name": "lag", "url": "http://127.0.0.1:8545/lag"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=16, client=client, block_pin=16
+    )
+    assert pins == ["0x10", "0x10"]
+    assert result.pin_height == 16
+    assert result.cohort_height == 100
+    assert {o.consistency.verdict for o in result.outcomes} == {"agree"}
+
+
+def test_missing_block_hash_is_unknown_not_disagree() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "eth_getBlockByNumber":
+            result = None if str(request.url).endswith("/miss") else _block_result(
+                100, HASH_A
+            )
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": result}
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x64"}
+        )
+
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {"name": "ok", "url": "http://127.0.0.1:8545/ok"},
+                {"name": "miss", "url": "http://127.0.0.1:8545/miss"},
+            ]
+        }
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(cfg, samples=1, warmup=0, budget=16, client=client)
+    by_name = {o.endpoint.name: o.consistency for o in result.outcomes}
+    assert by_name["ok"] is not None and by_name["ok"].verdict == "agree"
+    assert by_name["miss"] is not None and by_name["miss"].verdict == "unknown"
+    text = format_run(result, color=False)
+    assert "Disagree" not in text.split("Comparison", 1)[0]
 

@@ -73,6 +73,11 @@ def is_stale(outcome: EndpointOutcome) -> bool:
     return fresh is not None and fresh.verdict == "stale"
 
 
+def is_disagree(outcome: EndpointOutcome) -> bool:
+    cons = outcome.consistency
+    return cons is not None and cons.verdict == "disagree"
+
+
 def reliable_for_place(
     stats: Any, similar_band: float, outcome: EndpointOutcome | None = None
 ) -> bool:
@@ -80,7 +85,7 @@ def reliable_for_place(
         return False
     if stats.error_rate is not None and stats.error_rate > similar_band:
         return False
-    if outcome is not None and is_stale(outcome):
+    if outcome is not None and (is_stale(outcome) or is_disagree(outcome)):
         return False
     return True
 
@@ -254,6 +259,8 @@ def run_to_dict(
         "stale_blocks": result.stale_blocks,
         "block_time_s": result.block_time_s,
         "cohort_height": result.cohort_height,
+        "pin_height": result.pin_height,
+        "canonical_hash": result.canonical_hash,
         "histogram_buckets": _histogram_bucket_defs(),
         "summary": {
             "fastest": winners[0].outcome.endpoint.name if len(winners) == 1 else None,
@@ -263,6 +270,7 @@ def run_to_dict(
             "failed": len(fail_rows),
             "failed_names": [o.endpoint.name for o in fail_rows],
             "stale_names": [o.endpoint.name for o in ranked if is_stale(o)],
+            "disagree_names": [o.endpoint.name for o in ranked if is_disagree(o)],
         },
         "comparison": [
             _comparison_entry(outcome, result.method) for outcome in result.outcomes
@@ -354,7 +362,7 @@ def format_run(
     )
     lines.extend(_comparison_lines(result, name_w, use_color))
     lines.extend(
-        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err or stale; failed last)"]
+        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err, stale, or disagree; failed last)"]
     )
     for row in placed:
         if row.rank is not None:
@@ -381,7 +389,8 @@ def format_run(
         "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
         f"and histogram of successful samples  ·  similar-band {band_pct}  ·  "
         f"stale >{result.stale_blocks} blocks vs cohort median "
-        f"({result.block_time_s:g}s/block)"
+        f"({result.block_time_s:g}s/block)  ·  "
+        f"hash at block {result.pin_height if result.pin_height is not None else '—'}"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -428,6 +437,10 @@ def _summary_lines(
     if stale_rows:
         names = ", ".join(o.endpoint.name for o in stale_rows)
         lines.append(f"  Stale    {len(stale_rows)}/{total}    {names}")
+    disagree_rows = [row.outcome for row in placed if is_disagree(row.outcome)]
+    if disagree_rows:
+        names = ", ".join(o.endpoint.name for o in disagree_rows)
+        lines.append(f"  Disagree {len(disagree_rows)}/{total}    {names}")
     return lines
 
 
@@ -495,7 +508,7 @@ def _comparison_lines(
     header = (
         f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
         f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  "
-        f"{'head':>8}  {'lag':>4}  fresh  cap"
+        f"{'head':>8}  {'lag':>4}  fresh  {'hash':<10}  agree  cap"
     )
     lines = [header]
     for outcome in result.outcomes:
@@ -521,7 +534,8 @@ def _comparison_line(outcome: EndpointOutcome, name_w: int, use_color: bool) -> 
         f"{_cell_ms(stats.p50_ms)}  {_cell_ms(stats.p95_ms)}  "
         f"{_cell_ms(stats.p99_ms)}  {_cell_ms(stats.jitter_ms)}  "
         f"{_cell_rps(stats.mean_ms)}  {_cell_head(outcome)}  "
-        f"{_cell_lag(outcome)}  {_cell_fresh(outcome)}  {cap}"
+        f"{_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
+        f"{_cell_hash(outcome)}  {_cell_agree(outcome)}  {cap}"
     )
 
 
@@ -552,6 +566,25 @@ def _cell_fresh(outcome: EndpointOutcome) -> str:
     if fresh.verdict == "stale":
         return f"{'stale':<5}"
     if fresh.verdict == "fresh":
+        return f"{'yes':<5}"
+    return f"{'—':<5}"
+
+
+def _cell_hash(outcome: EndpointOutcome) -> str:
+    cons = outcome.consistency
+    digest = None if cons is None else cons.hash
+    if digest is None:
+        return f"{'—':<10}"
+    return f"{digest[:10]:<10}"
+
+
+def _cell_agree(outcome: EndpointOutcome) -> str:
+    cons = outcome.consistency
+    if cons is None:
+        return f"{'—':<5}"
+    if cons.verdict == "disagree":
+        return f"{'no':<5}"
+    if cons.verdict == "agree":
         return f"{'yes':<5}"
     return f"{'—':<5}"
 
@@ -587,6 +620,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         },
         "last_error": _last_error(outcome) or None,
         "freshness": _freshness_json(outcome),
+        "consistency": _consistency_json(outcome),
     }
 
 
@@ -628,7 +662,7 @@ def _ranking_line(
             f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
             f"{classes}  {_rank_metric_text(stats, rank_by)}{extra_mean}{extra_p95}"
             f"  jitter={_jitter_text(stats.jitter_ms)}"
-            f"{_fresh_rank_note(outcome)}"
+            f"{_rank_notes(outcome)}"
         )
     err = _last_error(outcome)
     extra = f"  {err}" if err else ""
@@ -670,6 +704,9 @@ def _provider_lines(
         fresh_line = _freshness_provider_line(outcome)
         if fresh_line:
             lines.append(f"{indent}{fresh_line}")
+        cons_line = _consistency_provider_line(outcome)
+        if cons_line:
+            lines.append(f"{indent}{cons_line}")
     else:
         err = _last_error(outcome)
         if err:
@@ -739,6 +776,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "rank_value": _rank_value(stats, rank_by),
         "score": _success_rate(stats.error_rate),
         "freshness": _freshness_json(outcome),
+        "consistency": _consistency_json(outcome),
     }
 
 
@@ -782,6 +820,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
             "responded": stats.n_ok > 0,
         },
         "freshness": _freshness_json(outcome),
+        "consistency": _consistency_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -814,10 +853,37 @@ def _freshness_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
     }
 
 
-def _fresh_rank_note(outcome: EndpointOutcome) -> str:
+def _rank_notes(outcome: EndpointOutcome) -> str:
+    notes: list[str] = []
     if is_stale(outcome):
-        return "  stale"
-    return ""
+        notes.append("stale")
+    if is_disagree(outcome):
+        notes.append("disagree")
+    if not notes:
+        return ""
+    return "  " + "  ".join(notes)
+
+
+def _consistency_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
+    cons = outcome.consistency
+    if cons is None:
+        return None
+    return {
+        "hash": cons.hash,
+        "number": cons.number,
+        "verdict": cons.verdict,
+        "pin_height": cons.pin_height,
+        "canonical_hash": cons.canonical_hash,
+    }
+
+
+def _consistency_provider_line(outcome: EndpointOutcome) -> str:
+    cons = outcome.consistency
+    if cons is None:
+        return ""
+    digest = "—" if cons.hash is None else cons.hash
+    pin = "—" if cons.pin_height is None else str(cons.pin_height)
+    return f"hash={digest}  agree={cons.verdict}  pin={pin}"
 
 
 def _freshness_provider_line(outcome: EndpointOutcome) -> str:

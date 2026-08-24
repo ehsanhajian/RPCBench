@@ -10,6 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
 from rpcbench.config import BenchConfig, Endpoint
+from rpcbench.consistency import (
+    Consistency,
+    assess_consistency,
+    parse_block_hash,
+    parse_block_number,
+)
 from rpcbench.freshness import (
     DEFAULT_BLOCK_TIME_S,
     DEFAULT_STALE_BLOCKS,
@@ -65,6 +71,7 @@ class EndpointOutcome:
     stats: LatencyStats
     by_method: tuple[tuple[str, LatencyStats], ...] = ()
     freshness: Freshness | None = None
+    consistency: Consistency | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +103,8 @@ class RunResult:
     stale_blocks: int = DEFAULT_STALE_BLOCKS
     block_time_s: float = DEFAULT_BLOCK_TIME_S
     cohort_height: int | None = None
+    pin_height: int | None = None
+    canonical_hash: str | None = None
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -269,6 +278,7 @@ def run_endpoints(
     sample_budget: str = "standard",
     stale_blocks: int = DEFAULT_STALE_BLOCKS,
     block_time_s: float | None = None,
+    block_pin: int | None = None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -316,13 +326,16 @@ def run_endpoints(
             client=client,
         )
     extra_heads: dict[str, ProbeResult] = {}
+    wave_concurrency = 1 if mode == MODE_SEQUENTIAL else concurrency
     if not any(spec.method == "eth_blockNumber" for spec in steps):
-        extra_heads = _probe_heads(
+        extra_heads = _probe_wave(
             config,
+            method="eth_blockNumber",
+            params=[],
             timeout=timeout,
             budget=purse,
             deadline=deadline,
-            concurrency=concurrency,
+            concurrency=wave_concurrency,
             client=client,
         )
     chain_id = _sample_chain_id(outcomes)
@@ -339,6 +352,33 @@ def run_endpoints(
         for outcome in outcomes
     ]
     tip = next((row.cohort_height for row in judged.values()), None)
+    pin = block_pin if block_pin is not None else tip
+    extra_blocks: dict[str, ProbeResult] = {}
+    if pin is not None:
+        extra_blocks = _probe_wave(
+            config,
+            method="eth_getBlockByNumber",
+            params=[hex(pin), False],
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=wave_concurrency,
+            client=client,
+        )
+    hashes = {
+        outcome.endpoint.name: _block_hash(extra_blocks.get(outcome.endpoint.name))
+        for outcome in outcomes
+    }
+    numbers = {
+        outcome.endpoint.name: _block_number(extra_blocks.get(outcome.endpoint.name))
+        for outcome in outcomes
+    }
+    agreed = assess_consistency(hashes, numbers=numbers, pin_height=pin)
+    outcomes = [
+        replace(outcome, consistency=agreed[outcome.endpoint.name])
+        for outcome in outcomes
+    ]
+    canon = next((row.canonical_hash for row in agreed.values()), None)
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -359,6 +399,8 @@ def run_endpoints(
         stale_blocks=stale_blocks,
         block_time_s=resolved_time,
         cohort_height=tip,
+        pin_height=pin,
+        canonical_hash=canon,
     )
 
 
@@ -402,9 +444,23 @@ def _sample_chain_id(outcomes: list[EndpointOutcome]) -> int | None:
     return None
 
 
-def _probe_heads(
+def _block_hash(hit: ProbeResult | None) -> str | None:
+    if hit is None or not hit.ok:
+        return None
+    return parse_block_hash(hit.result)
+
+
+def _block_number(hit: ProbeResult | None) -> int | None:
+    if hit is None or not hit.ok:
+        return None
+    return parse_block_number(hit.result)
+
+
+def _probe_wave(
     config: BenchConfig,
     *,
+    method: str,
+    params: list[object],
     timeout: float,
     budget: RequestBudget,
     deadline: float | None,
@@ -414,7 +470,7 @@ def _probe_heads(
     endpoints = list(config.endpoints)
     hits: dict[str, ProbeResult] = {}
     if _expired(deadline):
-        miss = _skipped("duration", "max duration exceeded", "eth_blockNumber")
+        miss = _skipped("duration", "max duration exceeded", method)
         return {ep.name: miss for ep in endpoints}
     n = max(1, len(endpoints))
     workers = n if concurrency <= 0 else max(1, min(concurrency, n))
@@ -423,15 +479,15 @@ def _probe_heads(
         return _tag(
             probe(
                 endpoint.url,
-                "eth_blockNumber",
-                params=[],
+                method,
+                params=params,
                 timeout=timeout,
                 retries=0,
                 budget=budget,
                 client=client,
                 headers=endpoint.headers,
             ),
-            "eth_blockNumber",
+            method,
         )
 
     if len(endpoints) == 1:

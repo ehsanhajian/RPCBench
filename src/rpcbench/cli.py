@@ -8,6 +8,7 @@ from pathlib import Path
 
 from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
+from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
@@ -186,6 +187,15 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help=f"Seconds per block for lag time (default: {DEFAULT_BLOCK_TIME_S:g} or a known chain from eth_chainId).",
     )
     run.add_argument(
+        "--block",
+        default=None,
+        metavar="HEX|N",
+        help=(
+            "Pin the head-hash check to this block (hex, decimal, or latest). "
+            "Default: cohort median head from this run. Use when heads diverge by one block."
+        ),
+    )
+    run.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -254,6 +264,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         )
         if not any(spec.method == "eth_blockNumber" for spec in workload):
             needed += len(config.endpoints)
+        needed += len(config.endpoints)
         max_requests = args.max_requests
         if args.profile == "mix" and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
@@ -288,7 +299,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     try:
         rank_by = normalize_rank_by(args.rank_by)
         similar_band = normalize_similar_band(args.similar_band)
+        block_pin = parse_block_pin(args.block)
     except RankError as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
+    except BlockPinError as exc:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
     params = list(workload[0].params) if len(workload) == 1 else []
@@ -305,6 +320,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         sample_budget=args.sample_budget,
         stale_blocks=args.stale_blocks,
         block_time_s=args.block_time,
+        block_pin=block_pin,
         max_duration=args.max_duration,
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,
