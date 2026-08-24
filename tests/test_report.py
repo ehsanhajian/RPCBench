@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rpcbench.config import Endpoint
+from rpcbench.consistency import Consistency
 from rpcbench.freshness import Freshness
 from rpcbench.report import color_enabled, format_run, place_outcomes, rank_outcomes
 from rpcbench.rpc import ProbeResult
@@ -47,10 +48,26 @@ def _fresh(
     )
 
 
+def _agree(
+    digest: str,
+    pin: int = 100,
+    verdict: str = "agree",
+    canon: str | None = None,
+) -> Consistency:
+    return Consistency(
+        hash=digest,
+        number=pin,
+        verdict=verdict,
+        pin_height=pin,
+        canonical_hash=canon if canon is not None else digest,
+    )
+
+
 def _outcome(
     name: str,
     samples: tuple[ProbeResult, ...],
     freshness: Freshness | None = None,
+    consistency: Consistency | None = None,
 ) -> EndpointOutcome:
     return EndpointOutcome(
         endpoint=Endpoint(name=name, url=f"http://127.0.0.1/{name}"),
@@ -58,6 +75,7 @@ def _outcome(
         samples=samples,
         stats=summarize(samples),
         freshness=freshness,
+        consistency=consistency,
     )
 
 
@@ -101,7 +119,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "size standard" in text
     assert "requests 32" in text
     assert "similar 10%" in text
-    assert "Ranking  (by p95; similar within 10%; ~ high err or stale; failed last)" in text
+    assert "Ranking  (by p95; similar within 10%; ~ high err, stale, or disagree; failed last)" in text
     assert "Failed   1/3    dead" in text
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
@@ -109,6 +127,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "jit" in compare
     assert "rps" in compare
     assert "head" in compare and "lag" in compare and "fresh" in compare
+    assert "hash" in compare and "agree" in compare
     assert "cap" in compare
     assert "yes" in compare
     assert "timeout" in compare
@@ -337,6 +356,37 @@ def test_stale_cannot_be_fastest() -> None:
     assert "  stale" in ranking
     assert "head=97  lag=3 (~36s)  fresh=stale" in text
     assert "stale >2 blocks vs cohort median" in text
+
+
+def test_disagree_cannot_be_fastest() -> None:
+    digest_a = "0x" + "aa" * 32
+    digest_b = "0x" + "bb" * 32
+    wrong = _outcome(
+        "wrong",
+        (_ok(8.0), _ok(8.0)),
+        consistency=_agree(digest_b, verdict="disagree", canon=digest_a),
+    )
+    right = _outcome(
+        "right",
+        (_ok(20.0), _ok(20.0)),
+        consistency=_agree(digest_a, verdict="agree", canon=digest_a),
+    )
+    result = _result(wrong, right)
+    placed = place_outcomes(result)
+    assert [row.outcome.endpoint.name for row in placed] == ["right", "wrong"]
+    assert placed[0].rank == 1
+    assert placed[1].rank is None
+    assert placed[1].reliable is False
+    text = format_run(result, color=False)
+    assert "Fastest  right" in text
+    assert "Disagree 1/2    wrong" in text
+    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    assert "no" in compare
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "~" in ranking
+    assert "wrong" in ranking
+    assert "disagree" in ranking
+    assert f"hash={digest_b}  agree=disagree  pin=100" in text
 
 
 def test_p99_flagged_when_n_too_small() -> None:
