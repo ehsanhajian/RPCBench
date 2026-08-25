@@ -1092,3 +1092,127 @@ def test_client_label_and_tag_snapshots_are_not_ranked() -> None:
     assert "disclosed" not in text.lower()
     assert "cve" not in text.lower()
 
+
+def test_burst_overlaps_existing_samples_and_splits_phases() -> None:
+    import threading
+    import time
+
+    inflight = {"n": 0, "max": 0}
+    lock = threading.Lock()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        with lock:
+            inflight["n"] += 1
+            inflight["max"] = max(inflight["max"], inflight["n"])
+        time.sleep(0.04)
+        with lock:
+            inflight["n"] -= 1
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=5, warmup=0, budget=32, burst=3, client=client
+    )
+    outcome = result.outcomes[0]
+    assert result.burst == 3
+    assert inflight["max"] == 3
+    assert len(outcome.samples) == 5
+    assert outcome.burst_stats is not None
+    assert outcome.burst_stats.n_ok == 3
+    assert outcome.steady_stats is not None
+    assert outcome.steady_stats.n_ok == 2
+
+
+def test_burst_does_not_add_requests() -> None:
+    seen = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["n"] += 1
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:1"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    plain = run_endpoints(
+        cfg, samples=4, warmup=0, budget=32, client=client
+    )
+    n_plain = seen["n"]
+    seen["n"] = 0
+    burst = run_endpoints(
+        cfg, samples=4, warmup=0, budget=32, burst=3, client=client
+    )
+    assert seen["n"] == n_plain
+    assert burst.outcomes[0].stats.n_ok == plain.outcomes[0].stats.n_ok
+
+
+def test_rps_paces_steady_starts(monkeypatch) -> None:
+    waits: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr("rpcbench.run.time.sleep", fake_sleep)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:1"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg,
+        samples=4,
+        warmup=0,
+        budget=32,
+        burst=1,
+        rps=5.0,
+        mode="sequential",
+        client=client,
+    )
+    assert result.rps == 5.0
+    assert len(waits) == 2
+    assert waits[0] == pytest.approx(0.2, abs=0.05)
+    assert waits[1] == pytest.approx(0.2, abs=0.05)
+
+
+def test_rate_limit_counts_in_stats() -> None:
+    n = {"i": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        n["i"] += 1
+        if n["i"] <= 2:
+            return httpx.Response(429, text="slow")
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:1"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    result = run_endpoints(
+        cfg, samples=4, warmup=0, budget=32, burst=2, client=client
+    )
+    outcome = result.outcomes[0]
+    assert dict(outcome.stats.by_class)["rate_limit"] == 2
+    assert outcome.burst_stats is not None
+    assert dict(outcome.burst_stats.by_class).get("rate_limit") == 2
+    assert outcome.steady_stats is not None
+    assert outcome.steady_stats.n_fail == 0
+    text = format_run(result, color=False)
+    assert "Burst  (first 2 timed samples overlap" in text
+    assert "rate_limit=2" in text
+    assert "rate_limit is 429 / CU throttle" in text
+    assert "finding" not in text.lower()
+

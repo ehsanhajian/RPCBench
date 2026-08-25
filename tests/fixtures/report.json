@@ -13,6 +13,8 @@
   "budget": 32,
   "budget_remaining": 20,
   "concurrency": 0,
+  "burst": 0,
+  "rps": 0.0,
   "mode": "paired",
   "seed": 0,
   "sequence_id": "",
@@ -348,6 +350,7 @@
       "freshness": null,
       "consistency": null,
       "tags": [],
+      "phases": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -435,6 +438,7 @@
       "freshness": null,
       "consistency": null,
       "tags": [],
+      "phases": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -524,6 +528,7 @@
       "freshness": null,
       "consistency": null,
       "tags": [],
+      "phases": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [

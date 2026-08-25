@@ -12,7 +12,7 @@ from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
-from rpcbench.run import MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
+from rpcbench.run import MAX_BURST, MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 from rpcbench.tags import META_REQUESTS_PER_ENDPOINT
 
@@ -148,6 +148,23 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         type=int,
         default=None,
         help="Max in-flight requests per paired wave (0 = all providers; default: from --budget). Not a load burst.",
+    )
+    run.add_argument(
+        "--burst",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            f"Overlap the first N timed samples (0=off, max {MAX_BURST}). "
+            "Splits the existing sample budget; does not add requests."
+        ),
+    )
+    run.add_argument(
+        "--rps",
+        type=float,
+        default=0.0,
+        metavar="N",
+        help="Cap starts per second after --burst (0=off). Does not raise the request budget.",
     )
     run.add_argument(
         "--sequential",
@@ -289,12 +306,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.max_duration < 0
         or args.concurrency < 0
         or args.stale_blocks < 0
+        or args.burst < 0
+        or args.burst > MAX_BURST
+        or args.rps < 0
         or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
-            "--concurrency >= 0, --stale-blocks >= 0, --block-time > 0",
+            f"--concurrency >= 0, --burst 0–{MAX_BURST}, --rps >= 0, "
+            "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
         )
         return 2
@@ -327,6 +348,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,
         concurrency=args.concurrency,
+        burst=args.burst,
+        rps=args.rps,
     )
     payload = format_json(result, rank_by=rank_by, similar_band=similar_band) if (args.json or args.output) else None
     if args.output:

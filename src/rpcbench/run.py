@@ -38,6 +38,7 @@ from rpcbench.tags import (
 _CLASS_ORDER = (
     "timeout",
     "connection",
+    "rate_limit",
     "http_4xx",
     "http_5xx",
     "jsonrpc",
@@ -49,6 +50,8 @@ _CLASS_ORDER = (
 _STOP_CLASSES = {"invalid_url", "budget", "duration"}
 MODE_PAIRED = "paired"
 MODE_SEQUENTIAL = "sequential"
+# Opt-in overlap of existing timed samples. Not an unbounded limit probe.
+MAX_BURST = 8
 # Exclusive upper bounds; last bucket is ≥ the final edge. Shared with CLI/JSON/HTML.
 HISTOGRAM_EDGES_MS: tuple[float, ...] = (50.0, 100.0, 250.0, 1000.0)
 HISTOGRAM_LABELS: tuple[str, ...] = ("<50ms", "<100ms", "<250ms", "<1s", "≥1s")
@@ -81,6 +84,8 @@ class EndpointOutcome:
     consistency: Consistency | None = None
     client: str | None = None
     tags: tuple[TagSnapshot, ...] = ()
+    burst_stats: LatencyStats | None = None
+    steady_stats: LatencyStats | None = None
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,8 @@ class RunResult:
     cohort_height: int | None = None
     pin_height: int | None = None
     canonical_hash: str | None = None
+    burst: int = 0
+    rps: float = 0.0
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -288,6 +295,8 @@ def run_endpoints(
     stale_blocks: int = DEFAULT_STALE_BLOCKS,
     block_time_s: float | None = None,
     block_pin: int | None = None,
+    burst: int = 0,
+    rps: float = 0.0,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -297,6 +306,10 @@ def run_endpoints(
         raise ValueError("max_duration must be >= 0")
     if concurrency < 0:
         raise ValueError("concurrency must be >= 0")
+    if burst < 0 or burst > MAX_BURST:
+        raise ValueError(f"burst must be 0–{MAX_BURST}")
+    if rps < 0:
+        raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
         raise ValueError("mode must be paired or sequential")
     rpc_params = list(params or [])
@@ -320,6 +333,8 @@ def run_endpoints(
             timeout=timeout,
             budget=purse,
             deadline=deadline,
+            burst=burst,
+            rps=rps,
             client=client,
         )
     else:
@@ -332,6 +347,8 @@ def run_endpoints(
             budget=purse,
             deadline=deadline,
             concurrency=concurrency,
+            burst=burst,
+            rps=rps,
             client=client,
         )
     extra_heads: dict[str, ProbeResult] = {}
@@ -447,6 +464,8 @@ def run_endpoints(
         cohort_height=tip,
         pin_height=pin,
         canonical_hash=canon,
+        burst=min(burst, samples * len(steps)),
+        rps=rps,
     )
 
 
@@ -546,6 +565,44 @@ def _probe_wave(
     return hits
 
 
+def _split_timed(
+    plan: list[tuple[str, int, CallSpec]], burst: int
+) -> tuple[
+    list[tuple[str, int, CallSpec]],
+    list[tuple[str, int, CallSpec]],
+    list[tuple[str, int, CallSpec]],
+]:
+    warmup = [step for step in plan if step[0] == "warmup"]
+    timed = [step for step in plan if step[0] != "warmup"]
+    n = min(max(burst, 0), len(timed))
+    return warmup, timed[:n], timed[n:]
+
+
+def _pace(last_start: float | None, rps: float) -> float:
+    if rps <= 0:
+        return last_start if last_start is not None else 0.0
+    now = time.monotonic()
+    if last_start is None:
+        return now
+    wait = last_start + (1.0 / rps) - now
+    if wait > 0:
+        time.sleep(wait)
+        return time.monotonic()
+    return time.monotonic()
+
+
+def _phase_stats(
+    measured: tuple[ProbeResult, ...], burst: int
+) -> tuple[LatencyStats | None, LatencyStats | None]:
+    if burst <= 0 or not measured:
+        return None, None
+    n = min(burst, len(measured))
+    burst_stats = summarize(measured[:n])
+    rest = measured[n:]
+    steady_stats = summarize(rest) if rest else None
+    return burst_stats, steady_stats
+
+
 def _expired(deadline: float | None) -> bool:
     return deadline is not None and time.monotonic() >= deadline
 
@@ -594,13 +651,17 @@ def _finish_outcome(
     warmup_hits: tuple[ProbeResult, ...],
     measured: tuple[ProbeResult, ...],
     workload: tuple[CallSpec, ...],
+    burst: int = 0,
 ) -> EndpointOutcome:
+    burst_stats, steady_stats = _phase_stats(measured, burst)
     return EndpointOutcome(
         endpoint=endpoint,
         warmup=warmup_hits,
         samples=measured,
         stats=summarize(measured),
         by_method=_by_method(measured, workload),
+        burst_stats=burst_stats,
+        steady_stats=steady_stats,
     )
 
 
@@ -613,6 +674,8 @@ def _run_sequential(
     timeout: float,
     budget: RequestBudget,
     deadline: float | None,
+    burst: int,
+    rps: float,
     client,
 ) -> tuple[list[EndpointOutcome], list[PairRecord]]:
     outcomes: list[EndpointOutcome] = []
@@ -626,6 +689,8 @@ def _run_sequential(
                 timeout=timeout,
                 budget=budget,
                 deadline=deadline,
+                burst=burst,
+                rps=rps,
                 client=client,
             )
         )
@@ -642,13 +707,17 @@ def _run_paired(
     budget: RequestBudget,
     deadline: float | None,
     concurrency: int,
+    burst: int,
+    rps: float,
     client,
 ) -> tuple[list[EndpointOutcome], list[PairRecord]]:
     endpoints = list(config.endpoints)
     warmups: dict[str, list[ProbeResult]] = {ep.name: [] for ep in endpoints}
     measured: dict[str, list[ProbeResult]] = {ep.name: [] for ep in endpoints}
     pairs: list[PairRecord] = []
-    plan = expand_steps(workload, warmup, samples)
+    warmup_plan, burst_plan, steady_plan = _split_timed(
+        expand_steps(workload, warmup, samples), burst
+    )
     n = max(1, len(endpoints))
     workers = n if concurrency <= 0 else max(1, min(concurrency, n))
 
@@ -667,32 +736,7 @@ def _run_paired(
             spec.method,
         )
 
-    for kind, index, spec in plan:
-        if _expired(deadline):
-            miss = _skipped("duration", "max duration exceeded", spec.method)
-            for endpoint in endpoints:
-                if kind == "warmup":
-                    warmups[endpoint.name].append(miss)
-                else:
-                    measured[endpoint.name].append(miss)
-            if kind == "sample":
-                pairs.append(
-                    PairRecord(
-                        index=index,
-                        kind=kind,
-                        method=spec.method,
-                        bodies=tuple((ep.name, None) for ep in endpoints),
-                    )
-                )
-            continue
-        hits: dict[str, ProbeResult] = {}
-        if len(endpoints) == 1:
-            hits[endpoints[0].name] = fire(endpoints[0], spec)
-        else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futs = {ep.name: pool.submit(fire, ep, spec) for ep in endpoints}
-                for name, fut in futs.items():
-                    hits[name] = fut.result()
+    def record(kind: str, index: int, spec: CallSpec, hits: dict[str, ProbeResult]) -> None:
         for endpoint in endpoints:
             hit = hits[endpoint.name]
             if kind == "warmup":
@@ -710,12 +754,65 @@ def _run_paired(
                     ),
                 )
             )
+
+    def one_wave(kind: str, index: int, spec: CallSpec) -> None:
+        if _expired(deadline):
+            miss = _skipped("duration", "max duration exceeded", spec.method)
+            record(kind, index, spec, {ep.name: miss for ep in endpoints})
+            return
+        hits: dict[str, ProbeResult] = {}
+        if len(endpoints) == 1:
+            hits[endpoints[0].name] = fire(endpoints[0], spec)
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {ep.name: pool.submit(fire, ep, spec) for ep in endpoints}
+                for name, fut in futs.items():
+                    hits[name] = fut.result()
+        record(kind, index, spec, hits)
+
+    for kind, index, spec in warmup_plan:
+        one_wave(kind, index, spec)
+
+    if burst_plan:
+        if _expired(deadline):
+            miss_steps = burst_plan
+            still: list[tuple[str, int, CallSpec]] = []
+        else:
+            miss_steps = []
+            still = burst_plan
+        if still:
+            jobs = [
+                (kind, index, spec, ep)
+                for kind, index, spec in still
+                for ep in endpoints
+            ]
+            workers_burst = max(1, len(jobs))
+            with ThreadPoolExecutor(max_workers=workers_burst) as pool:
+                futs = {
+                    (index, ep.name): pool.submit(fire, ep, spec)
+                    for kind, index, spec, ep in jobs
+                }
+                for kind, index, spec in still:
+                    hits = {
+                        ep.name: futs[(index, ep.name)].result() for ep in endpoints
+                    }
+                    record(kind, index, spec, hits)
+        for kind, index, spec in miss_steps:
+            miss = _skipped("duration", "max duration exceeded", spec.method)
+            record(kind, index, spec, {ep.name: miss for ep in endpoints})
+
+    last_start: float | None = None
+    for kind, index, spec in steady_plan:
+        last_start = _pace(last_start, rps)
+        one_wave(kind, index, spec)
+
     outcomes = [
         _finish_outcome(
             endpoint,
             tuple(warmups[endpoint.name]),
             tuple(measured[endpoint.name]),
             workload,
+            burst=len(burst_plan),
         )
         for endpoint in endpoints
     ]
@@ -731,18 +828,22 @@ def _run_one(
     timeout: float,
     budget: RequestBudget,
     deadline: float | None,
+    burst: int,
+    rps: float,
     client,
 ) -> EndpointOutcome:
     warmup_hits: list[ProbeResult] = []
     measured: list[ProbeResult] = []
     stop = False
-    plan = expand_steps(workload, warmup, samples)
+    warmup_plan, burst_plan, steady_plan = _split_timed(
+        expand_steps(workload, warmup, samples), burst
+    )
 
     if _expired(deadline):
         first = workload[0].method if workload else None
         measured.append(_skipped("duration", "max duration exceeded", first))
-        return _finish_outcome(endpoint, (), tuple(measured), workload)
-    for kind, _index, spec in plan:
+        return _finish_outcome(endpoint, (), tuple(measured), workload, burst=0)
+    for _kind, _index, spec in warmup_plan:
         if stop:
             break
         hit = _hit(
@@ -753,12 +854,50 @@ def _run_one(
             deadline=deadline,
             client=client,
         )
-        if kind == "warmup":
-            warmup_hits.append(hit)
-        else:
-            measured.append(hit)
+        warmup_hits.append(hit)
         if hit.error_class in _STOP_CLASSES:
             stop = True
-            if kind == "warmup" and not measured:
+            if not measured:
                 measured.append(hit)
-    return _finish_outcome(endpoint, tuple(warmup_hits), tuple(measured), workload)
+    if not stop and burst_plan:
+        with ThreadPoolExecutor(max_workers=max(1, len(burst_plan))) as pool:
+            futs = [
+                pool.submit(
+                    _hit,
+                    endpoint,
+                    spec=spec,
+                    timeout=timeout,
+                    budget=budget,
+                    deadline=deadline,
+                    client=client,
+                )
+                for _kind, _index, spec in burst_plan
+            ]
+            for fut in futs:
+                hit = fut.result()
+                measured.append(hit)
+                if hit.error_class in _STOP_CLASSES:
+                    stop = True
+    last_start: float | None = None
+    for _kind, _index, spec in steady_plan:
+        if stop:
+            break
+        last_start = _pace(last_start, rps)
+        hit = _hit(
+            endpoint,
+            spec=spec,
+            timeout=timeout,
+            budget=budget,
+            deadline=deadline,
+            client=client,
+        )
+        measured.append(hit)
+        if hit.error_class in _STOP_CLASSES:
+            stop = True
+    return _finish_outcome(
+        endpoint,
+        tuple(warmup_hits),
+        tuple(measured),
+        workload,
+        burst=len(burst_plan),
+    )

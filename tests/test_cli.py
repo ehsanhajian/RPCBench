@@ -47,6 +47,8 @@ def test_cli_defaults() -> None:
     assert ns.profile is None
     assert ns.timeout is None
     assert ns.max_duration is None
+    assert ns.burst == 0
+    assert ns.rps == 0.0
 
 
 def test_cli_sample_budget_short() -> None:
@@ -593,6 +595,29 @@ def test_cli_rejects_negative_stale_blocks(tmp_path: Path, capsys) -> None:
     )
     assert code == 2
     assert "stale-blocks" in capsys.readouterr().err
+
+
+def test_cli_rejects_burst_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--burst", "9", "--samples", "1"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--burst" in err
+
+
+def test_cli_rejects_negative_rps(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--rps", "-1", "--samples", "1"])
+    assert code == 2
+    assert "--rps" in capsys.readouterr().err
 
 
 def test_cli_rejects_invalid_block_pin(tmp_path: Path, capsys) -> None:

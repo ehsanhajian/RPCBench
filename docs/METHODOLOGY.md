@@ -79,6 +79,12 @@ This is compare-time data agreement, not consensus fork choice and not a securit
 
 To time a single tag with full `--samples`, pass `--method eth_getBlockByNumber --params '["finalized", false]'`.
 
+## Rate-limit reliability
+
+HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many requests`, `rate limit`, `compute unit`, …) are class **`rate_limit`**, not a generic 4xx. 401/403 stay `http_4xx` (missing key, not a throttle). RPCBench does not harvest rate-limit headers as a security check.
+
+**`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget, then runs the rest as a steady phase. **`--rps`** caps how often steady samples start (`0` = as fast as responses allow). Neither flag adds requests or searches for a ceiling. Burst vs steady error rate and recovered rps are reported only when `--burst` is set. Load shapes (ramp/spike/soak) are separate.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
