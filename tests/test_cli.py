@@ -181,9 +181,8 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "ok" in out
     assert "bad" in out
-    assert "min=" in out
-    assert "p50=" in out
-    assert "err=" in out
+    assert "p50" in out
+    assert "err" in out
     assert "Fastest" in out
     assert "Ranking" in out
     assert "Comparison" in out
@@ -446,7 +445,7 @@ def test_cli_compare_url_endpoint(monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert "127.0.0.1" in out
-    assert "id=" in out
+    assert "url" in out.split("Providers", 1)[1]
 
 
 def test_cli_allow_writes(tmp_path: Path, monkeypatch) -> None:
@@ -690,7 +689,7 @@ def test_cli_block_pin_is_passed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert pins[0] == "0x10"
     assert "latest" in pins
     out = capsys.readouterr().out
-    assert "matches group" in out
+    assert "yes" in out
     assert "hash at block 16" in out
 
 

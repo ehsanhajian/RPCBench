@@ -58,11 +58,11 @@ The CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
 2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh / hash / match)
-3. **Ranking** — ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
+3. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 5. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
 6. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-7. **Providers** — redacted URL + `id=` hash, client label, samples, errors, jitter, histogram; head lag as **caught up** or **stale**; hash as **matches group** or **differs from group**
+7. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. `--verbose` adds per-sample rows
 8. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
@@ -82,7 +82,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 - **Warmup is excluded** from min/mean/max, jitter, percentiles, error rate, and the histogram.
 - **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
-- **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
+- **Histogram** is where successes landed: empty buckets are omitted (`≥1s=3`, or `<50ms=8  ≥1s=8` when split). Buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON).
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, **rate_limit**, JSON-RPC, malformed). `rate_limit` is HTTP 429 or a CU/throttle JSON-RPC message — reliability, not a scan.
 - **rps** in the table is `1000 / mean_ms` for this probe — not parallel throughput. `--rps N` is a start cap after `--burst`, not that formula.
 
@@ -95,14 +95,14 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 These are not mixed into latency stats or Fastest.
 
-- **Freshness** is lag vs the cohort’s upper-median `eth_blockNumber` in the same window. Default `--stale-blocks 2`. The provider line prints **caught up** when lag is within that tolerance, **stale** when it exceeds it. Lag time uses `--block-time` or a known chain from `eth_chainId` already in the mix (12s on Ethereum). Extra head reads happen only when the workload has no `eth_blockNumber`. JSON still uses `fresh` / `stale`.
-- **Consistency** is whether providers return the same block **hash** at one pinned height (default: that cohort median). `--block HEX|N` pins the check when heads naturally diverge by one block. A unique majority hash is canonical; a split is disagreement for everyone who returned a hash. The provider line prints **matches group** or **differs from group**. Missing/unparseable hashes are unknown, not disagree. JSON still uses `agree` / `disagree`. Not fork choice and not a security finding.
+- **Freshness** is lag vs the cohort’s upper-median `eth_blockNumber` in the same window. Default `--stale-blocks 2`. Tables print **yes** when lag is within that tolerance, **stale** when it exceeds it (Ranking note may add `~Ns`). Lag time uses `--block-time` or a known chain from `eth_chainId` already in the mix (12s on Ethereum). Extra head reads happen only when the workload has no `eth_blockNumber`. JSON still uses `fresh` / `stale`.
+- **Consistency** is whether providers return the same block **hash** at one pinned height (default: that cohort median). `--block HEX|N` pins the check when heads naturally diverge by one block. A unique majority hash is canonical; a split is disagreement for everyone who returned a hash. Tables print **yes** / **no** under match. Missing/unparseable hashes are unknown, not disagree. JSON still uses `agree` / `disagree`. Not fork choice and not a security finding.
 - **Client** is a volunteered `web3_clientVersion` string stored as a label (Erigon vs Geth). Missing or hex-only results are omitted. Not a disclosure finding, not outdated-client recon, not a CVE check.
 - **Tags** are one paired `eth_getBlockByNumber` snapshot each for `latest`, `safe`, and `finalized`. Latency and freshness are per tag vs that tag’s cohort. Unsupported tags are skipped with a reason and do not change Fastest. Full P95 of one tag is `--method eth_getBlockByNumber --params '["finalized", false]'`.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
 
 ## Flags
 
