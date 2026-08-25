@@ -388,7 +388,7 @@ def format_run(
             ]
         )
         lines.extend(_burst_lines(result, name_w, use_color))
-    lines.extend(["", "Providers  (url redacted; hist = <50 <100 <250 <1s ≥1s)"])
+    lines.extend(["", "Providers  (url redacted; hist = successful samples in each bucket)"])
     lines.extend(_provider_table(ranked, name_w, use_color))
     if verbose:
         for outcome in ranked:
@@ -804,7 +804,8 @@ def _clip(text: str, width: int) -> str:
 
 
 def _hist_counts(histogram: tuple[tuple[str, int], ...]) -> str:
-    return " ".join(str(count) for _label, count in histogram)
+    bits = [f"{label}={count}" for label, count in histogram if count]
+    return "  ".join(bits) if bits else "—"
 
 
 def _provider_table(
@@ -817,7 +818,7 @@ def _provider_table(
     header = (
         f"  {'name':<{name_w}}  status  {'url':<{url_w}}  "
         f"{'client':<{client_w}}  {'n':>7}  {'err':>4}  {'p95':>8}  "
-        f"{'head':>8}  {'lag':>4}  fresh  match  {'hist':<9}  note"
+        f"{'head':>8}  {'lag':>4}  fresh  match  hist  note"
     )
     lines = [header]
     for outcome in ranked:
@@ -848,7 +849,7 @@ def _provider_row(
         f"{_clip(outcome.client or '—', client_w)}  "
         f"{n:>7}  {_pct(stats.error_rate):>4}  {_cell_ms(stats.p95_ms)}  "
         f"{_cell_head(outcome)}  {_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
-        f"{_cell_agree(outcome)}  {hist:<9}  {_row_note(outcome)}"
+        f"{_cell_agree(outcome)}  {hist}  {_row_note(outcome)}"
     )
 
 

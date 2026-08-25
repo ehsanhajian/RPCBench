@@ -298,11 +298,12 @@ def test_explicit_color_false_has_no_ansi() -> None:
 def test_bimodal_histogram_is_visible() -> None:
     samples = tuple([_ok(20.0)] * 8 + [_ok(800.0)] * 8)
     text = format_run(_result(_outcome("spiky", samples)), color=False)
-    assert "8 0 0 8 0" in text
     providers = text.split("Providers", 1)[1]
     ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    assert "<50ms=8" in providers
+    assert "<1s=8" in providers
+    assert "8 0 0 8 0" not in text
     assert "jit" in ranking
-    assert "8 0 0 8 0" in providers
 
 
 def test_close_p95_is_similar_not_a_false_winner() -> None:
