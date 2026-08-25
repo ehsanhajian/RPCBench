@@ -92,6 +92,7 @@ rpcbench run --endpoints endpoints.yaml --budget short
 rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
+rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
 rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --verbose --json
 ```
