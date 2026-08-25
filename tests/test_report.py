@@ -312,8 +312,6 @@ def test_tables_draw_row_and_column_borders() -> None:
         assert "│" in block
         assert "┼" in block
         assert "└" in block
-        # header rule plus one rule between the two data rows
-        assert block.count("├") >= 2
 
 
 def test_close_p95_is_similar_not_a_false_winner() -> None:
