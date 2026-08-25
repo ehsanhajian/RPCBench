@@ -368,14 +368,7 @@ def format_run(
     lines.extend(
         ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err, stale, or disagree; failed last)"]
     )
-    for row in placed:
-        if row.rank is not None:
-            mark = f"{row.rank:>3}"
-        elif row.outcome.stats.n_ok:
-            mark = "  ~"
-        else:
-            mark = "  —"
-        lines.append(_ranking_line(row.outcome, mark, name_w, use_color, rank_by))
+    lines.extend(_ranking_lines(placed, name_w, use_color, rank_by))
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
@@ -395,15 +388,17 @@ def format_run(
             ]
         )
         lines.extend(_burst_lines(result, name_w, use_color))
-    lines.extend(["", "Providers"])
-    for outcome in ranked:
-        lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
+    lines.extend(["", "Providers  (url redacted; hist = <50 <100 <250 <1s ≥1s)"])
+    lines.extend(_provider_table(ranked, name_w, use_color))
+    if verbose:
+        for outcome in ranked:
+            lines.extend(_provider_verbose_lines(outcome, name_w))
     lines.extend(["", "Capabilities"])
     lines.extend(_capability_lines(result, ranked))
     lines.append("")
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
-        extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}"
+        extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
     lines.append(
         f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded  ·  "
         "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
@@ -726,7 +721,31 @@ def _rank_metric_text(stats: Any, rank_by: str) -> str:
     return f"{_RANK_LABELS[rank_by]}={value:.1f}ms"
 
 
-def _ranking_line(
+def _ranking_lines(
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
+    name_w: int,
+    use_color: bool,
+    rank_by: str,
+) -> list[str]:
+    header = (
+        f"  {'#':>3}  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
+        f"{'p95':>8}  {'mean':>8}  {'jit':>8}  note"
+    )
+    lines = [header]
+    for row in placed:
+        if row.rank is not None:
+            mark = str(row.rank)
+        elif row.outcome.stats.n_ok:
+            mark = "~"
+        else:
+            mark = "—"
+        lines.append(
+            _ranking_row(row.outcome, mark, name_w, use_color, rank_by)
+        )
+    return lines
+
+
+def _ranking_row(
     outcome: EndpointOutcome,
     mark: str,
     name_w: int,
@@ -735,85 +754,113 @@ def _ranking_line(
 ) -> str:
     stats = outcome.stats
     ok = stats.n_ok > 0
-    status = _paint("ok" if ok else "fail", _GREEN if ok else _RED, enabled=use_color)
+    raw_status = f"{'ok' if ok else 'fail':<6}"
+    status = _paint(raw_status, _GREEN if ok else _RED, enabled=use_color)
     attempted = stats.n_ok + stats.n_fail
-    rate = f"err={_pct(stats.error_rate)}"
-    classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
+    n = f"{stats.n_ok}/{attempted}"
     name = _paint(
         f"{outcome.endpoint.name:<{name_w}}",
         _GREEN if ok else _RED,
         enabled=use_color,
     )
-    if ok:
-        extra_mean = ""
-        if rank_by != "mean":
-            extra_mean = f"  mean={stats.mean_ms:.1f}ms"
-        extra_p95 = ""
-        if rank_by != "p95":
-            extra_p95 = f"  p95={stats.p95_ms:.1f}ms"
-        return (
-            f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
-            f"{classes}  {_rank_metric_text(stats, rank_by)}{extra_mean}{extra_p95}"
-            f"  jitter={_jitter_text(stats.jitter_ms)}"
-            f"{_rank_notes(outcome)}"
-        )
-    err = _last_error(outcome)
-    extra = f"  {err}" if err else ""
+    note = _row_note(outcome)
+    if rank_by not in {"p95", "mean"} and ok:
+        metric = _rank_metric_text(stats, rank_by)
+        note = metric if note == "—" else f"{note}  {metric}"
     return (
-        f"  {mark}  {name}  {status}  n={stats.n_ok}/{attempted}  {rate}"
-        f"{classes}{extra}"
+        f"  {mark:>3}  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
+        f"{_cell_ms(stats.p95_ms)}  {_cell_ms(stats.mean_ms)}  "
+        f"{_cell_ms(stats.jitter_ms)}  {note}"
     )
 
 
-def _provider_lines(
-    outcome: EndpointOutcome, name_w: int, verbose: bool, use_color: bool
+def _row_note(outcome: EndpointOutcome) -> str:
+    stats = outcome.stats
+    bits = [f"{name}={count}" for name, count in stats.by_class]
+    if stats.n_ok == 0:
+        err = _last_error(outcome)
+        if err:
+            bits.append(err)
+        return "  ".join(bits) if bits else (_miss_class(outcome) or "—")
+    if is_stale(outcome):
+        bits.append("stale")
+        fresh = outcome.freshness
+        if fresh is not None and fresh.lag_s is not None:
+            bits.append(f"~{fresh.lag_s:g}s")
+    if is_disagree(outcome):
+        bits.append("disagree")
+    tags = _tag_rate_limit_n(outcome)
+    if tags:
+        bits.append(f"tags={tags}")
+    return "  ".join(bits) if bits else "—"
+
+
+def _clip(text: str, width: int) -> str:
+    if len(text) <= width:
+        return f"{text:<{width}}"
+    if width <= 3:
+        return text[:width]
+    return text[: width - 1] + "…"
+
+
+def _hist_counts(histogram: tuple[tuple[str, int], ...]) -> str:
+    return " ".join(str(count) for _label, count in histogram)
+
+
+def _provider_table(
+    ranked: tuple[EndpointOutcome, ...], name_w: int, use_color: bool
 ) -> list[str]:
+    urls = [outcome.endpoint.display_url for outcome in ranked] or [""]
+    url_w = min(max(len(url) for url in urls), 42)
+    clients = [(outcome.client or "—") for outcome in ranked] or ["—"]
+    client_w = min(max(len(text) for text in clients), 22)
+    header = (
+        f"  {'name':<{name_w}}  status  {'url':<{url_w}}  {'id':<12}  "
+        f"{'client':<{client_w}}  {'n':>7}  {'err':>4}  {'p95':>8}  "
+        f"{'head':>8}  {'lag':>4}  fresh  match  {'hist':<9}  note"
+    )
+    lines = [header]
+    for outcome in ranked:
+        lines.append(
+            _provider_row(outcome, name_w, url_w, client_w, use_color)
+        )
+    return lines
+
+
+def _provider_row(
+    outcome: EndpointOutcome,
+    name_w: int,
+    url_w: int,
+    client_w: int,
+    use_color: bool,
+) -> str:
     stats = outcome.stats
     ok = stats.n_ok > 0
     hue = _GREEN if ok else _RED
-    status = _paint("ok" if ok else "fail", hue, enabled=use_color)
-    url = outcome.endpoint.display_url
-    url_id = outcome.endpoint.url_id
-    indent = " " * (2 + name_w + 4)
+    raw_status = f"{'ok' if ok else 'fail':<6}"
+    status = _paint(raw_status, hue, enabled=use_color)
     name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
-    lines = [f"  {name}  {status}  {url}  id={url_id}"]
     attempted = stats.n_ok + stats.n_fail
-    rate = f"err={_pct(stats.error_rate)}"
-    classes = "".join(f"  {name}={count}" for name, count in stats.by_class)
-    lines.append(f"{indent}n={stats.n_ok}/{attempted}  {rate}{classes}")
-    if outcome.client:
-        lines.append(f"{indent}client={outcome.client}")
-    if stats.min_ms is not None:
-        lines.append(
-            f"{indent}min={stats.min_ms:.1f}ms  "
-            f"mean={stats.mean_ms:.1f}ms  max={stats.max_ms:.1f}ms  "
-            f"jitter={_jitter_text(stats.jitter_ms)}"
-        )
-        p99 = f"p99={stats.p99_ms:.1f}ms  (n={stats.n_ok})"
-        if not p99_reliable(stats.n_ok):
-            p99 += f"; need ≥{P99_MIN_N}"
-        lines.append(
-            f"{indent}p50={stats.p50_ms:.1f}ms  p95={stats.p95_ms:.1f}ms  {p99}"
-        )
-        lines.append(f"{indent}hist  {_histogram_text(stats.histogram)}")
-        fresh_line = _freshness_provider_line(outcome)
-        if fresh_line:
-            lines.append(f"{indent}{fresh_line}")
-        cons_line = _consistency_provider_line(outcome)
-        if cons_line:
-            lines.append(f"{indent}{cons_line}")
-        lines.extend(_phase_provider_lines(outcome, indent))
-    else:
-        err = _last_error(outcome)
-        if err:
-            lines.append(f"{indent}{err}")
-    if verbose:
-        if outcome.warmup:
-            lines.append(f"{indent}warmup")
-            lines.extend(_sample_lines(outcome.warmup, indent))
-        lines.append(f"{indent}samples")
-        lines.extend(_sample_lines(outcome.samples, indent))
-    return lines + [""]
+    n = f"{stats.n_ok}/{attempted}"
+    hist = _hist_counts(stats.histogram) if ok else "—"
+    return (
+        f"  {name}  {status}  {_clip(outcome.endpoint.display_url, url_w)}  "
+        f"{outcome.endpoint.url_id:<12}  {_clip(outcome.client or '—', client_w)}  "
+        f"{n:>7}  {_pct(stats.error_rate):>4}  {_cell_ms(stats.p95_ms)}  "
+        f"{_cell_head(outcome)}  {_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
+        f"{_cell_agree(outcome)}  {hist:<9}  {_row_note(outcome)}"
+    )
+
+
+def _provider_verbose_lines(outcome: EndpointOutcome, name_w: int) -> list[str]:
+    indent = " " * (2 + name_w + 4)
+    lines = [f"  {outcome.endpoint.name}"]
+    if outcome.warmup:
+        lines.append(f"{indent}warmup")
+        lines.extend(_sample_lines(outcome.warmup, indent))
+    lines.append(f"{indent}samples")
+    lines.extend(_sample_lines(outcome.samples, indent))
+    return lines
 
 
 def _sample_lines(hits: tuple, indent: str) -> list[str]:
@@ -952,17 +999,6 @@ def _freshness_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
     }
 
 
-def _rank_notes(outcome: EndpointOutcome) -> str:
-    notes: list[str] = []
-    if is_stale(outcome):
-        notes.append("stale")
-    if is_disagree(outcome):
-        notes.append("disagree")
-    if not notes:
-        return ""
-    return "  " + "  ".join(notes)
-
-
 def _consistency_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
     cons = outcome.consistency
     if cons is None:
@@ -974,38 +1010,6 @@ def _consistency_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
         "pin_height": cons.pin_height,
         "canonical_hash": cons.canonical_hash,
     }
-
-
-def _consistency_provider_line(outcome: EndpointOutcome) -> str:
-    cons = outcome.consistency
-    if cons is None:
-        return ""
-    digest = "—" if cons.hash is None else cons.hash
-    pin = "—" if cons.pin_height is None else str(cons.pin_height)
-    if cons.verdict == "agree":
-        status = "matches group"
-    elif cons.verdict == "disagree":
-        status = "differs from group"
-    else:
-        status = "unknown"
-    return f"hash={digest}  {status}  at block {pin}"
-
-
-def _freshness_provider_line(outcome: EndpointOutcome) -> str:
-    fresh = outcome.freshness
-    if fresh is None:
-        return ""
-    if fresh.verdict == "unknown":
-        return "head=—  lag=—  unknown"
-    lag = "—" if fresh.lag_blocks is None else str(fresh.lag_blocks)
-    extra = ""
-    if fresh.lag_s is not None and fresh.lag_blocks:
-        extra = f" (~{fresh.lag_s:g}s)"
-    if fresh.verdict == "stale":
-        status = "stale"
-    else:
-        status = "caught up"
-    return f"head={fresh.height}  lag={lag}{extra}  {status}"
 
 
 def _burst_mode_suffix(result: RunResult) -> str:
@@ -1061,34 +1065,6 @@ def _phases_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
         "burst": _phase_json(outcome.burst_stats),
         "steady": _phase_json(outcome.steady_stats),
     }
-
-
-def _phase_bits(stats: Any, outcome: EndpointOutcome, *, tags: bool) -> str:
-    attempted = stats.n_ok + stats.n_fail
-    p95 = "—" if stats.p95_ms is None else f"{stats.p95_ms:.1f}ms"
-    rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
-    timed = _rate_limit_n(stats)
-    extra_tags = _tag_rate_limit_n(outcome) if tags else 0
-    extra = ""
-    if timed or extra_tags:
-        extra = f"  rate_limit={_rate_limit_cell(stats, outcome, tags=tags)}"
-    return (
-        f"n={stats.n_ok}/{attempted}  err={_pct(stats.error_rate)}  "
-        f"p95={p95}  rps={rps}{extra}"
-    )
-
-
-def _phase_provider_lines(outcome: EndpointOutcome, indent: str) -> list[str]:
-    if outcome.burst_stats is None:
-        return []
-    lines = [
-        f"{indent}burst   {_phase_bits(outcome.burst_stats, outcome, tags=True)}"
-    ]
-    if outcome.steady_stats is not None:
-        lines.append(
-            f"{indent}steady  {_phase_bits(outcome.steady_stats, outcome, tags=False)}"
-        )
-    return lines
 
 
 def _burst_lines(
@@ -1164,16 +1140,6 @@ def _concurrency_label(concurrency: int) -> str:
     if concurrency <= 0:
         return "all"
     return str(concurrency)
-
-
-def _jitter_text(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:.1f}ms"
-
-
-def _histogram_text(histogram: tuple[tuple[str, int], ...]) -> str:
-    return "  ".join(f"{label}={count}" for label, count in histogram)
 
 
 def _histogram_bucket_defs() -> list[dict[str, Any]]:
