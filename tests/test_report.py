@@ -6,6 +6,7 @@ from rpcbench.freshness import Freshness
 from rpcbench.report import color_enabled, format_run, place_outcomes, rank_outcomes
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, summarize
+from rpcbench.tags import TagSnapshot
 
 
 def _ok(ms: float) -> ProbeResult:
@@ -423,11 +424,52 @@ def test_burst_section_and_provider_phases() -> None:
     text = format_run(result, color=False)
     assert "burst=2" in text
     assert "rps=2" in text
-    assert "Burst  (first 2 timed samples overlap; then cap 2/s; same request budget)" in text
+    assert "Burst  (first 2 timed samples overlap; then cap 2/s; same request budget; tag throttles as tags=N)" in text
     assert "burst" in text.split("Burst", 1)[1].split("Providers", 1)[0]
     assert "steady" in text.split("Burst", 1)[1]
     assert "burst   n=2/2" in text
     assert "steady  n=1/2" in text
     assert "rate_limit=1" in text
     assert "rate_limit is 429 / CU throttle" in text
+    assert "finding" not in text.lower()
+
+
+def test_burst_table_shows_tag_rate_limits() -> None:
+    samples = (_ok(10.0), _ok(12.0), _ok(11.0))
+    tags = tuple(
+        TagSnapshot(
+            tag=name,
+            latency_ms=1000.0,
+            height=None,
+            hash=None,
+            freshness=None,
+            skipped=True,
+            skip_reason="rate_limit",
+        )
+        for name in ("latest", "safe", "finalized")
+    )
+    outcome = EndpointOutcome(
+        endpoint=Endpoint(name="merkle", url="http://127.0.0.1/merkle"),
+        warmup=(),
+        samples=samples,
+        stats=summarize(samples),
+        tags=tags,
+        burst_stats=summarize(samples),
+    )
+    result = RunResult(
+        method="eth_blockNumber",
+        params=(),
+        samples=3,
+        warmup=0,
+        timeout=10.0,
+        budget=32,
+        outcomes=(outcome,),
+        budget_remaining=20,
+        burst=3,
+    )
+    text = format_run(result, color=False)
+    burst = text.split("Burst", 1)[1].split("Providers", 1)[0]
+    assert "err=0%" in burst or "  0%" in burst
+    assert "tags=3" in burst
+    assert "rate_limit=0  tags=3" in text
     assert "finding" not in text.lower()

@@ -390,7 +390,8 @@ def format_run(
                 "",
                 "Burst  (first "
                 f"{result.burst} timed samples overlap; then "
-                f"{_rps_label(result.rps)}; same request budget)",
+                f"{_rps_label(result.rps)}; same request budget; "
+                "tag throttles as tags=N)",
             ]
         )
         lines.extend(_burst_lines(result, name_w, use_color))
@@ -1026,6 +1027,18 @@ def _rate_limit_n(stats: Any) -> int:
     return dict(stats.by_class).get("rate_limit", 0)
 
 
+def _tag_rate_limit_n(outcome: EndpointOutcome) -> int:
+    return sum(1 for snap in outcome.tags if snap.skip_reason == "rate_limit")
+
+
+def _rate_limit_cell(stats: Any, outcome: EndpointOutcome, *, tags: bool) -> str:
+    timed = _rate_limit_n(stats)
+    extra = _tag_rate_limit_n(outcome) if tags else 0
+    if extra:
+        return f"{timed}  tags={extra}"
+    return str(timed)
+
+
 def _phase_json(stats: Any) -> dict[str, Any] | None:
     if stats is None:
         return None
@@ -1050,12 +1063,15 @@ def _phases_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
     }
 
 
-def _phase_bits(stats: Any) -> str:
+def _phase_bits(stats: Any, outcome: EndpointOutcome, *, tags: bool) -> str:
     attempted = stats.n_ok + stats.n_fail
     p95 = "—" if stats.p95_ms is None else f"{stats.p95_ms:.1f}ms"
     rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
-    limited = _rate_limit_n(stats)
-    extra = f"  rate_limit={limited}" if limited else ""
+    timed = _rate_limit_n(stats)
+    extra_tags = _tag_rate_limit_n(outcome) if tags else 0
+    extra = ""
+    if timed or extra_tags:
+        extra = f"  rate_limit={_rate_limit_cell(stats, outcome, tags=tags)}"
     return (
         f"n={stats.n_ok}/{attempted}  err={_pct(stats.error_rate)}  "
         f"p95={p95}  rps={rps}{extra}"
@@ -1065,9 +1081,13 @@ def _phase_bits(stats: Any) -> str:
 def _phase_provider_lines(outcome: EndpointOutcome, indent: str) -> list[str]:
     if outcome.burst_stats is None:
         return []
-    lines = [f"{indent}burst   {_phase_bits(outcome.burst_stats)}"]
+    lines = [
+        f"{indent}burst   {_phase_bits(outcome.burst_stats, outcome, tags=True)}"
+    ]
     if outcome.steady_stats is not None:
-        lines.append(f"{indent}steady  {_phase_bits(outcome.steady_stats)}")
+        lines.append(
+            f"{indent}steady  {_phase_bits(outcome.steady_stats, outcome, tags=False)}"
+        )
     return lines
 
 
@@ -1088,17 +1108,24 @@ def _burst_lines(
         if outcome.steady_stats is not None:
             rows.append(("steady", outcome.steady_stats))
         if not rows:
+            cell = "—"
+            extra = _tag_rate_limit_n(outcome)
+            if extra:
+                cell = f"0  tags={extra}"
             lines.append(
-                f"  {name}  {'—':<6}  {'—':>7}  {'—':>4}  {'—':>8}  {'—':>6}  —"
+                f"  {name}  {'—':<6}  {'—':>7}  {'—':>4}  {'—':>8}  {'—':>6}  {cell}"
             )
             continue
+        first = True
         for phase, stats in rows:
             attempted = stats.n_ok + stats.n_fail
             n = f"{stats.n_ok}/{attempted}"
             rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
+            cell = _rate_limit_cell(stats, outcome, tags=first)
+            first = False
             lines.append(
                 f"  {name}  {phase:<6}  {n:>7}  {_pct(stats.error_rate):>4}  "
-                f"{_cell_ms(stats.p95_ms)}  {rps:>6}  {_rate_limit_n(stats)}"
+                f"{_cell_ms(stats.p95_ms)}  {rps:>6}  {cell}"
             )
     return lines
 
