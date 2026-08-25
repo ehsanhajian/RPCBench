@@ -62,7 +62,7 @@ The CLI prints, in order:
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 5. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
 6. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-7. **Providers** — one table: redacted URL, `id`, client, n/err, p95, head/lag/fresh/match, histogram counts, note. `--verbose` adds per-sample rows
+7. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram counts, note. `--verbose` adds per-sample rows
 8. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
@@ -102,7 +102,7 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
 
 ## Flags
 

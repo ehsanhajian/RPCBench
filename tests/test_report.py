@@ -158,7 +158,11 @@ def test_report_makes_winner_obvious() -> None:
     assert "↳ Next:" not in text
     assert "severity" not in text.lower()
     assert "finding" not in text.lower()
-    assert "id" in text.split("Providers", 1)[1]
+    providers = text.split("Providers", 1)[1]
+    assert "url" in providers
+    assert "client" in providers
+    for outcome in result.outcomes:
+        assert outcome.endpoint.url_id not in providers
 
 
 def test_comparison_table_keeps_failed_rows() -> None:

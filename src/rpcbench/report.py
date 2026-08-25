@@ -815,7 +815,7 @@ def _provider_table(
     clients = [(outcome.client or "—") for outcome in ranked] or ["—"]
     client_w = min(max(len(text) for text in clients), 22)
     header = (
-        f"  {'name':<{name_w}}  status  {'url':<{url_w}}  {'id':<12}  "
+        f"  {'name':<{name_w}}  status  {'url':<{url_w}}  "
         f"{'client':<{client_w}}  {'n':>7}  {'err':>4}  {'p95':>8}  "
         f"{'head':>8}  {'lag':>4}  fresh  match  {'hist':<9}  note"
     )
@@ -845,7 +845,7 @@ def _provider_row(
     hist = _hist_counts(stats.histogram) if ok else "—"
     return (
         f"  {name}  {status}  {_clip(outcome.endpoint.display_url, url_w)}  "
-        f"{outcome.endpoint.url_id:<12}  {_clip(outcome.client or '—', client_w)}  "
+        f"{_clip(outcome.client or '—', client_w)}  "
         f"{n:>7}  {_pct(stats.error_rate):>4}  {_cell_ms(stats.p95_ms)}  "
         f"{_cell_head(outcome)}  {_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
         f"{_cell_agree(outcome)}  {hist:<9}  {_row_note(outcome)}"

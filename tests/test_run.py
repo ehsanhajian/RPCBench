@@ -418,7 +418,7 @@ def test_probe_sends_headers_and_report_hides_them() -> None:
     assert "query_secret" not in text
     assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in text
     assert "[redacted]" in text
-    assert cfg.endpoints[0].url_id in text
+    assert cfg.endpoints[0].url_id not in text
 
 
 def test_max_duration_skips_later_endpoints(monkeypatch) -> None:

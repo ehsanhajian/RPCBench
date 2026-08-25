@@ -445,7 +445,7 @@ def test_cli_compare_url_endpoint(monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert "127.0.0.1" in out
-    assert "id" in out.split("Providers", 1)[1]
+    assert "url" in out.split("Providers", 1)[1]
 
 
 def test_cli_allow_writes(tmp_path: Path, monkeypatch) -> None:
