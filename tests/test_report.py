@@ -300,7 +300,10 @@ def test_bimodal_histogram_is_visible() -> None:
 
 
 def test_tables_draw_row_and_column_borders() -> None:
-    text = format_run(_result(_outcome("a", (_ok(10.0),))), color=False)
+    text = format_run(
+        _result(_outcome("a", (_ok(10.0),)), _outcome("b", (_ok(20.0),))),
+        color=False,
+    )
     compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
     ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
     providers = text.split("Providers", 1)[1]
@@ -309,6 +312,8 @@ def test_tables_draw_row_and_column_borders() -> None:
         assert "│" in block
         assert "┼" in block
         assert "└" in block
+        # header rule plus one rule between the two data rows
+        assert block.count("├") >= 2
 
 
 def test_close_p95_is_similar_not_a_false_winner() -> None:

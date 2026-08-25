@@ -236,7 +236,9 @@ def _grid(
         "  " + line(headers),
         "  " + rule("├", "┼", "┤"),
     ]
-    for row in rows:
+    for i, row in enumerate(rows):
+        if i:
+            out.append("  " + rule("├", "┼", "┤"))
         padded = list(row) + [""] * (cols - len(row))
         out.append("  " + line(padded[:cols]))
     out.append("  " + rule("└", "┴", "┘"))
