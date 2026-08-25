@@ -172,6 +172,14 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Run endpoints one after another instead of racing each sample (default is paired)",
     )
     run.add_argument(
+        "--new-connection",
+        action="store_true",
+        help=(
+            "Open a fresh TCP/TLS connection for every request "
+            "(default: keep-alive). Handshake cost is visible; ranking still uses total RTT."
+        ),
+    )
+    run.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -350,6 +358,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         burst=args.burst,
         rps=args.rps,
+        new_connection=args.new_connection,
     )
     payload = format_json(result, rank_by=rank_by, similar_band=similar_band) if (args.json or args.output) else None
     if args.output:

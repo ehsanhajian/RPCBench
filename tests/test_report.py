@@ -95,18 +95,11 @@ def _result(*outcomes: EndpointOutcome) -> RunResult:
 
 def _rank_rows(text: str) -> list[str]:
     block = text.split("Ranking", 1)[1].split("Providers", 1)[0]
-    rows: list[str] = []
-    seen_header = False
-    for ln in block.splitlines():
-        stripped = ln.strip()
-        if not stripped:
-            continue
-        if not seen_header:
-            if stripped.startswith("#"):
-                seen_header = True
-            continue
-        rows.append(ln)
-    return rows
+    return [
+        ln
+        for ln in block.splitlines()
+        if "│" in ln and not ("name" in ln and "status" in ln)
+    ]
 
 
 def test_rank_fastest_p95_first_failures_last() -> None:
@@ -306,6 +299,21 @@ def test_bimodal_histogram_is_visible() -> None:
     assert "jit" in ranking
 
 
+def test_tables_draw_row_and_column_borders() -> None:
+    text = format_run(
+        _result(_outcome("a", (_ok(10.0),)), _outcome("b", (_ok(20.0),))),
+        color=False,
+    )
+    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    providers = text.split("Providers", 1)[1]
+    for block in (compare, ranking, providers):
+        assert "┌" in block
+        assert "│" in block
+        assert "┼" in block
+        assert "└" in block
+
+
 def test_close_p95_is_similar_not_a_false_winner() -> None:
     a = _outcome("a", (_ok(81.0), _ok(81.0)))
     b = _outcome("b", (_ok(84.0), _ok(84.0)))
@@ -317,7 +325,9 @@ def test_close_p95_is_similar_not_a_false_winner() -> None:
     assert "Fastest  a, b" in text
     assert "similar within 10% p95" in text
     ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
-    assert ranking.count("  1  ") >= 2
+    rows = _rank_rows(text)
+    assert len(rows) == 2
+    assert all("1" in ln for ln in rows)
 
 
 def test_far_p95_gets_distinct_places() -> None:
@@ -369,7 +379,7 @@ def test_stale_cannot_be_fastest() -> None:
     ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
     assert "~" in ranking
     assert "lagged" in ranking
-    assert "  stale" in ranking
+    assert "stale  ~36s" in ranking
     assert "97" in text
     assert "~36s" in text
     assert "stale >2 blocks vs cohort median" in text

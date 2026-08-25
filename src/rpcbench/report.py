@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -192,6 +193,68 @@ def _paint(text: str, *codes: str, enabled: bool) -> str:
     return f"\033[{prefix}m{text}\033[0m"
 
 
+_ANSI = re.compile(r"\033\[[0-9;]*m")
+
+
+def _visible_len(text: str) -> int:
+    return len(_ANSI.sub("", text))
+
+
+def _pad_visible(text: str, width: int, *, right: bool) -> str:
+    fill = width - _visible_len(text)
+    if fill <= 0:
+        return text
+    return (" " * fill + text) if right else (text + " " * fill)
+
+
+def _grid(
+    headers: list[str],
+    rows: list[list[str]],
+    *,
+    right: tuple[bool, ...] | None = None,
+) -> list[str]:
+    """Box-draw a table. ``right[i]`` right-aligns that column (numbers)."""
+    cols = len(headers)
+    align = right or tuple(False for _ in headers)
+    widths = [_visible_len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], _visible_len(cell))
+
+    def rule(left: str, mid: str, right_ch: str) -> str:
+        return left + mid.join("─" * (w + 2) for w in widths) + right_ch
+
+    def line(cells: list[str]) -> str:
+        parts = [
+            " " + _pad_visible(cells[i], widths[i], right=align[i]) + " "
+            for i in range(cols)
+        ]
+        return "│" + "│".join(parts) + "│"
+
+    out = [
+        "  " + rule("┌", "┬", "┐"),
+        "  " + line(headers),
+        "  " + rule("├", "┼", "┤"),
+    ]
+    for row in rows:
+        padded = list(row) + [""] * (cols - len(row))
+        out.append("  " + line(padded[:cols]))
+    out.append("  " + rule("└", "┴", "┘"))
+    return out
+
+
+def _name_cell(outcome: EndpointOutcome, use_color: bool) -> str:
+    ok = outcome.stats.n_ok > 0
+    return _paint(
+        outcome.endpoint.name, _GREEN if ok else _RED, enabled=use_color
+    )
+
+
+def _status_cell(outcome: EndpointOutcome, use_color: bool) -> str:
+    ok = outcome.stats.n_ok > 0
+    return _paint("ok" if ok else "fail", _GREEN if ok else _RED, enabled=use_color)
+
+
 def _rank_value(stats: Any, rank_by: str) -> float | None:
     if stats.n_ok == 0:
         return None
@@ -253,6 +316,7 @@ def run_to_dict(
         "concurrency": result.concurrency,
         "burst": result.burst,
         "rps": result.rps,
+        "connection": result.connection,
         "mode": result.mode,
         "seed": result.seed,
         "sequence_id": result.sequence_id,
@@ -350,7 +414,8 @@ def format_run(
         f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
         f"seq={result.sequence_id or '—'}  ·  "
         f"concurrency={_concurrency_label(result.concurrency)}"
-        f"{_burst_mode_suffix(result)}",
+        f"{_burst_mode_suffix(result)}"
+        f"  ·  conn={result.connection}",
         "",
         "Summary",
     ]
@@ -372,6 +437,16 @@ def format_run(
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
+    if any(outcome.timing for outcome in result.outcomes):
+        lines.extend(
+            [
+                "",
+                "Timing  (handshake = DNS+TCP+TLS; server = wait after connect; "
+                "payload = body+parse; p95 of successes; not mixed into ranking; "
+                f"conn={result.connection})",
+            ]
+        )
+        lines.extend(_timing_lines(result, name_w, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -407,7 +482,8 @@ def format_run(
         f"({result.block_time_s:g}s/block)  ·  "
         f"hash at block {result.pin_height if result.pin_height is not None else '—'}  ·  "
         "client is a label only  ·  "
-        "rate_limit is 429 / CU throttle"
+        "rate_limit is 429 / CU throttle  ·  "
+        "handshake is DNS+TCP+TLS (0 on keep-alive reuse)"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -471,47 +547,95 @@ def _method_header(result: RunResult, params: str) -> str:
 def _methods_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
-    step_w = max((len(spec.name) for spec in result.workload), default=4)
-    method_w = max((len(spec.method) for spec in result.workload), default=6)
-    header = (
-        f"  {'endpoint':<{name_w}}  {'step':<{step_w}}  {'method':<{method_w}}  "
-        f"{'n':>7}  {'err':>4}  {'p50':>8}  {'p95':>8}  {'p99':>8}"
-    )
-    lines = [header]
     lookup = {spec.name: spec.method for spec in result.workload}
+    rows: list[list[str]] = []
     for outcome in result.outcomes:
-        hue = _GREEN if outcome.stats.n_ok else _RED
-        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        name = _name_cell(outcome, use_color)
         for step, stats in outcome.by_method:
             attempted = stats.n_ok + stats.n_fail
             n = f"{stats.n_ok}/{attempted}" if attempted else "—"
-            p99 = _cell_ms(stats.p99_ms)
-            lines.append(
-                f"  {name}  {step:<{step_w}}  {lookup.get(step, step):<{method_w}}  "
-                f"{n:>7}  {_pct(stats.error_rate):>4}  "
-                f"{_cell_ms(stats.p50_ms):>8}  {_cell_ms(stats.p95_ms):>8}  "
-                f"{p99:>8}"
+            rows.append(
+                [
+                    name,
+                    step,
+                    lookup.get(step, step),
+                    n,
+                    _pct(stats.error_rate),
+                    _cell_ms(stats.p50_ms),
+                    _cell_ms(stats.p95_ms),
+                    _cell_ms(stats.p99_ms),
+                ]
             )
-    return lines
+    return _grid(
+        ["endpoint", "step", "method", "n", "err", "p50", "p95", "p99"],
+        rows,
+        right=(False, False, False, True, True, True, True, True),
+    )
+
+
+def _timing_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    rows: list[list[str]] = []
+    dash = _cell_ms(None)
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        summary = outcome.timing
+        if summary is None:
+            rows.append(
+                [name, "—", dash, dash, dash, dash, dash, dash, dash, dash]
+            )
+            continue
+        rows.append(
+            [
+                name,
+                str(summary.handshake.n),
+                _cell_ms(summary.handshake.p95_ms),
+                _cell_ms(summary.server.p95_ms),
+                _cell_ms(summary.payload.p95_ms),
+                _cell_ms(summary.dns.p95_ms),
+                _cell_ms(summary.tcp.p95_ms),
+                _cell_ms(summary.tls.p95_ms),
+                _cell_ms(summary.body.p95_ms),
+                _cell_ms(summary.parse.p95_ms),
+            ]
+        )
+    return _grid(
+        [
+            "name",
+            "n",
+            "handshake",
+            "server",
+            "payload",
+            "dns",
+            "tcp",
+            "tls",
+            "body",
+            "parse",
+        ],
+        rows,
+        right=(False, True, True, True, True, True, True, True, True, True),
+    )
 
 
 def _tags_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
-    header = (
-        f"  {'endpoint':<{name_w}}  {'tag':<10}  {'lat':>8}  "
-        f"{'head':>8}  {'lag':>4}  fresh  note"
-    )
-    lines = [header]
+    rows: list[list[str]] = []
     for outcome in result.outcomes:
-        hue = _GREEN if outcome.stats.n_ok else _RED
-        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        name = _name_cell(outcome, use_color)
         for snap in outcome.tags:
             if snap.skipped:
-                note = snap.skip_reason or "skip"
-                lines.append(
-                    f"  {name}  {snap.tag:<10}  {_cell_ms(snap.latency_ms)}  "
-                    f"{'—':>8}  {'—':>4}  {'—':<5}  {note}"
+                rows.append(
+                    [
+                        name,
+                        snap.tag,
+                        _cell_ms(snap.latency_ms),
+                        "—",
+                        "—",
+                        "—",
+                        snap.skip_reason or "skip",
+                    ]
                 )
                 continue
             fresh = snap.freshness
@@ -527,11 +651,22 @@ def _tags_lines(
                 elif fresh.verdict == "fresh":
                     verdict = "yes"
             height = "—" if snap.height is None else str(snap.height)
-            lines.append(
-                f"  {name}  {snap.tag:<10}  {_cell_ms(snap.latency_ms)}  "
-                f"{height:>8}  {lag:>4}  {verdict:<5}"
+            rows.append(
+                [
+                    name,
+                    snap.tag,
+                    _cell_ms(snap.latency_ms),
+                    height,
+                    lag,
+                    verdict,
+                    "",
+                ]
             )
-    return lines
+    return _grid(
+        ["endpoint", "tag", "lat", "head", "lag", "fresh", "note"],
+        rows,
+        right=(False, False, True, True, True, False, False),
+    )
 
 
 def _methods_json(result: RunResult) -> list[dict[str, Any]]:
@@ -593,38 +728,70 @@ def _tag_entry(name: str, snap: Any) -> dict[str, Any]:
 def _comparison_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
-    header = (
-        f"  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
-        f"{'p50':>8}  {'p95':>8}  {'p99':>8}  {'jit':>8}  {'rps':>6}  "
-        f"{'head':>8}  {'lag':>4}  fresh  {'hash':<10}  match  cap"
+    rows = [
+        _comparison_cells(outcome, use_color) for outcome in result.outcomes
+    ]
+    return _grid(
+        [
+            "name",
+            "status",
+            "n",
+            "err",
+            "p50",
+            "p95",
+            "p99",
+            "jit",
+            "rps",
+            "head",
+            "lag",
+            "fresh",
+            "hash",
+            "match",
+            "cap",
+        ],
+        rows,
+        right=(
+            False,
+            False,
+            True,
+            True,
+            True,
+            True,
+            True,
+            True,
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+        ),
     )
-    lines = [header]
-    for outcome in result.outcomes:
-        lines.append(_comparison_line(outcome, name_w, use_color))
-    return lines
 
 
-def _comparison_line(outcome: EndpointOutcome, name_w: int, use_color: bool) -> str:
+def _comparison_cells(outcome: EndpointOutcome, use_color: bool) -> list[str]:
     stats = outcome.stats
     ok = stats.n_ok > 0
-    raw_status = f"{'ok' if ok else 'fail':<6}"
-    status = _paint(raw_status, _GREEN if ok else _RED, enabled=use_color)
     attempted = stats.n_ok + stats.n_fail
-    n = f"{stats.n_ok}/{attempted}"
-    name = _paint(
-        f"{outcome.endpoint.name:<{name_w}}",
-        _GREEN if ok else _RED,
-        enabled=use_color,
-    )
     cap = "yes" if ok else _miss_class(outcome)
-    return (
-        f"  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
-        f"{_cell_ms(stats.p50_ms)}  {_cell_ms(stats.p95_ms)}  "
-        f"{_cell_ms(stats.p99_ms)}  {_cell_ms(stats.jitter_ms)}  "
-        f"{_cell_rps(stats.mean_ms)}  {_cell_head(outcome)}  "
-        f"{_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
-        f"{_cell_hash(outcome)}  {_cell_agree(outcome)}  {cap}"
-    )
+    return [
+        _name_cell(outcome, use_color),
+        _status_cell(outcome, use_color),
+        f"{stats.n_ok}/{attempted}",
+        _pct(stats.error_rate),
+        _cell_ms(stats.p50_ms),
+        _cell_ms(stats.p95_ms),
+        _cell_ms(stats.p99_ms),
+        _cell_ms(stats.jitter_ms),
+        _cell_rps(stats.mean_ms),
+        _cell_head(outcome),
+        _cell_lag(outcome),
+        _cell_fresh(outcome).strip(),
+        _cell_hash(outcome).strip(),
+        _cell_agree(outcome).strip(),
+        cap,
+    ]
 
 
 def _cell_ms(value: float | None) -> str:
@@ -709,6 +876,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         "last_error": _last_error(outcome) or None,
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
     }
 
 
@@ -727,11 +895,7 @@ def _ranking_lines(
     use_color: bool,
     rank_by: str,
 ) -> list[str]:
-    header = (
-        f"  {'#':>3}  {'name':<{name_w}}  status  {'n':>7}  {'err':>4}  "
-        f"{'p95':>8}  {'mean':>8}  {'jit':>8}  note"
-    )
-    lines = [header]
+    rows: list[list[str]] = []
     for row in placed:
         if row.rank is not None:
             mark = str(row.rank)
@@ -739,39 +903,38 @@ def _ranking_lines(
             mark = "~"
         else:
             mark = "—"
-        lines.append(
-            _ranking_row(row.outcome, mark, name_w, use_color, rank_by)
-        )
-    return lines
+        rows.append(_ranking_cells(row.outcome, mark, use_color, rank_by))
+    return _grid(
+        ["#", "name", "status", "n", "err", "p95", "mean", "jit", "note"],
+        rows,
+        right=(True, False, False, True, True, True, True, True, False),
+    )
 
 
-def _ranking_row(
+def _ranking_cells(
     outcome: EndpointOutcome,
     mark: str,
-    name_w: int,
     use_color: bool,
     rank_by: str,
-) -> str:
+) -> list[str]:
     stats = outcome.stats
     ok = stats.n_ok > 0
-    raw_status = f"{'ok' if ok else 'fail':<6}"
-    status = _paint(raw_status, _GREEN if ok else _RED, enabled=use_color)
     attempted = stats.n_ok + stats.n_fail
-    n = f"{stats.n_ok}/{attempted}"
-    name = _paint(
-        f"{outcome.endpoint.name:<{name_w}}",
-        _GREEN if ok else _RED,
-        enabled=use_color,
-    )
     note = _row_note(outcome)
     if rank_by not in {"p95", "mean"} and ok:
         metric = _rank_metric_text(stats, rank_by)
         note = metric if note == "—" else f"{note}  {metric}"
-    return (
-        f"  {mark:>3}  {name}  {status}  {n:>7}  {_pct(stats.error_rate):>4}  "
-        f"{_cell_ms(stats.p95_ms)}  {_cell_ms(stats.mean_ms)}  "
-        f"{_cell_ms(stats.jitter_ms)}  {note}"
-    )
+    return [
+        mark,
+        _name_cell(outcome, use_color),
+        _status_cell(outcome, use_color),
+        f"{stats.n_ok}/{attempted}",
+        _pct(stats.error_rate),
+        _cell_ms(stats.p95_ms),
+        _cell_ms(stats.mean_ms),
+        _cell_ms(stats.jitter_ms),
+        note,
+    ]
 
 
 def _row_note(outcome: EndpointOutcome) -> str:
@@ -815,42 +978,69 @@ def _provider_table(
     url_w = min(max(len(url) for url in urls), 42)
     clients = [(outcome.client or "—") for outcome in ranked] or ["—"]
     client_w = min(max(len(text) for text in clients), 22)
-    header = (
-        f"  {'name':<{name_w}}  status  {'url':<{url_w}}  "
-        f"{'client':<{client_w}}  {'n':>7}  {'err':>4}  {'p95':>8}  "
-        f"{'head':>8}  {'lag':>4}  fresh  match  hist  note"
+    rows = [
+        _provider_cells(outcome, url_w, client_w, use_color) for outcome in ranked
+    ]
+    return _grid(
+        [
+            "name",
+            "status",
+            "url",
+            "client",
+            "n",
+            "err",
+            "p95",
+            "head",
+            "lag",
+            "fresh",
+            "match",
+            "hist",
+            "note",
+        ],
+        rows,
+        right=(
+            False,
+            False,
+            False,
+            False,
+            True,
+            True,
+            True,
+            True,
+            True,
+            False,
+            False,
+            False,
+            False,
+        ),
     )
-    lines = [header]
-    for outcome in ranked:
-        lines.append(
-            _provider_row(outcome, name_w, url_w, client_w, use_color)
-        )
-    return lines
 
 
-def _provider_row(
+def _provider_cells(
     outcome: EndpointOutcome,
-    name_w: int,
     url_w: int,
     client_w: int,
     use_color: bool,
-) -> str:
+) -> list[str]:
     stats = outcome.stats
     ok = stats.n_ok > 0
-    hue = _GREEN if ok else _RED
-    raw_status = f"{'ok' if ok else 'fail':<6}"
-    status = _paint(raw_status, hue, enabled=use_color)
-    name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
     attempted = stats.n_ok + stats.n_fail
-    n = f"{stats.n_ok}/{attempted}"
     hist = _hist_counts(stats.histogram) if ok else "—"
-    return (
-        f"  {name}  {status}  {_clip(outcome.endpoint.display_url, url_w)}  "
-        f"{_clip(outcome.client or '—', client_w)}  "
-        f"{n:>7}  {_pct(stats.error_rate):>4}  {_cell_ms(stats.p95_ms)}  "
-        f"{_cell_head(outcome)}  {_cell_lag(outcome)}  {_cell_fresh(outcome)}  "
-        f"{_cell_agree(outcome)}  {hist}  {_row_note(outcome)}"
-    )
+    return [
+        _name_cell(outcome, use_color),
+        _status_cell(outcome, use_color),
+        _clip(outcome.endpoint.display_url, url_w).rstrip(),
+        _clip(outcome.client or "—", client_w).rstrip(),
+        f"{stats.n_ok}/{attempted}",
+        _pct(stats.error_rate),
+        _cell_ms(stats.p95_ms),
+        _cell_head(outcome).strip(),
+        _cell_lag(outcome).strip(),
+        _cell_fresh(outcome).strip(),
+        _cell_agree(outcome).strip(),
+        hist,
+        _row_note(outcome),
+    ]
 
 
 def _provider_verbose_lines(outcome: EndpointOutcome, name_w: int) -> list[str]:
@@ -869,7 +1059,8 @@ def _sample_lines(hits: tuple, indent: str) -> list[str]:
     for i, hit in enumerate(hits, start=1):
         tag = f"  {hit.method}" if hit.method else ""
         if hit.ok and hit.latency_ms is not None:
-            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms{tag}")
+            extra = _sample_timing_suffix(hit)
+            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms{extra}{tag}")
         else:
             cls = hit.error_class or "error"
             msg = hit.error or ""
@@ -921,6 +1112,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "score": _success_rate(stats.error_rate),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
     }
 
 
@@ -968,6 +1160,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
         "consistency": _consistency_json(outcome),
         "tags": [_tag_entry(outcome.endpoint.name, snap) for snap in outcome.tags],
         "phases": _phases_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -983,6 +1176,64 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "error_class": hit.error_class,
         "attempts": hit.attempts,
         "method": hit.method,
+        "timing": _hit_timing_json(hit.timing),
+    }
+
+
+def _sample_timing_suffix(hit: Any) -> str:
+    timing = hit.timing
+    if timing is None:
+        return ""
+    return (
+        f"  hs={_fmt_ms(timing.handshake_ms())}  "
+        f"srv={_fmt_ms(timing.server_ms)}  "
+        f"pay={_fmt_ms(timing.payload_ms())}"
+    )
+
+
+def _fmt_ms(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}ms"
+
+
+def _timing_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "handshake": _timing_phase_json(summary.handshake),
+        "server": _timing_phase_json(summary.server),
+        "payload": _timing_phase_json(summary.payload),
+        "dns": _timing_phase_json(summary.dns),
+        "tcp": _timing_phase_json(summary.tcp),
+        "tls": _timing_phase_json(summary.tls),
+        "body": _timing_phase_json(summary.body),
+        "parse": _timing_phase_json(summary.parse),
+    }
+
+
+def _timing_phase_json(stats: Any) -> dict[str, Any]:
+    return {
+        "n": stats.n,
+        "mean_ms": stats.mean_ms,
+        "p50_ms": stats.p50_ms,
+        "p95_ms": stats.p95_ms,
+        "p99_ms": stats.p99_ms,
+    }
+
+
+def _hit_timing_json(timing: Any) -> dict[str, Any] | None:
+    if timing is None:
+        return None
+    return {
+        "dns_ms": timing.dns_ms,
+        "tcp_ms": timing.tcp_ms,
+        "tls_ms": timing.tls_ms,
+        "server_ms": timing.server_ms,
+        "body_ms": timing.body_ms,
+        "parse_ms": timing.parse_ms,
+        "handshake_ms": timing.handshake_ms(),
+        "payload_ms": timing.payload_ms(),
     }
 
 
@@ -1071,40 +1322,44 @@ def _phases_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
 def _burst_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
-    header = (
-        f"  {'endpoint':<{name_w}}  {'phase':<6}  {'n':>7}  {'err':>4}  "
-        f"{'p95':>8}  {'rps':>6}  rate_limit"
-    )
-    lines = [header]
+    rows: list[list[str]] = []
     for outcome in result.outcomes:
-        hue = _GREEN if outcome.stats.n_ok else _RED
-        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
-        rows: list[tuple[str, Any]] = []
+        name = _name_cell(outcome, use_color)
+        phases: list[tuple[str, Any]] = []
         if outcome.burst_stats is not None:
-            rows.append(("burst", outcome.burst_stats))
+            phases.append(("burst", outcome.burst_stats))
         if outcome.steady_stats is not None:
-            rows.append(("steady", outcome.steady_stats))
-        if not rows:
+            phases.append(("steady", outcome.steady_stats))
+        if not phases:
             cell = "—"
             extra = _tag_rate_limit_n(outcome)
             if extra:
                 cell = f"0  tags={extra}"
-            lines.append(
-                f"  {name}  {'—':<6}  {'—':>7}  {'—':>4}  {'—':>8}  {'—':>6}  {cell}"
-            )
+            rows.append([name, "—", "—", "—", "—", "—", cell])
             continue
         first = True
-        for phase, stats in rows:
+        for phase, stats in phases:
             attempted = stats.n_ok + stats.n_fail
             n = f"{stats.n_ok}/{attempted}"
             rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
             cell = _rate_limit_cell(stats, outcome, tags=first)
             first = False
-            lines.append(
-                f"  {name}  {phase:<6}  {n:>7}  {_pct(stats.error_rate):>4}  "
-                f"{_cell_ms(stats.p95_ms)}  {rps:>6}  {cell}"
+            rows.append(
+                [
+                    name,
+                    phase,
+                    n,
+                    _pct(stats.error_rate),
+                    _cell_ms(stats.p95_ms),
+                    rps,
+                    cell,
+                ]
             )
-    return lines
+    return _grid(
+        ["endpoint", "phase", "n", "err", "p95", "rps", "rate_limit"],
+        rows,
+        right=(False, False, True, True, True, True, False),
+    )
 
 
 def _success_rate(error_rate: float | None) -> float | None:

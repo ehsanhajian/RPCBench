@@ -78,6 +78,8 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["concurrency"] == 0
     assert data["burst"] == 0
     assert data["rps"] == 0.0
+    assert data["connection"] == "keepalive"
+    assert data["comparison"][0]["timing"] is None
     assert data["providers"][0]["phases"] is None
     assert data["rank_by"] == "p95"
     assert data["similar_band"] == 0.10

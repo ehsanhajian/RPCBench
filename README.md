@@ -60,10 +60,11 @@ The CLI prints, in order:
 2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh / hash / match)
 3. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
-5. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-6. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-7. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. `--verbose` adds per-sample rows
-8. **Capabilities** — who answered this method
+5. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+6. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+7. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+8. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. `--verbose` adds per-sample rows
+9. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -83,6 +84,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Warmup is excluded** from min/mean/max, jitter, percentiles, error rate, and the histogram.
 - **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
 - **Histogram** is where successes landed: empty buckets are omitted (`≥1s=3`, or `<50ms=8  ≥1s=8` when split). Buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON).
+- **HTTP timing** splits each successful sample into handshake (DNS+TCP+TLS), server wait after the connection is ready, and payload (body download + JSON parse). Ranking still uses total RTT. Default reuses keep-alive connections (handshake is ~0 after warmup). `--new-connection` opens a fresh TCP/TLS session every request so distance vs node time is visible. TLS here is handshake latency, not a certificate check.
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, **rate_limit**, JSON-RPC, malformed). `rate_limit` is HTTP 429 or a CU/throttle JSON-RPC message — reliability, not a scan.
 - **rps** in the table is `1000 / mean_ms` for this probe — not parallel throughput. `--rps N` is a start cap after `--burst`, not that formula.
 
@@ -102,7 +104,7 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`. Reliability `score` is success rate.
 
 ## Flags
 
@@ -113,6 +115,7 @@ rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
 rpcbench run --endpoints endpoints.yaml --sequential
+rpcbench run --endpoints endpoints.yaml --new-connection
 rpcbench run --endpoints endpoints.yaml --verbose --json
 ```
 
@@ -135,6 +138,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
 | `--burst` | 0 | Overlap the first N timed samples (`0`=off, max 8). Same request budget |
 | `--rps` | 0 | Cap starts/sec after `--burst` (`0`=off). Does not raise the budget |
+| `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--seed` | 0 | Shared sequence stamp |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |
