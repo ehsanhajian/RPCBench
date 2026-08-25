@@ -61,8 +61,9 @@ The CLI prints, in order:
 3. **Ranking** — ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
 4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 5. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-6. **Providers** — redacted URL + `id=` hash, client label, samples, errors, jitter, histogram; head lag as **caught up** or **stale**; hash as **matches group** or **differs from group**
-7. **Capabilities** — who answered this method
+6. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget)
+7. **Providers** — redacted URL + `id=` hash, client label, samples, errors, jitter, histogram; head lag as **caught up** or **stale**; hash as **matches group** or **differs from group**
+8. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -72,7 +73,7 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 - **Warmup is excluded** from min/mean/max, jitter, percentiles, error rate, and the histogram.
 - **P50/P95/P99** are nearest-rank over successful samples. **Jitter** is the sample standard deviation of those samples (needs n≥2). **P99** is the slowest sample until n≥100 (flagged below that).
 - **Histogram** buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s` (same edges in JSON for a later HTML report).
-- **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, JSON-RPC, malformed).
+- **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, **rate_limit**, JSON-RPC, malformed). `rate_limit` is HTTP 429 or a CU/throttle JSON-RPC message — reliability, not a scan.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many samples to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
 - **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Ranking** is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins. **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band, a **stale** head, or a **disagreeing** block hash is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
@@ -80,8 +81,9 @@ On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Re
 - **Consistency** is whether providers return the same block **hash** at one pinned height (default: that cohort median). `--block HEX|N` pins the check when heads naturally diverge by one block. A unique majority hash is canonical; a split is disagreement for everyone who returned a hash. The provider line prints **matches group** or **differs from group**. Missing/unparseable hashes are unknown, not disagree. The extra `eth_getBlockByNumber` is not mixed into latency stats. JSON still uses `agree` / `disagree`. Not fork choice and not a security finding.
 - **Client** is a volunteered `web3_clientVersion` string stored as a label (Erigon vs Geth). Missing or hex-only results are omitted. Not a disclosure finding, not outdated-client recon, not a CVE check.
 - **Tags** are one paired `eth_getBlockByNumber` snapshot each for `latest`, `safe`, and `finalized`. Latency and freshness are per tag vs that tag’s cohort. Unsupported tags are skipped with a reason and do not change Fastest. Full P95 of one tag is `--method eth_getBlockByNumber --params '["finalized", false]'`.
-- **rps** is `1000 / mean_ms` for this probe — not parallel throughput.
-- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, and `tags`. Reliability `score` is success rate.
+- **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
+- **rps** is `1000 / mean_ms` for this probe — not parallel throughput. `--rps N` is a start cap after `--burst`, not that formula.
+- **JSON** (`--json` or `-o FILE`) includes `mode`, `seed`, `sequence_id`, per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, and `phases`. Reliability `score` is success rate.
 
 ## Flags
 
@@ -111,6 +113,8 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--max-requests` | 128 | HTTP cap for the whole run (hard cap `RPCBENCH_MAX_REQUESTS`, default 10000) |
 | `--max-duration` | 600s | Stop and still print a report (overrides `--budget`; `0` = no limit) |
 | `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
+| `--burst` | 0 | Overlap the first N timed samples (`0`=off, max 8). Same request budget |
+| `--rps` | 0 | Cap starts/sec after `--burst` (`0`=off). Does not raise the budget |
 | `--seed` | 0 | Shared sequence stamp |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |

@@ -251,6 +251,8 @@ def run_to_dict(
         "budget": result.budget,
         "budget_remaining": result.budget_remaining,
         "concurrency": result.concurrency,
+        "burst": result.burst,
+        "rps": result.rps,
         "mode": result.mode,
         "seed": result.seed,
         "sequence_id": result.sequence_id,
@@ -347,7 +349,8 @@ def format_run(
         f"Rank by {label}  ·  similar {band_pct}",
         f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
         f"seq={result.sequence_id or '—'}  ·  "
-        f"concurrency={_concurrency_label(result.concurrency)}",
+        f"concurrency={_concurrency_label(result.concurrency)}"
+        f"{_burst_mode_suffix(result)}",
         "",
         "Summary",
     ]
@@ -381,6 +384,16 @@ def format_run(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
         )
         lines.extend(_tags_lines(result, name_w, use_color))
+    if result.burst > 0:
+        lines.extend(
+            [
+                "",
+                "Burst  (first "
+                f"{result.burst} timed samples overlap; then "
+                f"{_rps_label(result.rps)}; same request budget)",
+            ]
+        )
+        lines.extend(_burst_lines(result, name_w, use_color))
     lines.extend(["", "Providers"])
     for outcome in ranked:
         lines.extend(_provider_lines(outcome, name_w, verbose, use_color))
@@ -397,7 +410,8 @@ def format_run(
         f"stale >{result.stale_blocks} blocks vs cohort median "
         f"({result.block_time_s:g}s/block)  ·  "
         f"hash at block {result.pin_height if result.pin_height is not None else '—'}  ·  "
-        "client is a label only"
+        "client is a label only  ·  "
+        "rate_limit is 429 / CU throttle"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -787,6 +801,7 @@ def _provider_lines(
         cons_line = _consistency_provider_line(outcome)
         if cons_line:
             lines.append(f"{indent}{cons_line}")
+        lines.extend(_phase_provider_lines(outcome, indent))
     else:
         err = _last_error(outcome)
         if err:
@@ -903,6 +918,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "tags": [_tag_entry(outcome.endpoint.name, snap) for snap in outcome.tags],
+        "phases": _phases_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -989,6 +1005,102 @@ def _freshness_provider_line(outcome: EndpointOutcome) -> str:
     else:
         status = "caught up"
     return f"head={fresh.height}  lag={lag}{extra}  {status}"
+
+
+def _burst_mode_suffix(result: RunResult) -> str:
+    extra = ""
+    if result.burst > 0:
+        extra += f"  ·  burst={result.burst}"
+    if result.rps > 0:
+        extra += f"  ·  rps={result.rps:g}"
+    return extra
+
+
+def _rps_label(rps: float) -> str:
+    if rps <= 0:
+        return "uncapped steady"
+    return f"cap {rps:g}/s"
+
+
+def _rate_limit_n(stats: Any) -> int:
+    return dict(stats.by_class).get("rate_limit", 0)
+
+
+def _phase_json(stats: Any) -> dict[str, Any] | None:
+    if stats is None:
+        return None
+    return {
+        "n_ok": stats.n_ok,
+        "n_fail": stats.n_fail,
+        "error_rate": stats.error_rate,
+        "mean_ms": stats.mean_ms,
+        "p95_ms": stats.p95_ms,
+        "rps": (1000.0 / stats.mean_ms) if stats.mean_ms else None,
+        "by_class": dict(stats.by_class),
+        "rate_limit": _rate_limit_n(stats),
+    }
+
+
+def _phases_json(outcome: EndpointOutcome) -> dict[str, Any] | None:
+    if outcome.burst_stats is None and outcome.steady_stats is None:
+        return None
+    return {
+        "burst": _phase_json(outcome.burst_stats),
+        "steady": _phase_json(outcome.steady_stats),
+    }
+
+
+def _phase_bits(stats: Any) -> str:
+    attempted = stats.n_ok + stats.n_fail
+    p95 = "—" if stats.p95_ms is None else f"{stats.p95_ms:.1f}ms"
+    rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
+    limited = _rate_limit_n(stats)
+    extra = f"  rate_limit={limited}" if limited else ""
+    return (
+        f"n={stats.n_ok}/{attempted}  err={_pct(stats.error_rate)}  "
+        f"p95={p95}  rps={rps}{extra}"
+    )
+
+
+def _phase_provider_lines(outcome: EndpointOutcome, indent: str) -> list[str]:
+    if outcome.burst_stats is None:
+        return []
+    lines = [f"{indent}burst   {_phase_bits(outcome.burst_stats)}"]
+    if outcome.steady_stats is not None:
+        lines.append(f"{indent}steady  {_phase_bits(outcome.steady_stats)}")
+    return lines
+
+
+def _burst_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    header = (
+        f"  {'endpoint':<{name_w}}  {'phase':<6}  {'n':>7}  {'err':>4}  "
+        f"{'p95':>8}  {'rps':>6}  rate_limit"
+    )
+    lines = [header]
+    for outcome in result.outcomes:
+        hue = _GREEN if outcome.stats.n_ok else _RED
+        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        rows: list[tuple[str, Any]] = []
+        if outcome.burst_stats is not None:
+            rows.append(("burst", outcome.burst_stats))
+        if outcome.steady_stats is not None:
+            rows.append(("steady", outcome.steady_stats))
+        if not rows:
+            lines.append(
+                f"  {name}  {'—':<6}  {'—':>7}  {'—':>4}  {'—':>8}  {'—':>6}  —"
+            )
+            continue
+        for phase, stats in rows:
+            attempted = stats.n_ok + stats.n_fail
+            n = f"{stats.n_ok}/{attempted}"
+            rps = "—" if not stats.mean_ms else f"{1000.0 / stats.mean_ms:.1f}"
+            lines.append(
+                f"  {name}  {phase:<6}  {n:>7}  {_pct(stats.error_rate):>4}  "
+                f"{_cell_ms(stats.p95_ms)}  {rps:>6}  {_rate_limit_n(stats)}"
+            )
+    return lines
 
 
 def _success_rate(error_rate: float | None) -> float | None:

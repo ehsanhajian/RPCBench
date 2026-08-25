@@ -396,3 +396,38 @@ def test_p99_flagged_when_n_too_small() -> None:
     hundred = _outcome("big", tuple(_ok(10.0) for _ in range(100)))
     text_ok = format_run(_result(hundred), color=False)
     assert "need ≥100" not in text_ok.split("Providers", 1)[1]
+
+
+def test_burst_section_and_provider_phases() -> None:
+    samples = (_ok(10.0), _ok(12.0), _fail("rate_limit", "Too Many Requests"), _ok(11.0))
+    outcome = EndpointOutcome(
+        endpoint=Endpoint(name="node", url="http://127.0.0.1/node"),
+        warmup=(),
+        samples=samples,
+        stats=summarize(samples),
+        burst_stats=summarize(samples[:2]),
+        steady_stats=summarize(samples[2:]),
+    )
+    result = RunResult(
+        method="eth_blockNumber",
+        params=(),
+        samples=4,
+        warmup=0,
+        timeout=10.0,
+        budget=32,
+        outcomes=(outcome,),
+        budget_remaining=20,
+        burst=2,
+        rps=2.0,
+    )
+    text = format_run(result, color=False)
+    assert "burst=2" in text
+    assert "rps=2" in text
+    assert "Burst  (first 2 timed samples overlap; then cap 2/s; same request budget)" in text
+    assert "burst" in text.split("Burst", 1)[1].split("Providers", 1)[0]
+    assert "steady" in text.split("Burst", 1)[1]
+    assert "burst   n=2/2" in text
+    assert "steady  n=1/2" in text
+    assert "rate_limit=1" in text
+    assert "rate_limit is 429 / CU throttle" in text
+    assert "finding" not in text.lower()

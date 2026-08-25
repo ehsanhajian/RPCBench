@@ -17,6 +17,21 @@ from rpcbench import __version__
 
 USER_AGENT = f"RPCBench/{__version__} (+https://github.com/ehsanhajian/RPCBench)"
 
+# Reliability class, not a security finding. Tight on purpose: "limit" alone is too broad.
+_RATE_LIMIT_MARKERS = (
+    "too many requests",
+    "rate limit",
+    "ratelimit",
+    "rate-limit",
+    "request limit",
+    "compute unit",
+    "cu limit",
+    "cu/s",
+    "throughput limit",
+    "capacity exceeded",
+    "throttl",
+)
+
 
 class BudgetExceeded(RuntimeError):
     pass
@@ -164,14 +179,15 @@ def probe(
             latency_ms = (time.monotonic() - started) * 1000
             if response.status_code >= 400:
                 code = response.status_code
-                http_class = "http_4xx" if code < 500 else "http_5xx"
+                body_msg = _jsonrpc_error_message(response)
+                error = body_msg or f"HTTP {code}"
                 return ProbeResult(
                     ok=False,
                     reachable=True,
                     latency_ms=latency_ms,
                     result=None,
-                    error=f"HTTP {code}",
-                    error_class=http_class,
+                    error=error,
+                    error_class=_http_error_class(code, error),
                     attempts=attempts,
                 )
             try:
@@ -197,18 +213,16 @@ def probe(
                     attempts=attempts,
                 )
             if payload.get("error"):
-                err = payload["error"]
-                if isinstance(err, dict):
-                    message = str(err.get("message") or err)
-                else:
-                    message = str(err)
+                message = _error_message(payload.get("error"))
                 return ProbeResult(
                     ok=False,
                     reachable=True,
                     latency_ms=latency_ms,
                     result=None,
                     error=message,
-                    error_class="jsonrpc",
+                    error_class=(
+                        "rate_limit" if is_rate_limit_message(message) else "jsonrpc"
+                    ),
                     attempts=attempts,
                 )
             return ProbeResult(
@@ -233,6 +247,35 @@ def probe(
     finally:
         if owns:
             http.close()
+
+
+def is_rate_limit_message(text: str) -> bool:
+    blob = text.lower()
+    return any(marker in blob for marker in _RATE_LIMIT_MARKERS)
+
+
+def _http_error_class(status: int, message: str) -> str:
+    if status == 429 or is_rate_limit_message(message):
+        return "rate_limit"
+    if status < 500:
+        return "http_4xx"
+    return "http_5xx"
+
+
+def _error_message(err: Any) -> str:
+    if isinstance(err, dict):
+        return str(err.get("message") or err)
+    return str(err)
+
+
+def _jsonrpc_error_message(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict) or not payload.get("error"):
+        return None
+    return _error_message(payload.get("error"))
 
 
 def _body_hash(value: Any) -> str:
