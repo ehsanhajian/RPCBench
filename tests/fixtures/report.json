@@ -15,6 +15,7 @@
   "concurrency": 0,
   "burst": 0,
   "rps": 0.0,
+  "connection": "keepalive",
   "mode": "paired",
   "seed": 0,
   "sequence_id": "",
@@ -109,7 +110,8 @@
       },
       "last_error": null,
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     },
     {
       "name": "fast",
@@ -158,7 +160,8 @@
       },
       "last_error": null,
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     },
     {
       "name": "dead",
@@ -207,7 +210,8 @@
       },
       "last_error": "timeout: took too long",
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     }
   ],
   "ranking": [
@@ -232,7 +236,8 @@
       "rank_value": 12.0,
       "score": 1.0,
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     },
     {
       "rank": 2,
@@ -255,7 +260,8 @@
       "rank_value": 50.0,
       "score": 1.0,
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     },
     {
       "rank": null,
@@ -280,7 +286,8 @@
       "rank_value": null,
       "score": 0.0,
       "freshness": null,
-      "consistency": null
+      "consistency": null,
+      "timing": null
     }
   ],
   "methods": [],
@@ -351,6 +358,7 @@
       "consistency": null,
       "tags": [],
       "phases": null,
+      "timing": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -361,7 +369,8 @@
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null
+          "method": null,
+          "timing": null
         },
         {
           "ok": true,
@@ -370,7 +379,8 @@
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null
+          "method": null,
+          "timing": null
         }
       ]
     },
@@ -439,6 +449,7 @@
       "consistency": null,
       "tags": [],
       "phases": null,
+      "timing": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -449,7 +460,8 @@
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null
+          "method": null,
+          "timing": null
         },
         {
           "ok": true,
@@ -458,7 +470,8 @@
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null
+          "method": null,
+          "timing": null
         }
       ]
     },
@@ -529,6 +542,7 @@
       "consistency": null,
       "tags": [],
       "phases": null,
+      "timing": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [
@@ -539,7 +553,8 @@
           "error": "took too long",
           "error_class": "timeout",
           "attempts": 1,
-          "method": null
+          "method": null,
+          "timing": null
         }
       ]
     }

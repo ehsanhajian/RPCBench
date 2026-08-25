@@ -93,6 +93,20 @@ Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it i
 
 Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.
 
+## HTTP timing
+
+Each successful sample is split where the HTTP stack allows it:
+
+| Phase | What it is |
+| --- | --- |
+| **handshake** | DNS + TCP + TLS. **0** when keep-alive reuses the socket |
+| **server** | Time from a ready connection to response headers (TTFB minus handshake) |
+| **payload** | Body download + JSON parse |
+
+Default is **keep-alive** (one pooled client per run). **`--new-connection`** closes the socket after every request so handshake is paid every time. Ranking still uses total round-trip, not a phase. TLS here is handshake latency, not a certificate or CORS check.
+
+JSON includes p50/p95/p99 for each phase on the provider.
+
 ## Non-claims
 
 Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential `rps` is `1000 / mean_ms`, not parallel throughput.

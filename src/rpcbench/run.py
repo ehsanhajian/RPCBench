@@ -25,7 +25,8 @@ from rpcbench.freshness import (
     parse_block_height,
 )
 from rpcbench.methods import CallSpec
-from rpcbench.rpc import ProbeResult, RequestBudget, probe
+from rpcbench.rpc import ProbeResult, RequestBudget, make_client, probe
+from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.tags import (
     BLOCK_TAGS,
     CLIENT_METHOD,
@@ -74,6 +75,27 @@ class LatencyStats:
 
 
 @dataclass(frozen=True)
+class PhaseStats:
+    n: int
+    mean_ms: float | None
+    p50_ms: float | None
+    p95_ms: float | None
+    p99_ms: float | None
+
+
+@dataclass(frozen=True)
+class TimingSummary:
+    handshake: PhaseStats
+    server: PhaseStats
+    payload: PhaseStats
+    dns: PhaseStats
+    tcp: PhaseStats
+    tls: PhaseStats
+    body: PhaseStats
+    parse: PhaseStats
+
+
+@dataclass(frozen=True)
 class EndpointOutcome:
     endpoint: Endpoint
     warmup: tuple[ProbeResult, ...]
@@ -86,6 +108,7 @@ class EndpointOutcome:
     tags: tuple[TagSnapshot, ...] = ()
     burst_stats: LatencyStats | None = None
     steady_stats: LatencyStats | None = None
+    timing: TimingSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -121,6 +144,7 @@ class RunResult:
     canonical_hash: str | None = None
     burst: int = 0
     rps: float = 0.0
+    connection: str = CONN_KEEPALIVE
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -231,6 +255,40 @@ def summarize(samples: tuple[ProbeResult, ...]) -> LatencyStats:
     )
 
 
+def _timing_phase_stats(values: list[float]) -> PhaseStats:
+    if not values:
+        return PhaseStats(n=0, mean_ms=None, p50_ms=None, p95_ms=None, p99_ms=None)
+    return PhaseStats(
+        n=len(values),
+        mean_ms=sum(values) / len(values),
+        p50_ms=percentile(values, 0.50),
+        p95_ms=percentile(values, 0.95),
+        p99_ms=percentile(values, 0.99),
+    )
+
+
+def summarize_timing(samples: tuple[ProbeResult, ...]) -> TimingSummary | None:
+    timed = [hit.timing for hit in samples if hit.ok and hit.timing is not None]
+    if not timed:
+        return None
+
+    def attr(name: str) -> list[float]:
+        return [getattr(row, name) for row in timed if getattr(row, name) is not None]
+
+    return TimingSummary(
+        handshake=_timing_phase_stats([row.handshake_ms() for row in timed]),
+        server=_timing_phase_stats(attr("server_ms")),
+        payload=_timing_phase_stats(
+            [row.payload_ms() for row in timed if row.payload_ms() is not None]
+        ),
+        dns=_timing_phase_stats(attr("dns_ms")),
+        tcp=_timing_phase_stats(attr("tcp_ms")),
+        tls=_timing_phase_stats(attr("tls_ms")),
+        body=_timing_phase_stats(attr("body_ms")),
+        parse=_timing_phase_stats(attr("parse_ms")),
+    )
+
+
 def expand_steps(
     workload: tuple[CallSpec, ...], warmup: int, samples: int
 ) -> list[tuple[str, int, CallSpec]]:
@@ -297,6 +355,7 @@ def run_endpoints(
     block_pin: int | None = None,
     burst: int = 0,
     rps: float = 0.0,
+    new_connection: bool = False,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -324,6 +383,67 @@ def run_endpoints(
         samples=samples,
         workload=_workload_blob(steps) if len(steps) > 1 else None,
     )
+    connection = CONN_NEW if new_connection else CONN_KEEPALIVE
+    owns_client = client is None
+    if owns_client:
+        client = make_client(timeout=timeout, new_connection=new_connection)
+    try:
+        return _execute_run(
+            config,
+            method=method,
+            rpc_params=rpc_params,
+            samples=samples,
+            warmup=warmup,
+            timeout=timeout,
+            budget=budget,
+            purse=purse,
+            deadline=deadline,
+            mode=mode,
+            seed=seed,
+            concurrency=concurrency,
+            client=client,
+            steps=steps,
+            profile=profile,
+            sample_budget=sample_budget,
+            stale_blocks=stale_blocks,
+            block_time_s=block_time_s,
+            block_pin=block_pin,
+            burst=burst,
+            rps=rps,
+            seq_id=seq_id,
+            connection=connection,
+        )
+    finally:
+        if owns_client:
+            client.close()
+
+
+def _execute_run(
+    config: BenchConfig,
+    *,
+    method: str,
+    rpc_params: list[object],
+    samples: int,
+    warmup: int,
+    timeout: float,
+    budget: int,
+    purse: RequestBudget,
+    deadline: float | None,
+    mode: str,
+    seed: int,
+    concurrency: int,
+    client,
+    steps: tuple[CallSpec, ...],
+    profile: str,
+    sample_budget: str,
+    stale_blocks: int,
+    block_time_s: float | None,
+    block_pin: int | None,
+    burst: int,
+    rps: float,
+    seq_id: str,
+    connection: str,
+) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
             config,
@@ -466,6 +586,7 @@ def run_endpoints(
         canonical_hash=canon,
         burst=min(burst, samples * len(steps)),
         rps=rps,
+        connection=connection,
     )
 
 
@@ -662,6 +783,7 @@ def _finish_outcome(
         by_method=_by_method(measured, workload),
         burst_stats=burst_stats,
         steady_stats=steady_stats,
+        timing=summarize_timing(measured),
     )
 
 

@@ -253,6 +253,7 @@ def run_to_dict(
         "concurrency": result.concurrency,
         "burst": result.burst,
         "rps": result.rps,
+        "connection": result.connection,
         "mode": result.mode,
         "seed": result.seed,
         "sequence_id": result.sequence_id,
@@ -350,7 +351,8 @@ def format_run(
         f"Mode      {result.mode}  ·  seed={result.seed}  ·  "
         f"seq={result.sequence_id or '—'}  ·  "
         f"concurrency={_concurrency_label(result.concurrency)}"
-        f"{_burst_mode_suffix(result)}",
+        f"{_burst_mode_suffix(result)}"
+        f"  ·  conn={result.connection}",
         "",
         "Summary",
     ]
@@ -372,6 +374,16 @@ def format_run(
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
+    if any(outcome.timing for outcome in result.outcomes):
+        lines.extend(
+            [
+                "",
+                "Timing  (handshake = DNS+TCP+TLS; server = wait after connect; "
+                "payload = body+parse; p95 of successes; not mixed into ranking; "
+                f"conn={result.connection})",
+            ]
+        )
+        lines.extend(_timing_lines(result, name_w, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -407,7 +419,8 @@ def format_run(
         f"({result.block_time_s:g}s/block)  ·  "
         f"hash at block {result.pin_height if result.pin_height is not None else '—'}  ·  "
         "client is a label only  ·  "
-        "rate_limit is 429 / CU throttle"
+        "rate_limit is 429 / CU throttle  ·  "
+        "handshake is DNS+TCP+TLS (0 on keep-alive reuse)"
         f"{extra_p99}"
     )
     return "\n".join(lines) + "\n"
@@ -492,6 +505,37 @@ def _methods_lines(
                 f"{_cell_ms(stats.p50_ms):>8}  {_cell_ms(stats.p95_ms):>8}  "
                 f"{p99:>8}"
             )
+    return lines
+
+
+def _timing_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    header = (
+        f"  {'name':<{name_w}}  {'n':>3}  {'handshake':>10}  {'server':>8}  "
+        f"{'payload':>8}  {'dns':>8}  {'tcp':>8}  {'tls':>8}  "
+        f"{'body':>8}  {'parse':>8}"
+    )
+    lines = [header]
+    for outcome in result.outcomes:
+        hue = _GREEN if outcome.stats.n_ok else _RED
+        name = _paint(f"{outcome.endpoint.name:<{name_w}}", hue, enabled=use_color)
+        summary = outcome.timing
+        if summary is None:
+            lines.append(
+                f"  {name}  {'—':>3}  {_cell_ms(None)}  {_cell_ms(None)}  "
+                f"{_cell_ms(None)}  {_cell_ms(None)}  {_cell_ms(None)}  "
+                f"{_cell_ms(None)}  {_cell_ms(None)}  {_cell_ms(None)}"
+            )
+            continue
+        n = summary.handshake.n
+        lines.append(
+            f"  {name}  {n:>3}  {_cell_ms(summary.handshake.p95_ms)}  "
+            f"{_cell_ms(summary.server.p95_ms)}  {_cell_ms(summary.payload.p95_ms)}  "
+            f"{_cell_ms(summary.dns.p95_ms)}  {_cell_ms(summary.tcp.p95_ms)}  "
+            f"{_cell_ms(summary.tls.p95_ms)}  {_cell_ms(summary.body.p95_ms)}  "
+            f"{_cell_ms(summary.parse.p95_ms)}"
+        )
     return lines
 
 
@@ -709,6 +753,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         "last_error": _last_error(outcome) or None,
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
     }
 
 
@@ -869,7 +914,8 @@ def _sample_lines(hits: tuple, indent: str) -> list[str]:
     for i, hit in enumerate(hits, start=1):
         tag = f"  {hit.method}" if hit.method else ""
         if hit.ok and hit.latency_ms is not None:
-            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms{tag}")
+            extra = _sample_timing_suffix(hit)
+            lines.append(f"{indent}  {i:>3}  {hit.latency_ms:.1f}ms{extra}{tag}")
         else:
             cls = hit.error_class or "error"
             msg = hit.error or ""
@@ -921,6 +967,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "score": _success_rate(stats.error_rate),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
     }
 
 
@@ -968,6 +1015,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
         "consistency": _consistency_json(outcome),
         "tags": [_tag_entry(outcome.endpoint.name, snap) for snap in outcome.tags],
         "phases": _phases_json(outcome),
+        "timing": _timing_summary_json(outcome.timing),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -983,6 +1031,64 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "error_class": hit.error_class,
         "attempts": hit.attempts,
         "method": hit.method,
+        "timing": _hit_timing_json(hit.timing),
+    }
+
+
+def _sample_timing_suffix(hit: Any) -> str:
+    timing = hit.timing
+    if timing is None:
+        return ""
+    return (
+        f"  hs={_fmt_ms(timing.handshake_ms())}  "
+        f"srv={_fmt_ms(timing.server_ms)}  "
+        f"pay={_fmt_ms(timing.payload_ms())}"
+    )
+
+
+def _fmt_ms(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}ms"
+
+
+def _timing_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "handshake": _timing_phase_json(summary.handshake),
+        "server": _timing_phase_json(summary.server),
+        "payload": _timing_phase_json(summary.payload),
+        "dns": _timing_phase_json(summary.dns),
+        "tcp": _timing_phase_json(summary.tcp),
+        "tls": _timing_phase_json(summary.tls),
+        "body": _timing_phase_json(summary.body),
+        "parse": _timing_phase_json(summary.parse),
+    }
+
+
+def _timing_phase_json(stats: Any) -> dict[str, Any]:
+    return {
+        "n": stats.n,
+        "mean_ms": stats.mean_ms,
+        "p50_ms": stats.p50_ms,
+        "p95_ms": stats.p95_ms,
+        "p99_ms": stats.p99_ms,
+    }
+
+
+def _hit_timing_json(timing: Any) -> dict[str, Any] | None:
+    if timing is None:
+        return None
+    return {
+        "dns_ms": timing.dns_ms,
+        "tcp_ms": timing.tcp_ms,
+        "tls_ms": timing.tls_ms,
+        "server_ms": timing.server_ms,
+        "body_ms": timing.body_ms,
+        "parse_ms": timing.parse_ms,
+        "handshake_ms": timing.handshake_ms(),
+        "payload_ms": timing.payload_ms(),
     }
 
 

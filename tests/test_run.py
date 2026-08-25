@@ -192,8 +192,26 @@ def test_warmup_excluded_from_min_mean_max(monkeypatch) -> None:
             200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
         )
 
-    # warmup 100ms (excluded), then 10 / 20 / 30 ms samples; extras after that.
-    times = [0.0, 0.100, 0.100, 0.110, 0.110, 0.130, 0.130, 0.160]
+    # warmup 100ms (excluded), then 10 / 20 / 30 ms samples.
+    # probe() ticks monotonic at start, headers, body, and parse-end per request.
+    times = [
+        0.0,
+        0.050,
+        0.100,
+        0.100,
+        0.100,
+        0.105,
+        0.110,
+        0.110,
+        0.110,
+        0.120,
+        0.130,
+        0.130,
+        0.130,
+        0.145,
+        0.160,
+        0.160,
+    ]
     clock = {"i": 0, "t": 0.160}
 
     def now() -> float:

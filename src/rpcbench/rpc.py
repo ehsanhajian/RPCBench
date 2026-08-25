@@ -14,6 +14,13 @@ from urllib.parse import urlsplit
 import httpx
 
 from rpcbench import __version__
+from rpcbench.timing import (
+    HttpTiming,
+    TimingTransport,
+    begin_timing,
+    end_timing,
+    snapshot_timing,
+)
 
 USER_AGENT = f"RPCBench/{__version__} (+https://github.com/ehsanhajian/RPCBench)"
 
@@ -82,6 +89,25 @@ class ProbeResult:
     attempts: int
     body_hash: str | None = None
     method: str | None = None
+    timing: HttpTiming | None = None
+
+
+def make_client(*, timeout: float, new_connection: bool = False) -> httpx.Client:
+    limits = (
+        httpx.Limits(max_keepalive_connections=0, keepalive_expiry=0.0)
+        if new_connection
+        else httpx.Limits()
+    )
+    return httpx.Client(
+        timeout=timeout,
+        follow_redirects=False,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        transport=TimingTransport(limits=limits),
+    )
 
 
 def probe(
@@ -109,19 +135,12 @@ def probe(
             attempts=0,
         )
     extra = dict(headers or ())
-    http = client or httpx.Client(
-        timeout=timeout,
-        follow_redirects=False,
-        headers={
-            "User-Agent": USER_AGENT,
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        },
-    )
+    http = client or make_client(timeout=timeout)
     attempts = 0
     last_error = "unknown error"
     last_class = "error"
     last_latency: float | None = None
+    last_timing: HttpTiming | None = None
     try:
         max_tries = max(1, retries + 1)
         for attempt in range(max_tries):
@@ -139,9 +158,16 @@ def probe(
                         error_class="budget",
                         attempts=attempts - 1,
                     )
+            scratch = begin_timing()
             started = time.monotonic()
+            headers_at: float | None = None
+            body_at: float | None = None
+            parse_ms: float | None = None
+            raw: bytes | None = None
+            response: httpx.Response | None = None
             try:
-                response = http.post(
+                request = http.build_request(
+                    "POST",
                     url,
                     json={
                         "jsonrpc": "2.0",
@@ -151,7 +177,12 @@ def probe(
                     },
                     headers=extra or None,
                 )
+                response = http.send(request, stream=True)
+                headers_at = time.monotonic()
+                raw = response.read()
+                body_at = time.monotonic()
             except httpx.InvalidURL as exc:
+                end_timing()
                 return ProbeResult(
                     ok=False,
                     reachable=False,
@@ -165,22 +196,42 @@ def probe(
                 last_error = str(exc) or "timeout"
                 last_class = "timeout"
                 last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
                 continue
             except httpx.ConnectError as exc:
                 last_error = str(exc) or "connection failed"
                 last_class = "connection"
                 last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
                 continue
             except httpx.RequestError as exc:
                 last_error = str(exc) or "request failed"
                 last_class = "connection"
                 last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
                 continue
-            latency_ms = (time.monotonic() - started) * 1000
+            finally:
+                if response is not None:
+                    response.close()
+            assert body_at is not None and raw is not None and response is not None
+            latency_ms = (body_at - started) * 1000
             if response.status_code >= 400:
                 code = response.status_code
-                body_msg = _jsonrpc_error_message(response)
+                body_msg = _jsonrpc_error_from_bytes(raw)
                 error = body_msg or f"HTTP {code}"
+                timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
                 return ProbeResult(
                     ok=False,
                     reachable=True,
@@ -189,10 +240,17 @@ def probe(
                     error=error,
                     error_class=_http_error_class(code, error),
                     attempts=attempts,
+                    timing=timing,
                 )
+            parse_started = body_at
             try:
-                payload = response.json()
+                payload = json.loads(raw)
             except ValueError:
+                parse_ms = (time.monotonic() - parse_started) * 1000
+                timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
                 return ProbeResult(
                     ok=False,
                     reachable=True,
@@ -201,7 +259,11 @@ def probe(
                     error="response is not JSON",
                     error_class="malformed",
                     attempts=attempts,
+                    timing=timing,
                 )
+            parse_ms = (time.monotonic() - parse_started) * 1000
+            timing = snapshot_timing(scratch, started, headers_at, body_at, parse_ms)
+            end_timing()
             if not isinstance(payload, dict):
                 return ProbeResult(
                     ok=False,
@@ -211,6 +273,7 @@ def probe(
                     error="JSON-RPC response is not an object",
                     error_class="malformed",
                     attempts=attempts,
+                    timing=timing,
                 )
             if payload.get("error"):
                 message = _error_message(payload.get("error"))
@@ -224,6 +287,7 @@ def probe(
                         "rate_limit" if is_rate_limit_message(message) else "jsonrpc"
                     ),
                     attempts=attempts,
+                    timing=timing,
                 )
             return ProbeResult(
                 ok=True,
@@ -234,6 +298,7 @@ def probe(
                 error_class=None,
                 attempts=attempts,
                 body_hash=_body_hash(payload.get("result")),
+                timing=timing,
             )
         return ProbeResult(
             ok=False,
@@ -243,6 +308,7 @@ def probe(
             error=last_error,
             error_class=last_class,
             attempts=attempts,
+            timing=last_timing,
         )
     finally:
         if owns:
@@ -268,9 +334,9 @@ def _error_message(err: Any) -> str:
     return str(err)
 
 
-def _jsonrpc_error_message(response: httpx.Response) -> str | None:
+def _jsonrpc_error_from_bytes(raw: bytes) -> str | None:
     try:
-        payload = response.json()
+        payload = json.loads(raw)
     except ValueError:
         return None
     if not isinstance(payload, dict) or not payload.get("error"):
