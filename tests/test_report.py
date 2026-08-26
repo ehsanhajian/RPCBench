@@ -93,11 +93,27 @@ def _result(*outcomes: EndpointOutcome) -> RunResult:
     )
 
 
+def _rank_block(text: str) -> str:
+    rest = text.split("Ranking", 1)[1]
+    for marker in (
+        "\nNotes",
+        "\nComparison",
+        "\nMethods",
+        "\nTiming",
+        "\nTags",
+        "\nBurst",
+        "\nProviders",
+        "\nCapabilities",
+    ):
+        if marker in rest:
+            rest = rest.split(marker, 1)[0]
+    return rest
+
+
 def _rank_rows(text: str) -> list[str]:
-    block = text.split("Ranking", 1)[1].split("Providers", 1)[0]
     return [
         ln
-        for ln in block.splitlines()
+        for ln in _rank_block(text).splitlines()
         if "│" in ln and not ("name" in ln and "status" in ln)
     ]
 
@@ -120,10 +136,10 @@ def test_report_makes_winner_obvious() -> None:
     )
     text = format_run(result, color=False)
     assert "Summary" in text
-    assert "Comparison" in text
     assert "Ranking" in text
-    assert "Providers" in text
-    assert "Capabilities" in text
+    assert "Comparison" not in text
+    assert "Providers" not in text
+    assert "Capabilities" not in text
     assert "Fastest  fast" in text
     assert "Rank by p95" in text
     assert "size standard" in text
@@ -131,7 +147,20 @@ def test_report_makes_winner_obvious() -> None:
     assert "similar 10%" in text
     assert "Ranking  (by p95; similar within 10%; ~ high err, stale, or disagree; failed last)" in text
     assert "Failed   1/3    dead" in text
-    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    summary = text.split("Ranking", 1)[0]
+    assert summary.index("fast") < summary.index("Failed")
+    first_rank_line = _rank_rows(text)[0]
+    assert "fast" in first_rank_line
+    assert "jit" in _rank_block(text)
+    assert "timeout: took too long" in text
+    assert "↳ Next:" not in text
+    assert "severity" not in text.lower()
+    assert "finding" not in text.lower()
+    full = format_run(result, verbose=True, color=False)
+    assert "Comparison" in full
+    assert "Providers" in full
+    assert "Capabilities" in full
+    compare = full.split("Comparison", 1)[1]
     assert compare.index("slow") < compare.index("fast") < compare.index("dead")
     assert "p50" in compare and "p95" in compare and "p99" in compare
     assert "jit" in compare
@@ -141,17 +170,8 @@ def test_report_makes_winner_obvious() -> None:
     assert "cap" in compare
     assert "yes" in compare
     assert "timeout" in compare
-    summary, ranking, _ = text.split("Ranking", 1)[0], text.split("Ranking", 1)[1], None
-    assert summary.index("fast") < summary.index("Failed")
-    first_rank_line = _rank_rows(text)[0]
-    assert "fast" in first_rank_line
-    assert "jit" in ranking
-    assert "timeout: took too long" in text
-    assert "missed     dead (timeout)" in text
-    assert "↳ Next:" not in text
-    assert "severity" not in text.lower()
-    assert "finding" not in text.lower()
-    providers = text.split("Providers", 1)[1]
+    assert "missed     dead (timeout)" in full
+    providers = full.split("Providers", 1)[1]
     assert "url" in providers
     assert "client" in providers
     for outcome in result.outcomes:
@@ -164,9 +184,10 @@ def test_comparison_table_keeps_failed_rows() -> None:
             _outcome("alive", (_ok(10.0),)),
             _outcome("dead", (_fail("connection", "refused"),)),
         ),
+        verbose=True,
         color=False,
     )
-    block = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
+    block = text.split("Comparison", 1)[1]
     assert "alive" in block
     assert "dead" in block
     assert "fail" in block
@@ -290,9 +311,9 @@ def test_explicit_color_false_has_no_ansi() -> None:
 
 def test_bimodal_histogram_is_visible() -> None:
     samples = tuple([_ok(20.0)] * 8 + [_ok(800.0)] * 8)
-    text = format_run(_result(_outcome("spiky", samples)), color=False)
+    text = format_run(_result(_outcome("spiky", samples)), verbose=True, color=False)
     providers = text.split("Providers", 1)[1]
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(text)
     assert "<50ms=8" in providers
     assert "<1s=8" in providers
     assert "8 0 0 8 0" not in text
@@ -300,14 +321,23 @@ def test_bimodal_histogram_is_visible() -> None:
 
 
 def test_tables_draw_row_and_column_borders() -> None:
-    text = format_run(
+    compact = format_run(
         _result(_outcome("a", (_ok(10.0),)), _outcome("b", (_ok(20.0),))),
         color=False,
     )
-    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(compact)
+    assert "┌" in ranking
+    assert "│" in ranking
+    assert "┼" in ranking
+    assert "└" in ranking
+    text = format_run(
+        _result(_outcome("a", (_ok(10.0),)), _outcome("b", (_ok(20.0),))),
+        verbose=True,
+        color=False,
+    )
+    compare = text.split("Comparison", 1)[1].split("Providers", 1)[0]
     providers = text.split("Providers", 1)[1]
-    for block in (compare, ranking, providers):
+    for block in (compare, _rank_block(text), providers):
         assert "┌" in block
         assert "│" in block
         assert "┼" in block
@@ -324,7 +354,7 @@ def test_close_p95_is_similar_not_a_false_winner() -> None:
     text = format_run(result, color=False)
     assert "Fastest  a, b" in text
     assert "similar within 10% p95" in text
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(text)
     rows = _rank_rows(text)
     assert len(rows) == 2
     assert all("1" in ln for ln in rows)
@@ -349,7 +379,7 @@ def test_high_error_does_not_take_a_place() -> None:
     assert placed[1].reliable is False
     text = format_run(_result(merkle, solid), color=False)
     assert "Fastest  solid" in text
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(text)
     assert "~" in ranking
     assert "merkle" in ranking
 
@@ -374,15 +404,16 @@ def test_stale_cannot_be_fastest() -> None:
     text = format_run(result, color=False)
     assert "Fastest  tip" in text
     assert "Stale    1/2    lagged" in text
-    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
-    assert "stale" in compare
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(text)
     assert "~" in ranking
     assert "lagged" in ranking
     assert "stale  ~36s" in ranking
-    assert "97" in text
     assert "~36s" in text
-    assert "stale >2 blocks vs cohort median" in text
+    full = format_run(result, verbose=True, color=False)
+    compare = full.split("Comparison", 1)[1]
+    assert "stale" in compare
+    assert "97" in full
+    assert "stale >2 blocks vs cohort median" in full
 
 
 def test_disagree_cannot_be_fastest() -> None:
@@ -407,13 +438,14 @@ def test_disagree_cannot_be_fastest() -> None:
     text = format_run(result, color=False)
     assert "Fastest  right" in text
     assert "Disagree 1/2    wrong" in text
-    compare = text.split("Comparison", 1)[1].split("Ranking", 1)[0]
-    assert "no" in compare
-    ranking = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking = _rank_block(text)
     assert "~" in ranking
     assert "wrong" in ranking
     assert "disagree" in ranking
-    assert digest_b[:10] in text
+    full = format_run(result, verbose=True, color=False)
+    compare = full.split("Comparison", 1)[1]
+    assert "no" in compare
+    assert digest_b[:10] in full
 
 
 def test_p99_flagged_when_n_too_small() -> None:
@@ -422,7 +454,7 @@ def test_p99_flagged_when_n_too_small() -> None:
     assert "P99 is the slowest sample until n≥100" in text
     hundred = _outcome("big", tuple(_ok(10.0) for _ in range(100)))
     text_ok = format_run(_result(hundred), color=False)
-    assert "need ≥100" not in text_ok.split("Providers", 1)[1]
+    assert "need ≥100" not in text_ok
 
 
 def test_burst_section_and_provider_phases() -> None:
@@ -450,11 +482,14 @@ def test_burst_section_and_provider_phases() -> None:
     text = format_run(result, color=False)
     assert "burst=2" in text
     assert "rps=2" in text
-    assert "Burst  (first 2 timed samples overlap; then cap 2/s; same request budget; tag throttles as tags=N)" in text
-    assert "burst" in text.split("Burst", 1)[1].split("Providers", 1)[0]
-    assert "steady" in text.split("Burst", 1)[1]
+    assert "Burst  (" not in text
     assert "rate_limit=1" in text
-    assert "rate_limit is 429 / CU throttle" in text
+    assert "  node  rate_limit=1" in text
+    full = format_run(result, verbose=True, color=False)
+    assert "Burst  (first 2 timed samples overlap; then cap 2/s; same request budget; tag throttles as tags=N)" in full
+    assert "burst" in full.split("Burst", 1)[1].split("Providers", 1)[0]
+    assert "steady" in full.split("Burst", 1)[1]
+    assert "rate_limit is 429 / CU throttle" in full
     assert "finding" not in text.lower()
 
 
@@ -492,8 +527,43 @@ def test_burst_table_shows_tag_rate_limits() -> None:
         burst=3,
     )
     text = format_run(result, color=False)
-    burst = text.split("Burst", 1)[1].split("Providers", 1)[0]
-    assert "err=0%" in burst or "  0%" in burst
-    assert "tags=3" in burst
+    assert "Burst  (" not in text
+    assert "  merkle  tags=3" in text
     assert "tags=3" in text
     assert "finding" not in text.lower()
+    full = format_run(result, verbose=True, color=False)
+    burst = full.split("Burst", 1)[1].split("Providers", 1)[0]
+    assert "err=0%" in burst or "  0%" in burst
+    assert "tags=3" in burst
+
+
+def test_compact_default_omits_detail_tables() -> None:
+    outcomes = tuple(
+        _outcome(f"n{i}", (_ok(10.0 + i), _ok(12.0 + i))) for i in range(9)
+    )
+    text = format_run(_result(*outcomes), color=False)
+    assert "Fastest" in text
+    assert "Ranking" in text
+    assert "Comparison" not in text
+    assert "Providers" not in text
+    assert "Capabilities" not in text
+    assert "Timing" not in text
+    assert "Tags" not in text
+    assert "Burst" not in text
+    assert "Methods" not in text
+    assert "--verbose for full report" in text
+    assert text.count("\n") <= 40
+    assert "finding" not in text.lower()
+
+
+def test_verbose_keeps_full_report() -> None:
+    result = _result(
+        _outcome("slow", (_ok(40.0), _ok(50.0))),
+        _outcome("fast", (_ok(10.0), _ok(12.0))),
+    )
+    full = format_run(result, verbose=True, color=False)
+    assert "Comparison" in full
+    assert "Ranking" in full
+    assert "Providers" in full
+    assert "Capabilities" in full
+    assert "--verbose for full report" not in full

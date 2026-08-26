@@ -152,12 +152,13 @@ def test_json_is_enough_to_rebuild_cli_summary() -> None:
     assert f"Fastest  {data['summary']['fastest']}" in text
     assert "Failed   1/3    dead" in text
     assert data["method"] in text
-    ranking_block = text.split("Ranking", 1)[1].split("Providers", 1)[0]
+    ranking_block = text.split("Ranking", 1)[1]
     ranking_names = [row["name"] for row in data["ranking"]]
     pos = [ranking_block.index(name) for name in ranking_names]
     assert pos == sorted(pos)
-    assert data["capabilities"]["method"] in text
-    assert "missed     dead (timeout)" in text
+    full = format_run(result, verbose=True, color=False)
+    assert data["capabilities"]["method"] in full
+    assert "missed     dead (timeout)" in full
 
 
 def test_json_redacts_url_secrets() -> None:

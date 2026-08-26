@@ -105,9 +105,11 @@ def test_new_connection_opens_more_sockets_than_keepalive() -> None:
     assert keep_n == 1
     assert new_n > keep_n
     text = format_run(warm, color=False)
-    assert "Timing" in text
-    assert "handshake" in text
+    assert "Timing" not in text
     assert "conn=keepalive" in text
+    full = format_run(warm, verbose=True, color=False)
+    assert "Timing" in full
+    assert "handshake" in full
     payload = json.loads(format_json(warm))
     assert payload["connection"] == "keepalive"
     timing = payload["comparison"][0]["timing"]
@@ -216,9 +218,11 @@ def test_report_timing_table_uses_p95_not_ranking() -> None:
         connection="new",
     )
     text = format_run(result, color=False)
-    assert "Timing  (handshake = DNS+TCP+TLS" in text
+    assert "Timing  (handshake = DNS+TCP+TLS" not in text
     assert "conn=new" in text
-    assert "  35.0ms" in text.split("Timing", 1)[1] or "35.0ms" in text
+    full = format_run(result, verbose=True, color=False)
+    assert "Timing  (handshake = DNS+TCP+TLS" in full
+    assert "  35.0ms" in full.split("Timing", 1)[1] or "35.0ms" in full
     assert "finding" not in text.lower()
     data = json.loads(format_json(result))
     assert data["connection"] == "new"

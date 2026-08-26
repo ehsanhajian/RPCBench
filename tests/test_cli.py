@@ -182,12 +182,12 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "ok" in out
     assert "bad" in out
-    assert "p50" in out
+    assert "p95" in out
     assert "err" in out
     assert "Fastest" in out
     assert "Ranking" in out
-    assert "Comparison" in out
-    assert "Capabilities" in out
+    assert "Comparison" not in out
+    assert "Capabilities" not in out
     assert "↳ Next:" not in out
 
 
@@ -366,7 +366,7 @@ def test_cli_compare_prints_report(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "Fastest  ok" in out
     assert "Ranking" in out
-    assert "Comparison" in out
+    assert "Comparison" not in out
 
 
 def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -411,6 +411,9 @@ def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None
     assert "samples" in out
     assert "1" in out
     assert "2" in out
+    assert "Comparison" in out
+    assert "Providers" in out
+    assert "Capabilities" in out
 
 
 def test_cli_compare_url_endpoint(monkeypatch, capsys) -> None:
@@ -441,6 +444,7 @@ def test_cli_compare_url_endpoint(monkeypatch, capsys) -> None:
             "1",
             "--warmup",
             "0",
+            "--verbose",
         ]
     )
     out = capsys.readouterr().out
@@ -684,6 +688,7 @@ def test_cli_block_pin_is_passed(tmp_path: Path, monkeypatch, capsys) -> None:
             "1",
             "--warmup",
             "0",
+            "--verbose",
         ]
     )
     assert code == 0
@@ -920,7 +925,7 @@ def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     out = capsys.readouterr().out
     assert "Method    mix" in out
-    assert "Methods  (per-method" in out
+    assert "Methods  (per-method" not in out
     assert methods == [
         "eth_blockNumber",
         "eth_chainId",
