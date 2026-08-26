@@ -8,7 +8,7 @@ Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitt
 
 ## Method mix
 
-Default CLI is still one method (`eth_blockNumber`). **`--profile mix`** is the documented production-like workload. `--samples` and `--warmup` apply **per method**. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table is per step.
+Default CLI is still one method (`eth_blockNumber`). **`--profile mix`** is the documented production-like workload. `--samples` and `--warmup` apply **per method**. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`) is per step.
 
 Fixed payloads (same on every provider):
 

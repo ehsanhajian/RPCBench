@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1130" height="190" viewBox="0 0 1130 190" role="img" aria-label="rpcbench compare --new-connection --verbose">
+<rect width="1130" height="190" rx="10" fill="#0d1117"/>
+<rect width="1130" height="36" rx="10" fill="#161b22"/>
+<rect y="26" width="1130" height="10" fill="#161b22"/>
+<circle cx="18" cy="18" r="5" fill="#ff5f57"/>
+<circle cx="36" cy="18" r="5" fill="#febc2e"/>
+<circle cx="54" cy="18" r="5" fill="#28c840"/>
+<text x="565.0" y="23" text-anchor="middle" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12">rpcbench compare --new-connection --verbose</text>
+<text x="18.0" y="63" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Timing  (handshake = DNS+TCP+TLS; server = wait after connect; payload = body+parse; p95 of successes; not mixed into ranking; conn=new)</text>
+<text x="18.0" y="81" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ┌────────────┬───┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐</text>
+<text x="18.0" y="99" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ name       │ n │ handshake │   server │  payload │      dns │      tcp │      tls │     body │    parse │</text>
+<text x="18.0" y="117" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ├────────────┼───┼───────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┼──────────┤</text>
+<text x="18.0" y="135" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ </text>
+<text x="50.2" y="135" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">publicnode</text>
+<text x="130.7" y="135" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve"> │ 3 │    66.0ms │   83.0ms │    1.4ms │    9.0ms │    5.0ms │   52.0ms │    1.2ms │    0.2ms │</text>
+<text x="18.0" y="153" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ </text>
+<text x="50.2" y="153" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">drpc</text>
+<text x="82.4" y="153" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">       │ 3 │    75.0ms │   96.0ms │    1.4ms │    9.0ms │    5.0ms │   61.0ms │    1.2ms │    0.2ms │</text>
+<text x="18.0" y="171" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  └────────────┴───┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘</text>
+</svg>

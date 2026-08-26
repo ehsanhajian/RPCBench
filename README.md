@@ -54,17 +54,39 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 
 ## Report
 
-The CLI prints, in order:
+Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` / `-o` is always the complete payload.
+
+**Default**
+
+![Default compact CLI](docs/images/cli-compact.svg)
+
+**`--profile mix`**
+
+![Mix profile compact CLI](docs/images/cli-mix.svg)
+
+**HTTP timing** (`--new-connection --verbose`)
+
+![HTTP timing table](docs/images/cli-timing.svg)
+
+**`--verbose`**
+
+![Verbose CLI](docs/images/cli-verbose.svg)
+
+The default CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
-2. **Comparison** — same numbers in **your YAML order** (failed rows stay in place; head / lag / fresh / hash / match)
-3. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
-4. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
-5. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-6. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-7. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-8. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. `--verbose` adds per-sample rows
-9. **Capabilities** — who answered this method
+2. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last
+3. **Notes** — one line per endpoint that hit `rate_limit` on timed samples or tags (`merkle  rate_limit=2  tags=2`)
+
+`--verbose` adds the rest (same numbers, no data loss):
+
+4. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match)
+5. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
+6. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+7. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+8. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+9. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+10. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -149,7 +171,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Print each sample |
+| `--verbose` | off | Full CLI report (Comparison, Timing, Tags, Burst, Providers, per-sample) |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 

@@ -424,16 +424,70 @@ def format_run(
     )
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
-        [
-            "",
-            f"Comparison  (config order · {result.mode} · same {compare_what}, samples, and budget)",
-        ]
-    )
-    lines.extend(_comparison_lines(result, name_w, use_color))
-    lines.extend(
         ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err, stale, or disagree; failed last)"]
     )
     lines.extend(_ranking_lines(placed, name_w, use_color, rank_by))
+    lines.extend(_exception_lines(result, ranked))
+    if verbose:
+        lines.extend(
+            _verbose_sections(
+                result,
+                ranked,
+                name_w,
+                use_color,
+                compare_what,
+            )
+        )
+    extra_p99 = ""
+    if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
+        extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
+    lines.append("")
+    lines.append(
+        _footer_line(
+            result,
+            ok_rows,
+            fail_rows,
+            band_pct,
+            extra_p99,
+            verbose=verbose,
+        )
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _exception_lines(
+    result: RunResult, ranked: tuple[EndpointOutcome, ...]
+) -> list[str]:
+    """One line per endpoint whose omitted tables would have shown a throttle."""
+    rows: list[str] = []
+    for outcome in ranked:
+        timed = _rate_limit_n(outcome.stats)
+        tags = _tag_rate_limit_n(outcome)
+        if not timed and not tags:
+            continue
+        bits = []
+        if timed:
+            bits.append(f"rate_limit={timed}")
+        if tags:
+            bits.append(f"tags={tags}")
+        rows.append(f"  {outcome.endpoint.name}  " + "  ".join(bits))
+    if not rows:
+        return []
+    return ["", "Notes"] + rows
+
+
+def _verbose_sections(
+    result: RunResult,
+    ranked: tuple[EndpointOutcome, ...],
+    name_w: int,
+    use_color: bool,
+    compare_what: str,
+) -> list[str]:
+    lines: list[str] = [
+        "",
+        f"Comparison  (config order · {result.mode} · same {compare_what}, samples, and budget)",
+    ]
+    lines.extend(_comparison_lines(result, name_w, use_color))
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
@@ -465,17 +519,27 @@ def format_run(
         lines.extend(_burst_lines(result, name_w, use_color))
     lines.extend(["", "Providers  (url redacted; hist = successful samples in each bucket)"])
     lines.extend(_provider_table(ranked, name_w, use_color))
-    if verbose:
-        for outcome in ranked:
-            lines.extend(_provider_verbose_lines(outcome, name_w))
+    for outcome in ranked:
+        lines.extend(_provider_verbose_lines(outcome, name_w))
     lines.extend(["", "Capabilities"])
     lines.extend(_capability_lines(result, ranked))
-    lines.append("")
-    extra_p99 = ""
-    if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
-        extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
-    lines.append(
-        f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded  ·  "
+    return lines
+
+
+def _footer_line(
+    result: RunResult,
+    ok_rows: list[EndpointOutcome],
+    fail_rows: list[EndpointOutcome],
+    band_pct: str,
+    extra_p99: str,
+    *,
+    verbose: bool,
+) -> str:
+    counts = f"{len(ok_rows)} ok  {len(fail_rows)} failed  ·  warmup excluded"
+    if not verbose:
+        return f"{counts}  ·  --verbose for full report{extra_p99}"
+    return (
+        f"{counts}  ·  "
         "err=failed/attempted  ·  min/mean/max, jitter (stddev), p50/p95/p99, "
         f"and histogram of successful samples  ·  similar-band {band_pct}  ·  "
         f"stale >{result.stale_blocks} blocks vs cohort median "
@@ -486,7 +550,6 @@ def format_run(
         "handshake is DNS+TCP+TLS (0 on keep-alive reuse)"
         f"{extra_p99}"
     )
-    return "\n".join(lines) + "\n"
 
 
 def _summary_lines(

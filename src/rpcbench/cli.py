@@ -225,7 +225,10 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--verbose",
         "-v",
         action="store_true",
-        help="Print per-sample latency and error-class detail",
+        help=(
+            "Print the full report: Comparison, Methods, Timing, Tags, "
+            "Burst, Providers, Capabilities, and per-sample rows"
+        ),
     )
     run.add_argument(
         "--json",

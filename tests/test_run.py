@@ -82,7 +82,7 @@ def test_run_continues_after_one_failure() -> None:
     assert "Summary" in text
     assert "Ranking" in text
     assert "Fastest" in text
-    assert "Capabilities" in text
+    assert "Capabilities" not in text
     assert "↳ Next:" not in text
 
 
@@ -435,8 +435,12 @@ def test_probe_sends_headers_and_report_hides_them() -> None:
     assert "tok_secret" not in text
     assert "query_secret" not in text
     assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in text
-    assert "[redacted]" in text
     assert cfg.endpoints[0].url_id not in text
+    full = format_run(result, verbose=True, color=False)
+    assert secret not in full
+    assert "tok_secret" not in full
+    assert "[redacted]" in full
+    assert cfg.endpoints[0].url_id not in full
 
 
 def test_max_duration_skips_later_endpoints(monkeypatch) -> None:
@@ -743,9 +747,11 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     ] * 2
     text = format_run(result, color=False)
     assert "Method    mix" in text
-    assert "Methods  (per-method; ranking uses the whole mix)" in text
-    assert "eth_getLogs" in text
-    assert "eth_call" in text
+    assert "Methods  (per-method; ranking uses the whole mix)" not in text
+    full = format_run(result, verbose=True, color=False)
+    assert "Methods  (per-method; ranking uses the whole mix)" in full
+    assert "eth_getLogs" in full
+    assert "eth_call" in full
 
 
 def test_freshness_uses_first_blockNumber_sample() -> None:
@@ -851,7 +857,7 @@ def test_stale_blocks_tolerance_is_configurable() -> None:
     assert by_name["lag"] is not None and by_name["lag"].lag_blocks == 5
     assert by_name["lag"].verdict == "fresh"
     text = format_run(result, color=False)
-    assert "Stale" not in text.split("Comparison", 1)[0]
+    assert "Stale" not in text.split("Ranking", 1)[0]
 
 
 def test_mix_uses_chainId_block_time_without_extra_head() -> None:
@@ -1027,7 +1033,7 @@ def test_missing_block_hash_is_unknown_not_disagree() -> None:
     assert by_name["ok"] is not None and by_name["ok"].verdict == "agree"
     assert by_name["miss"] is not None and by_name["miss"].verdict == "unknown"
     text = format_run(result, color=False)
-    assert "Disagree" not in text.split("Comparison", 1)[0]
+    assert "Disagree" not in text.split("Ranking", 1)[0]
 
 
 def test_client_label_and_tag_snapshots_are_not_ranked() -> None:
@@ -1097,9 +1103,11 @@ def test_client_label_and_tag_snapshots_are_not_ranked() -> None:
     assert by_name["erigon"].tags[2].skip_reason == "unsupported"
     assert all(hit.method == "eth_blockNumber" for o in result.outcomes for hit in o.samples)
     text = format_run(result, color=False)
-    assert "Tags  (latest / safe / finalized snapshot; not mixed into ranking)" in text
-    assert "Geth/v1.14.12-stable" in text
-    assert "unsupported" in text
+    assert "Tags  (" not in text
+    full = format_run(result, verbose=True, color=False)
+    assert "Tags  (latest / safe / finalized snapshot; not mixed into ranking)" in full
+    assert "Geth/v1.14.12-stable" in full
+    assert "unsupported" in full
     assert "severity" not in text.lower()
     assert "finding" not in text.lower()
     assert "disclosed" not in text.lower()
@@ -1224,8 +1232,10 @@ def test_rate_limit_counts_in_stats() -> None:
     assert outcome.steady_stats is not None
     assert outcome.steady_stats.n_fail == 0
     text = format_run(result, color=False)
-    assert "Burst  (first 2 timed samples overlap" in text
+    assert "Burst  (" not in text
     assert "rate_limit=2" in text
-    assert "rate_limit is 429 / CU throttle" in text
+    full = format_run(result, verbose=True, color=False)
+    assert "Burst  (first 2 timed samples overlap" in full
+    assert "rate_limit is 429 / CU throttle" in full
     assert "finding" not in text.lower()
 
