@@ -54,6 +54,16 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 
 ## Report
 
+Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` / `-o` is always the complete payload.
+
+**Default**
+
+![Default compact CLI](docs/images/cli-compact.svg)
+
+**`--verbose`**
+
+![Verbose CLI](docs/images/cli-verbose.svg)
+
 The default CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
@@ -69,8 +79,6 @@ The default CLI prints, in order:
 8. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
 9. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
 10. **Capabilities** — who answered this method
-
-`--json` / `-o` is always the full payload.
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
