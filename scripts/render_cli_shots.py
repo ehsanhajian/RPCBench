@@ -1,9 +1,13 @@
-"""Render compact vs --verbose CLI shots for the README."""
+"""Render README CLI shots. Re-run when format_run output changes.
+
+    PYTHONPATH=src python scripts/render_cli_shots.py
+"""
 
 from __future__ import annotations
 
 import html
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from rpcbench.config import Endpoint
@@ -140,6 +144,123 @@ def _outcome(
     )
 
 
+def mix_result() -> RunResult:
+    from rpcbench.methods import MIX_PROFILE
+
+    digest = "0x" + "aa" * 32
+
+    def stacked(base: float) -> tuple[ProbeResult, ...]:
+        hits: list[ProbeResult] = []
+        rows: list[tuple[str, object]] = []
+        for i, spec in enumerate(MIX_PROFILE):
+            chunk = (_ok(base + i * 6), _ok(base + i * 6 + 3))
+            hits.extend(chunk)
+            rows.append((spec.name, summarize(chunk)))
+        return tuple(hits), tuple(rows)
+
+    public_hits, public_methods = stacked(70.0)
+    drpc_hits, drpc_methods = stacked(78.0)
+    public = replace(
+        _outcome(
+            "publicnode",
+            "https://ethereum.publicnode.com",
+            public_hits,
+            freshness=_fresh(100, 0, "fresh"),
+            consistency=_agree(digest),
+        ),
+        by_method=public_methods,
+    )
+    drpc = replace(
+        _outcome(
+            "drpc",
+            "https://eth.drpc.org",
+            drpc_hits,
+            freshness=_fresh(100, 0, "fresh"),
+            consistency=_agree(digest),
+        ),
+        by_method=drpc_methods,
+    )
+    return RunResult(
+        method="eth_blockNumber",
+        params=(),
+        samples=2,
+        warmup=0,
+        timeout=5.0,
+        budget=128,
+        outcomes=(public, drpc),
+        budget_remaining=80,
+        sequence_id="m1x00001",
+        sample_budget="short",
+        profile="mix",
+        workload=MIX_PROFILE,
+        pin_height=100,
+        cohort_height=100,
+        canonical_hash=digest,
+    )
+
+
+def cold_result() -> RunResult:
+    digest = "0x" + "aa" * 32
+
+    def cold(ms: float, tls: float) -> ProbeResult:
+        return ProbeResult(
+            ok=True,
+            reachable=True,
+            latency_ms=ms,
+            result="0x1",
+            error=None,
+            error_class=None,
+            attempts=1,
+            timing=HttpTiming(
+                dns_ms=9.0,
+                tcp_ms=5.0,
+                tls_ms=tls,
+                server_ms=max(ms - tls - 15.0, 40.0),
+                body_ms=1.2,
+                parse_ms=0.2,
+            ),
+        )
+
+    public = _outcome(
+        "publicnode",
+        "https://ethereum.publicnode.com",
+        (cold(140.0, 48.0), cold(144.0, 50.0), cold(150.0, 52.0)),
+        freshness=_fresh(100, 0, "fresh"),
+        consistency=_agree(digest),
+    )
+    drpc = _outcome(
+        "drpc",
+        "https://eth.drpc.org",
+        (cold(160.0, 58.0), cold(168.0, 60.0), cold(172.0, 61.0)),
+        freshness=_fresh(100, 0, "fresh"),
+        consistency=_agree(digest),
+    )
+    result = RunResult(
+        method="eth_blockNumber",
+        params=(),
+        samples=3,
+        warmup=0,
+        timeout=5.0,
+        budget=128,
+        outcomes=(public, drpc),
+        budget_remaining=110,
+        sequence_id="c01d0001",
+        sample_budget="short",
+        pin_height=100,
+        cohort_height=100,
+        canonical_hash=digest,
+        connection="new",
+    )
+    return result
+
+
+def _extract(text: str, start: str, stop: str | None = None) -> str:
+    block = text.split(start, 1)[1]
+    if stop is not None and stop in block:
+        block = block.split(stop, 1)[0]
+    return start + block.rstrip() + "\n"
+
+
 def demo_result() -> RunResult:
     digest = "0x" + "aa" * 32
     public = _outcome(
@@ -272,23 +393,43 @@ def render_svg(text: str, title: str) -> str:
     return "\n".join(parts) + "\n"
 
 
-def main() -> None:
-    result = demo_result()
-    OUT.mkdir(parents=True, exist_ok=True)
-    shots = {
-        "cli-compact.svg": (
-            format_run(result, verbose=False, color=True),
+def shot_svgs() -> dict[str, str]:
+    """Map README image name → SVG. Regenerated whenever the CLI report changes."""
+    compare = demo_result()
+    mix = mix_result()
+    cold = cold_result()
+    verbose = format_run(compare, verbose=True, color=True)
+    timing = format_run(cold, verbose=True, color=True)
+    return {
+        "cli-compact.svg": render_svg(
+            format_run(compare, verbose=False, color=True),
             "rpcbench compare --budget short",
         ),
-        "cli-verbose.svg": (
-            format_run(result, verbose=True, color=True),
+        "cli-mix.svg": render_svg(
+            format_run(mix, verbose=False, color=True),
+            "rpcbench compare --profile mix --budget short",
+        ),
+        "cli-timing.svg": render_svg(
+            _extract(timing, "Timing  (", "\nProviders"),
+            "rpcbench compare --new-connection --verbose",
+        ),
+        "cli-verbose.svg": render_svg(
+            verbose,
             "rpcbench compare --budget short --verbose",
         ),
     }
-    for name, (body, title) in shots.items():
-        path = OUT / name
-        path.write_text(render_svg(body, title), encoding="utf-8")
-        print(f"{path.relative_to(ROOT)}  {body.count(chr(10))} lines")
+
+
+def write_shots(out: Path = OUT) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    for name, svg in shot_svgs().items():
+        path = out / name
+        path.write_text(svg, encoding="utf-8")
+        print(f"{path}  {svg.count(chr(10))} lines")
+
+
+def main() -> None:
+    write_shots()
 
 
 if __name__ == "__main__":

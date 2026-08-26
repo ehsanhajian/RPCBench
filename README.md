@@ -60,6 +60,14 @@ Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` /
 
 ![Default compact CLI](docs/images/cli-compact.svg)
 
+**`--profile mix`**
+
+![Mix profile compact CLI](docs/images/cli-mix.svg)
+
+**HTTP timing** (`--new-connection --verbose`)
+
+![HTTP timing table](docs/images/cli-timing.svg)
+
 **`--verbose`**
 
 ![Verbose CLI](docs/images/cli-verbose.svg)
