@@ -54,7 +54,7 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 
 ## Report
 
-Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` / `-o` is always the complete payload.
+Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` / `-o` is always the complete payload. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -126,7 +126,7 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`. Reliability `score` is success rate.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`. Reliability `score` is success rate.
 
 ## Flags
 
@@ -177,7 +177,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 
 ## Safety
 
-Kill switch: `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key.
+Kill switch: `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key. Set `RPCBENCH_VANTAGE` to label the machine in the report watermark (default: hostname).
 
 ## License
 

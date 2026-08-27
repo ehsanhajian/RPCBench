@@ -110,3 +110,24 @@ JSON includes p50/p95/p99 for each phase on the provider.
 ## Non-claims
 
 Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential `rps` is `1000 / mean_ms`, not parallel throughput.
+
+## Report watermark
+
+Every JSON report includes a `watermark` object so the numbers can be cited:
+
+| Field | Meaning |
+| --- | --- |
+| `version` | Tool version (`rpcbench --version`) |
+| `git_sha` | Checkout SHA when this is a git install; omitted (`null`) from a PyPI wheel. `-dirty` if the tree has uncommitted diffs |
+| `utc` | Run start, UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
+| `budget` | Named sample size (`short` / `standard` / `long`) |
+| `workload` | `mix` or the JSON-RPC method |
+| `seed` | Shared sequence stamp |
+| `family` | RPC family (`evm` today) |
+| `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
+| `samples` / `warmup` | Timed samples and excluded warmup, per method |
+| `methodology` / `boundary` | This page and [BOUNDARY.md](BOUNDARY.md) |
+
+The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. An HTML report (later) reuses the same watermark object in the footer — same links, not a scanner card.
+
+Reproduce with the same `--budget`, `--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.

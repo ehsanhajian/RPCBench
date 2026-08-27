@@ -34,6 +34,11 @@ LINE_H = 18
 PAD_X = 18
 PAD_Y = 14
 BAR_H = 36
+_SHOT_MARK = {
+    "git_sha": "a1b2c3d4e5f6",
+    "started_at": "2026-08-25T12:00:00Z",
+    "vantage": "readme",
+}
 
 
 def _ok(ms: float, *, server: float | None = None) -> ProbeResult:
@@ -196,6 +201,7 @@ def mix_result() -> RunResult:
         pin_height=100,
         cohort_height=100,
         canonical_hash=digest,
+        **_SHOT_MARK,
     )
 
 
@@ -250,6 +256,7 @@ def cold_result() -> RunResult:
         cohort_height=100,
         canonical_hash=digest,
         connection="new",
+        **_SHOT_MARK,
     )
     return result
 
@@ -322,6 +329,7 @@ def demo_result() -> RunResult:
         pin_height=100,
         cohort_height=100,
         canonical_hash=digest,
+        **_SHOT_MARK,
     )
 
 

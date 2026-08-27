@@ -71,6 +71,19 @@ def test_json_report_matches_fixture() -> None:
 def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     data = run_to_dict(_sample_result())
     assert data["schema"] == 1
+    mark = data["watermark"]
+    assert mark["version"] == "0.2.0"
+    assert mark["git_sha"] is None
+    assert mark["utc"] is None
+    assert mark["budget"] == "standard"
+    assert mark["workload"] == "eth_blockNumber"
+    assert mark["seed"] == 0
+    assert mark["family"] == "evm"
+    assert mark["vantage"] is None
+    assert mark["samples"] == 2
+    assert mark["warmup"] == 0
+    assert mark["methodology"].endswith("docs/METHODOLOGY.md")
+    assert mark["boundary"].endswith("docs/BOUNDARY.md")
     assert data["mode"] == "paired"
     assert data["seed"] == 0
     assert data["sequence_id"] == ""
@@ -188,6 +201,8 @@ def test_json_redacts_url_secrets() -> None:
     assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in blob
     assert "[redacted]" in blob
     data = json.loads(blob)
+    assert secret not in json.dumps(data["watermark"])
+    data = json.loads(blob)
     assert data["providers"][0]["id"] == outcome.endpoint.url_id
 
 
@@ -277,6 +292,7 @@ def test_json_mix_includes_workload_and_per_method() -> None:
     )
     data = run_to_dict(result)
     assert data["profile"] == "mix"
+    assert data["watermark"]["workload"] == "mix"
     assert [row["name"] for row in data["workload"]] == [s.name for s in MIX_PROFILE]
     assert [row["step"] for row in data["methods"]] == [s.name for s in MIX_PROFILE]
     assert data["methods"][0]["method"] == "eth_blockNumber"

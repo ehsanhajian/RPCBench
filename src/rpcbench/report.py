@@ -12,6 +12,12 @@ from typing import Any
 
 from rpcbench import __version__
 from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
+from rpcbench.watermark import (
+    DOCS_BOUNDARY,
+    DOCS_METHODOLOGY,
+    as_dict as watermark_dict,
+    cite_line,
+)
 
 SCHEMA_VERSION = 1
 
@@ -296,6 +302,7 @@ def run_to_dict(
         "tool": "rpcbench",
         "version": __version__,
         "schema": SCHEMA_VERSION,
+        "watermark": watermark_dict(result),
         "method": result.method,
         "params": list(result.params),
         "profile": result.profile,
@@ -416,6 +423,7 @@ def format_run(
         f"concurrency={_concurrency_label(result.concurrency)}"
         f"{_burst_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
+        cite_line(result),
         "",
         "Summary",
     ]
@@ -452,6 +460,11 @@ def format_run(
             verbose=verbose,
         )
     )
+    if verbose:
+        lines.append(
+            "Not an SLA or a security audit  ·  "
+            f"{DOCS_METHODOLOGY}  ·  {DOCS_BOUNDARY}"
+        )
     return "\n".join(lines) + "\n"
 
 
