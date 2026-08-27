@@ -145,6 +145,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "size standard" in text
     assert "requests 32" in text
     assert "similar 10%" in text
+    assert "Cite      0.2.0  sha=—  family=evm  vantage=—  utc=—" in text
     assert "Ranking  (by p95; similar within 10%; ~ high err, stale, or disagree; failed last)" in text
     assert "Failed   1/3    dead" in text
     summary = text.split("Ranking", 1)[0]
@@ -554,6 +555,8 @@ def test_compact_default_omits_detail_tables() -> None:
     assert "--verbose for full report" in text
     assert text.count("\n") <= 40
     assert "finding" not in text.lower()
+    assert "Cite      " in text
+    assert "family=evm" in text
 
 
 def test_verbose_keeps_full_report() -> None:
@@ -567,3 +570,6 @@ def test_verbose_keeps_full_report() -> None:
     assert "Providers" in full
     assert "Capabilities" in full
     assert "--verbose for full report" not in full
+    assert "Not an SLA or a security audit" in full
+    assert "docs/METHODOLOGY.md" in full
+    assert "docs/BOUNDARY.md" in full

@@ -740,8 +740,12 @@ def test_cli_json_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     )
     out = capsys.readouterr().out
     assert code == 0
-    assert "RPCBench" not in out
+    assert out.lstrip().startswith("{")
+    assert "====" not in out
     data = json.loads(out)
+    assert data["watermark"]["family"] == "evm"
+    assert data["watermark"]["methodology"].endswith("docs/METHODOLOGY.md")
+    assert data["watermark"]["boundary"].endswith("docs/BOUNDARY.md")
     assert data["schema"] == 1
     assert data["mode"] == "paired"
     assert data["seed"] == 0

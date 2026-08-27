@@ -27,6 +27,7 @@ from rpcbench.freshness import (
 from rpcbench.methods import CallSpec
 from rpcbench.rpc import ProbeResult, RequestBudget, make_client, probe
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
+from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
 from rpcbench.tags import (
     BLOCK_TAGS,
     CLIENT_METHOD,
@@ -145,6 +146,10 @@ class RunResult:
     burst: int = 0
     rps: float = 0.0
     connection: str = CONN_KEEPALIVE
+    family: str = FAMILY_EVM
+    git_sha: str | None = None
+    started_at: str | None = None
+    vantage: str | None = None
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -587,6 +592,10 @@ def _execute_run(
         burst=min(burst, samples * len(steps)),
         rps=rps,
         connection=connection,
+        family=FAMILY_EVM,
+        git_sha=current_git_sha(),
+        started_at=utc_stamp(),
+        vantage=vantage_label(),
     )
 
 
