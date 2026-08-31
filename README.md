@@ -27,6 +27,7 @@ PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --
 ```bash
 rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
 rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -60,7 +61,11 @@ Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` /
 
 ![Default compact CLI](docs/images/cli-compact.svg)
 
-**`--profile mix`**
+**`--profile mix`** (Coverage table: which required methods succeeded)
+
+```bash
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
+```
 
 ![Mix profile compact CLI](docs/images/cli-mix.svg)
 
@@ -81,7 +86,7 @@ The default CLI prints, in order:
 `--verbose` adds the rest (same numbers, no data loss):
 
 4. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match)
-5. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table too.
+5. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
 6. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
 7. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
 8. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
@@ -133,6 +138,7 @@ These are not mixed into latency stats or Fastest.
 
 ```bash
 rpcbench run --endpoints endpoints.yaml --budget short
+rpcbench run --endpoints endpoints.yaml --profile mix --budget short
 rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
@@ -169,7 +175,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Do not combine with `--method` or `--preset` |
+| `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Prints Coverage. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Timing, Tags, Burst, Providers, per-sample) |
