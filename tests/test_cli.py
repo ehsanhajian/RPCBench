@@ -413,6 +413,7 @@ def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None
     assert "1" in out
     assert "2" in out
     assert "Comparison" in out
+    assert "Reliability" in out
     assert "Coverage" in out
     assert "Providers" in out
     assert "Capabilities" in out

@@ -18,6 +18,7 @@ from rpcbench.coverage import (
     is_coverage_miss,
     missed_steps,
 )
+from rpcbench.reliability import assess as assess_reliability
 from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
 from rpcbench.watermark import (
     DOCS_BOUNDARY,
@@ -534,6 +535,14 @@ def _verbose_sections(
         f"Comparison  (config order · {result.mode} · same {compare_what}, samples, and budget)",
     ]
     lines.extend(_comparison_lines(result, name_w, use_color))
+    lines.extend(
+        [
+            "",
+            "Reliability  (0–100 this run; errors, timeouts, p99/p50, mix coverage; "
+            "not an SLA or a security score)",
+        ]
+    )
+    lines.extend(_reliability_lines(result, use_color))
     lines.extend(_coverage_section(result, use_color))
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
@@ -687,6 +696,29 @@ def _coverage_lines(result: RunResult, use_color: bool) -> list[str]:
         rows.append(cells)
     right = (False,) + tuple(True for _ in steps)
     return _grid(headers, rows, right=right)
+
+
+def _reliability_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        rel = assess_reliability(outcome)
+        ratio = "—" if rel.p99_p50 is None else f"{rel.p99_p50:.2f}"
+        rows.append(
+            [
+                _name_cell(outcome, use_color),
+                str(rel.score),
+                f"{rel.errors:.0f}",
+                f"{rel.timeouts:.0f}",
+                f"{rel.tail:.0f}",
+                f"{rel.coverage_points:.0f}",
+                ratio,
+            ]
+        )
+    return _grid(
+        ["name", "rel", "errors", "timeouts", "tail", "cov", "p99/p50"],
+        rows,
+        right=(False, True, True, True, True, True, True),
+    )
 
 
 def _methods_lines(
@@ -882,6 +914,7 @@ def _comparison_lines(
             "status",
             "n",
             "err",
+            "rel",
             "p50",
             "p95",
             "p99",
@@ -898,6 +931,7 @@ def _comparison_lines(
         right=(
             False,
             False,
+            True,
             True,
             True,
             True,
@@ -925,6 +959,7 @@ def _comparison_cells(outcome: EndpointOutcome, use_color: bool) -> list[str]:
         _status_cell(outcome, use_color),
         f"{stats.n_ok}/{attempted}",
         _pct(stats.error_rate),
+        str(assess_reliability(outcome).score),
         _cell_ms(stats.p50_ms),
         _cell_ms(stats.p95_ms),
         _cell_ms(stats.p99_ms),
@@ -1019,6 +1054,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
             "error_class": None if responded else _miss_class(outcome),
         },
         "last_error": _last_error(outcome) or None,
+        "reliability": assess_reliability(outcome).as_dict(),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
@@ -1050,9 +1086,9 @@ def _ranking_lines(
             mark = "—"
         rows.append(_ranking_cells(row.outcome, mark, use_color, rank_by))
     return _grid(
-        ["#", "name", "status", "n", "err", "p95", "mean", "jit", "note"],
+        ["#", "name", "status", "n", "err", "rel", "p95", "mean", "jit", "note"],
         rows,
-        right=(True, False, False, True, True, True, True, True, False),
+        right=(True, False, False, True, True, True, True, True, True, False),
     )
 
 
@@ -1075,6 +1111,7 @@ def _ranking_cells(
         _status_cell(outcome, use_color),
         f"{stats.n_ok}/{attempted}",
         _pct(stats.error_rate),
+        str(assess_reliability(outcome).score),
         _cell_ms(stats.p95_ms),
         _cell_ms(stats.mean_ms),
         _cell_ms(stats.jitter_ms),
@@ -1137,6 +1174,7 @@ def _provider_table(
             "client",
             "n",
             "err",
+            "rel",
             "p95",
             "head",
             "lag",
@@ -1151,6 +1189,7 @@ def _provider_table(
             False,
             False,
             False,
+            True,
             True,
             True,
             True,
@@ -1181,6 +1220,7 @@ def _provider_cells(
         _clip(outcome.client or "—", client_w).rstrip(),
         f"{stats.n_ok}/{attempted}",
         _pct(stats.error_rate),
+        str(assess_reliability(outcome).score),
         _cell_ms(stats.p95_ms),
         _cell_head(outcome).strip(),
         _cell_lag(outcome).strip(),
@@ -1238,6 +1278,7 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
 def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
     outcome = row.outcome
     stats = outcome.stats
+    rel = assess_reliability(outcome)
     return {
         "rank": row.rank,
         "similar": row.similar,
@@ -1257,7 +1298,8 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "rps": (1000.0 / stats.mean_ms) if stats.mean_ms else None,
         "rank_by": rank_by,
         "rank_value": _rank_value(stats, rank_by),
-        "score": _success_rate(stats.error_rate),
+        "score": rel.score,
+        "reliability": rel.as_dict(),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
@@ -1267,7 +1309,6 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
 def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
     outcome = row.outcome
     stats = outcome.stats
-    success = _success_rate(stats.error_rate)
     rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
     return {
         "name": outcome.endpoint.name,
@@ -1296,10 +1337,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
             "error_rate": stats.error_rate,
             "by_class": dict(stats.by_class),
         },
-        "reliability": {
-            "success_rate": success,
-            "score": success,
-        },
+        "reliability": assess_reliability(outcome).as_dict(),
         "capability": {
             "method": method,
             "responded": stats.n_ok > 0,
@@ -1508,12 +1546,6 @@ def _burst_lines(
         rows,
         right=(False, False, True, True, True, True, False),
     )
-
-
-def _success_rate(error_rate: float | None) -> float | None:
-    if error_rate is None:
-        return None
-    return 1.0 - error_rate
 
 
 def _miss_class(outcome: EndpointOutcome) -> str:

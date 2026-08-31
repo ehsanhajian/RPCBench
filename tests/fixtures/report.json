@@ -124,6 +124,20 @@
         "error_class": null
       },
       "last_error": null,
+      "reliability": {
+        "score": 98,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.25,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 17.5,
+          "coverage": 10.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -174,6 +188,20 @@
         "error_class": null
       },
       "last_error": null,
+      "reliability": {
+        "score": 98,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.2,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 18.0,
+          "coverage": 10.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -224,6 +252,20 @@
         "error_class": "timeout"
       },
       "last_error": "timeout: took too long",
+      "reliability": {
+        "score": 0,
+        "success_rate": 0.0,
+        "error_rate": 1.0,
+        "timeout_share": 1.0,
+        "p99_p50": null,
+        "coverage": 0.0,
+        "parts": {
+          "errors": 0.0,
+          "timeouts": 0.0,
+          "tail": 0.0,
+          "coverage": 0.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -249,7 +291,21 @@
       "rps": 90.9090909090909,
       "rank_by": "p95",
       "rank_value": 12.0,
-      "score": 1.0,
+      "score": 98,
+      "reliability": {
+        "score": 98,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.2,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 18.0,
+          "coverage": 10.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -273,7 +329,21 @@
       "rps": 22.22222222222222,
       "rank_by": "p95",
       "rank_value": 50.0,
-      "score": 1.0,
+      "score": 98,
+      "reliability": {
+        "score": 98,
+        "success_rate": 1.0,
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.25,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 17.5,
+          "coverage": 10.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -299,7 +369,21 @@
       "rps": null,
       "rank_by": "p95",
       "rank_value": null,
-      "score": 0.0,
+      "score": 0,
+      "reliability": {
+        "score": 0,
+        "success_rate": 0.0,
+        "error_rate": 1.0,
+        "timeout_share": 1.0,
+        "p99_p50": null,
+        "coverage": 0.0,
+        "parts": {
+          "errors": 0.0,
+          "timeouts": 0.0,
+          "tail": 0.0,
+          "coverage": 0.0
+        }
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -413,8 +497,18 @@
         "by_class": {}
       },
       "reliability": {
+        "score": 98,
         "success_rate": 1.0,
-        "score": 1.0
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.2,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 18.0,
+          "coverage": 10.0
+        }
       },
       "capability": {
         "method": "eth_blockNumber",
@@ -504,8 +598,18 @@
         "by_class": {}
       },
       "reliability": {
+        "score": 98,
         "success_rate": 1.0,
-        "score": 1.0
+        "error_rate": 0.0,
+        "timeout_share": 0.0,
+        "p99_p50": 1.25,
+        "coverage": 1.0,
+        "parts": {
+          "errors": 50.0,
+          "timeouts": 20.0,
+          "tail": 17.5,
+          "coverage": 10.0
+        }
       },
       "capability": {
         "method": "eth_blockNumber",
@@ -597,8 +701,18 @@
         }
       },
       "reliability": {
+        "score": 0,
         "success_rate": 0.0,
-        "score": 0.0
+        "error_rate": 1.0,
+        "timeout_share": 1.0,
+        "p99_p50": null,
+        "coverage": 0.0,
+        "parts": {
+          "errors": 0.0,
+          "timeouts": 0.0,
+          "tail": 0.0,
+          "coverage": 0.0
+        }
       },
       "capability": {
         "method": "eth_blockNumber",
