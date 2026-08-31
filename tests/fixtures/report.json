@@ -74,7 +74,8 @@
       "dead"
     ],
     "stale_names": [],
-    "disagree_names": []
+    "disagree_names": [],
+    "coverage_miss_names": []
   },
   "comparison": [
     {
@@ -305,6 +306,57 @@
     }
   ],
   "methods": [],
+  "coverage": {
+    "steps": [
+      {
+        "name": "head",
+        "method": "eth_blockNumber"
+      }
+    ],
+    "providers": [
+      {
+        "name": "slow",
+        "cells": {
+          "head": {
+            "status": "ok",
+            "n_ok": 2,
+            "n_fail": 0,
+            "error_class": null,
+            "method": "eth_blockNumber"
+          }
+        },
+        "missed": []
+      },
+      {
+        "name": "fast",
+        "cells": {
+          "head": {
+            "status": "ok",
+            "n_ok": 2,
+            "n_fail": 0,
+            "error_class": null,
+            "method": "eth_blockNumber"
+          }
+        },
+        "missed": []
+      },
+      {
+        "name": "dead",
+        "cells": {
+          "head": {
+            "status": "miss",
+            "n_ok": 0,
+            "n_fail": 1,
+            "error_class": "timeout",
+            "method": "eth_blockNumber"
+          }
+        },
+        "missed": [
+          "head"
+        ]
+      }
+    ]
+  },
   "tags": [],
   "providers": [
     {

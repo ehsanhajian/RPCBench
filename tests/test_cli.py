@@ -188,6 +188,7 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Ranking" in out
     assert "Comparison" not in out
     assert "Capabilities" not in out
+    assert "Coverage" not in out
     assert "↳ Next:" not in out
 
 
@@ -412,6 +413,7 @@ def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None
     assert "1" in out
     assert "2" in out
     assert "Comparison" in out
+    assert "Coverage" in out
     assert "Providers" in out
     assert "Capabilities" in out
 
@@ -1049,7 +1051,7 @@ def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert "Rank by mean" in out
-    assert "Ranking  (by mean; similar within 10%; ~ high err, stale, or disagree; failed last)" in out
+    assert "Ranking  (by mean; similar within 10%; ~ high err, stale, disagree, or miss; failed last)" in out
 
 
 def test_cli_sequential(tmp_path: Path, monkeypatch, capsys) -> None:

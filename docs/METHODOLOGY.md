@@ -23,6 +23,12 @@ Fixed payloads (same on every provider):
 
 Logs are one block and one address. No unbounded scans. No writes.
 
+## Workload coverage
+
+Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--profile mix` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. Missing required steps take `~` in Ranking (same as high error, stale, or disagree). Default catalogs never include admin/personal/miner/engine/txpool.
+
+JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `discover`.
+
 ## Sample budgets
 
 `--budget short|standard|long` is how long we sample, not a Nodeprobe scan profile.
@@ -47,7 +53,7 @@ Default rank key is **P95** of successes (`--rank-by` for p50, p99, mean, or rps
 
 **Similar-band** (default **10%**, `--similar-band 0.10`): two values are similar if the worse is within that fraction of the better. Similar endpoints **share a place**. Fastest is that place-1 set. 81ms vs 84ms is not a victory.
 
-An endpoint whose **error rate is above the same band**, whose head is **stale**, or whose pinned block **hash disagrees** with the cohort, does not get a numbered place or Fastest. It is listed after placed rows as `~`. Failed endpoints (`n_ok=0`) stay last.
+An endpoint whose **error rate is above the same band**, whose head is **stale**, whose pinned block **hash disagrees** with the cohort, or whose mix is missing a required step, does not get a numbered place or Fastest. It is listed after placed rows as `~`. Failed endpoints (`n_ok=0`) stay last.
 
 We use this documented band instead of bootstrap confidence intervals. Typical `--samples 10` is too small for a stable P95 CI.
 
