@@ -98,6 +98,7 @@ def _rank_block(text: str) -> str:
     for marker in (
         "\nNotes",
         "\nCoverage",
+        "\nReliability",
         "\nComparison",
         "\nMethods",
         "\nTiming",
@@ -550,6 +551,7 @@ def test_compact_default_omits_detail_tables() -> None:
     assert "Providers" not in text
     assert "Capabilities" not in text
     assert "Coverage" not in text
+    assert "Reliability" not in text
     assert "Timing" not in text
     assert "Tags" not in text
     assert "Burst" not in text
@@ -572,6 +574,7 @@ def test_verbose_keeps_full_report() -> None:
     assert "Providers" in full
     assert "Capabilities" in full
     assert "Coverage" in full
+    assert "Reliability" in full
     assert "--verbose for full report" not in full
     assert "Not an SLA or a security audit" in full
     assert "docs/METHODOLOGY.md" in full

@@ -151,7 +151,11 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["histogram_buckets"][0] == {"label": "<50ms", "lt_ms": 50.0}
     assert data["histogram_buckets"][-1] == {"label": "≥1s", "lt_ms": None}
     assert data["comparison"][1]["histogram"][0]["n"] == 2
-    assert fast["reliability"]["score"] == 1.0
+    assert fast["reliability"]["score"] == 98
+    assert fast["reliability"]["success_rate"] == 1.0
+    assert fast["reliability"]["parts"]["errors"] == 50.0
+    assert data["ranking"][0]["score"] == 98
+    assert data["comparison"][1]["reliability"]["score"] == 98
     assert fast["capability"]["responded"] is True
     assert data["capabilities"]["responded"] == 2
     assert data["capabilities"]["missed"] == [

@@ -95,6 +95,23 @@ HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many reque
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
 
+## Reliability score
+
+0–100 for **this run**. Not an SLA. Not a security score. Deterministic for the same samples.
+
+```
+rel = round(
+    50 × (1 − error_rate)
+  + 20 × (1 − timeout_share)
+  + 20 × (1 − tail)
+  + 10 × coverage
+)
+```
+
+Clamped to 0–100. `timeout_share` is timeout count / attempted. `tail` is 0 when P99/P50 = 1 and 1 when P99/P50 ≥ 3 (linear in between). `coverage` is the fraction of mix steps with n_ok > 0; a single method that answered is 1. A 100% error run is 0. A clean flat-tail run is 100.
+
+JSON `reliability` includes the score, success_rate, the inputs, and `parts` (the four weighted terms). Ranking `rel` is that integer. `--verbose` prints the breakdown.
+
 ## Jitter and histogram
 
 Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.

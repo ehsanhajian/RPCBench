@@ -226,7 +226,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "-v",
         action="store_true",
         help=(
-            "Print the full report: Comparison, Coverage, Methods, Timing, Tags, "
+            "Print the full report: Comparison, Reliability, Coverage, Methods, Timing, Tags, "
             "Burst, Providers, Capabilities, and per-sample rows"
         ),
     )
