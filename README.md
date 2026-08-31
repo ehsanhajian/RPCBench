@@ -27,6 +27,7 @@ PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --
 ```bash
 rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
 rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -60,7 +61,11 @@ Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` /
 
 ![Default compact CLI](docs/images/cli-compact.svg)
 
-**`--profile mix`**
+**`--profile mix`** (Coverage table: which required methods succeeded)
+
+```bash
+rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
+```
 
 ![Mix profile compact CLI](docs/images/cli-mix.svg)
 
@@ -81,12 +86,13 @@ The default CLI prints, in order:
 `--verbose` adds the rest (same numbers, no data loss):
 
 4. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match)
-5. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
-6. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-7. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-8. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-9. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-10. **Capabilities** — who answered this method
+5. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
+6. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
+7. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+8. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+9. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+10. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+11. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -98,7 +104,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many samples to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
-- **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for an indexer, not a vuln. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
 
 ### Stats
@@ -113,7 +119,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 ### Ranking
 
 - Default is P95 of successes (over the mix when `--profile mix`). Override with `--rank-by p50|p95|p99|mean|rps` (`throughput` = `rps`). Lower latency wins; higher rps wins.
-- **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band, a **stale** head, or a **disagreeing** block hash is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
+- **Similar-band** (default 10%) shares a place when the worse value is within that fraction of the better. Error rate above the same band, a **stale** head, a **disagreeing** block hash, or a **coverage miss** (a required mix step never succeeded) is not a numbered place (`~`). Failed (`n_ok=0`) never take Fastest.
 
 ### Extra reads
 
@@ -126,12 +132,13 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`. Reliability `score` is success rate.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`. Reliability `score` is success rate.
 
 ## Flags
 
 ```bash
 rpcbench run --endpoints endpoints.yaml --budget short
+rpcbench run --endpoints endpoints.yaml --profile mix --budget short
 rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
@@ -168,7 +175,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Do not combine with `--method` or `--preset` |
+| `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Prints Coverage. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Timing, Tags, Burst, Providers, per-sample) |

@@ -97,6 +97,7 @@ def _rank_block(text: str) -> str:
     rest = text.split("Ranking", 1)[1]
     for marker in (
         "\nNotes",
+        "\nCoverage",
         "\nComparison",
         "\nMethods",
         "\nTiming",
@@ -146,7 +147,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "requests 32" in text
     assert "similar 10%" in text
     assert "Cite      0.2.0  sha=—  family=evm  vantage=—  utc=—" in text
-    assert "Ranking  (by p95; similar within 10%; ~ high err, stale, or disagree; failed last)" in text
+    assert "Ranking  (by p95; similar within 10%; ~ high err, stale, disagree, or miss; failed last)" in text
     assert "Failed   1/3    dead" in text
     summary = text.split("Ranking", 1)[0]
     assert summary.index("fast") < summary.index("Failed")
@@ -548,6 +549,7 @@ def test_compact_default_omits_detail_tables() -> None:
     assert "Comparison" not in text
     assert "Providers" not in text
     assert "Capabilities" not in text
+    assert "Coverage" not in text
     assert "Timing" not in text
     assert "Tags" not in text
     assert "Burst" not in text
@@ -569,6 +571,7 @@ def test_verbose_keeps_full_report() -> None:
     assert "Ranking" in full
     assert "Providers" in full
     assert "Capabilities" in full
+    assert "Coverage" in full
     assert "--verbose for full report" not in full
     assert "Not an SLA or a security audit" in full
     assert "docs/METHODOLOGY.md" in full

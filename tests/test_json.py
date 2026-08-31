@@ -105,6 +105,7 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["canonical_hash"] is None
     assert data["summary"]["stale_names"] == []
     assert data["summary"]["disagree_names"] == []
+    assert data["summary"]["coverage_miss_names"] == []
     assert data["comparison"][0]["freshness"] is None
     assert data["ranking"][0]["freshness"] is None
     assert data["providers"][0]["freshness"] is None
@@ -298,3 +299,7 @@ def test_json_mix_includes_workload_and_per_method() -> None:
     assert data["methods"][0]["method"] == "eth_blockNumber"
     assert data["methods"][-1]["method"] == "eth_getLogs"
     assert all(row["n_ok"] == 1 for row in data["methods"])
+    cover = data["coverage"]
+    assert [row["method"] for row in cover["steps"]] == [s.method for s in MIX_PROFILE]
+    assert cover["providers"][0]["missed"] == []
+    assert all(cell["status"] == "ok" for cell in cover["providers"][0]["cells"].values())

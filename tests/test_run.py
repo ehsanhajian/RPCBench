@@ -747,9 +747,11 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     ] * 2
     text = format_run(result, color=False)
     assert "Method    mix" in text
+    assert "Coverage  (active workload only" in text
     assert "Methods  (per-method; ranking uses the whole mix)" not in text
     full = format_run(result, verbose=True, color=False)
     assert "Methods  (per-method; ranking uses the whole mix)" in full
+    assert "Coverage  (active workload only" in full
     assert "eth_getLogs" in full
     assert "eth_call" in full
 

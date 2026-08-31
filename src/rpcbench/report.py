@@ -11,6 +11,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from rpcbench import __version__
+from rpcbench.coverage import (
+    as_dict as coverage_dict,
+    cell_for,
+    coverage_steps,
+    is_coverage_miss,
+    missed_steps,
+)
 from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
 from rpcbench.watermark import (
     DOCS_BOUNDARY,
@@ -92,7 +99,9 @@ def reliable_for_place(
         return False
     if stats.error_rate is not None and stats.error_rate > similar_band:
         return False
-    if outcome is not None and (is_stale(outcome) or is_disagree(outcome)):
+    if outcome is not None and (
+        is_stale(outcome) or is_disagree(outcome) or is_coverage_miss(outcome)
+    ):
         return False
     return True
 
@@ -344,12 +353,16 @@ def run_to_dict(
             "failed_names": [o.endpoint.name for o in fail_rows],
             "stale_names": [o.endpoint.name for o in ranked if is_stale(o)],
             "disagree_names": [o.endpoint.name for o in ranked if is_disagree(o)],
+            "coverage_miss_names": [
+                o.endpoint.name for o in ranked if is_coverage_miss(o)
+            ],
         },
         "comparison": [
             _comparison_entry(outcome, result.method) for outcome in result.outcomes
         ],
         "ranking": ranking,
         "methods": _methods_json(result),
+        "coverage": coverage_dict(result),
         "tags": _tags_json(result),
         "providers": providers,
         "capabilities": {
@@ -428,14 +441,27 @@ def format_run(
         "Summary",
     ]
     lines.extend(
-        _summary_lines(placed, fail_rows, len(result.outcomes), use_color, rank_by, band)
+        _summary_lines(
+            placed,
+            fail_rows,
+            len(result.outcomes),
+            use_color,
+            rank_by,
+            band,
+            result,
+        )
     )
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
-        ["", f"Ranking  (by {label}; similar within {band_pct}; ~ high err, stale, or disagree; failed last)"]
+        [
+            "",
+            f"Ranking  (by {label}; similar within {band_pct}; "
+            "~ high err, stale, disagree, or miss; failed last)",
+        ]
     )
     lines.extend(_ranking_lines(placed, name_w, use_color, rank_by))
     lines.extend(_exception_lines(result, ranked))
+    mix = result.profile == "mix" or len(result.workload) > 1
     if verbose:
         lines.extend(
             _verbose_sections(
@@ -446,6 +472,8 @@ def format_run(
                 compare_what,
             )
         )
+    elif mix:
+        lines.extend(_coverage_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -471,18 +499,23 @@ def format_run(
 def _exception_lines(
     result: RunResult, ranked: tuple[EndpointOutcome, ...]
 ) -> list[str]:
-    """One line per endpoint whose omitted tables would have shown a throttle."""
+    """Throttle and coverage misses that compact mode would otherwise hide."""
     rows: list[str] = []
     for outcome in ranked:
         timed = _rate_limit_n(outcome.stats)
         tags = _tag_rate_limit_n(outcome)
-        if not timed and not tags:
+        missed = ()
+        if result.profile == "mix" or len(result.workload) > 1:
+            missed = missed_steps(outcome, result)
+        if not timed and not tags and not missed:
             continue
         bits = []
         if timed:
             bits.append(f"rate_limit={timed}")
         if tags:
             bits.append(f"tags={tags}")
+        if missed:
+            bits.append("miss=" + ",".join(missed))
         rows.append(f"  {outcome.endpoint.name}  " + "  ".join(bits))
     if not rows:
         return []
@@ -501,6 +534,7 @@ def _verbose_sections(
         f"Comparison  (config order · {result.mode} · same {compare_what}, samples, and budget)",
     ]
     lines.extend(_comparison_lines(result, name_w, use_color))
+    lines.extend(_coverage_section(result, use_color))
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
@@ -572,6 +606,7 @@ def _summary_lines(
     use_color: bool,
     rank_by: str,
     similar_band: float,
+    result: RunResult,
 ) -> list[str]:
     lines: list[str] = []
     winners = [row for row in placed if row.rank == 1]
@@ -610,6 +645,16 @@ def _summary_lines(
     if disagree_rows:
         names = ", ".join(o.endpoint.name for o in disagree_rows)
         lines.append(f"  Disagree {len(disagree_rows)}/{total}    {names}")
+    miss_rows = [row.outcome for row in placed if is_coverage_miss(row.outcome)]
+    if miss_rows:
+        bits = []
+        for outcome in miss_rows:
+            steps = ",".join(missed_steps(outcome, result))
+            if steps:
+                bits.append(f"{outcome.endpoint.name} ({steps})")
+            else:
+                bits.append(outcome.endpoint.name)
+        lines.append(f"  Miss     {len(miss_rows)}/{total}    {', '.join(bits)}")
     return lines
 
 
@@ -618,6 +663,30 @@ def _method_header(result: RunResult, params: str) -> str:
         steps = ", ".join(spec.name for spec in result.workload)
         return f"Method    mix  ·  {steps}"
     return f"Method    {result.method}{params}"
+
+
+def _coverage_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        "Coverage  (active workload only; ok / error class / skip if not offered; not a scan)",
+        *_coverage_lines(result, use_color),
+    ]
+
+
+def _coverage_lines(result: RunResult, use_color: bool) -> list[str]:
+    steps = coverage_steps(result)
+    headers = ["name", *[spec.name for spec in steps]]
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        cells = [_name_cell(outcome, use_color)]
+        for spec in steps:
+            cell = cell_for(outcome, spec, result)
+            label = cell.label()
+            ok = cell.status == "ok"
+            cells.append(_paint(label, _GREEN if ok else _RED, enabled=use_color))
+        rows.append(cells)
+    right = (False,) + tuple(True for _ in steps)
+    return _grid(headers, rows, right=right)
 
 
 def _methods_lines(
@@ -1028,6 +1097,9 @@ def _row_note(outcome: EndpointOutcome) -> str:
             bits.append(f"~{fresh.lag_s:g}s")
     if is_disagree(outcome):
         bits.append("disagree")
+    missed = [name for name, stats in outcome.by_method if stats.n_ok == 0]
+    if missed:
+        bits.append("miss=" + ",".join(missed))
     tags = _tag_rate_limit_n(outcome)
     if tags:
         bits.append(f"tags={tags}")
