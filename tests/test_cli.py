@@ -367,7 +367,9 @@ def test_cli_compare_prints_report(tmp_path: Path, monkeypatch, capsys) -> None:
     assert code == 0
     assert "Fastest  ok" in out
     assert "Ranking" in out
+    assert "Verdict" in out
     assert "Comparison" not in out
+    assert "Signals" not in out
 
 
 def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -414,6 +416,7 @@ def test_cli_verbose_prints_samples(tmp_path: Path, monkeypatch, capsys) -> None
     assert "2" in out
     assert "Comparison" in out
     assert "Reliability" in out
+    assert "Signals" in out
     assert "Coverage" in out
     assert "Providers" in out
     assert "Capabilities" in out

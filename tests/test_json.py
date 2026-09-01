@@ -106,6 +106,17 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["summary"]["stale_names"] == []
     assert data["summary"]["disagree_names"] == []
     assert data["summary"]["coverage_miss_names"] == []
+    assert data["summary"]["ready_names"] == ["fast", "slow"]
+    assert data["summary"]["risky_names"] == []
+    assert data["summary"]["not_ready_names"] == ["dead"]
+    assert data["ranking"][0]["verdict"]["decision"] == "ready"
+    assert data["ranking"][0]["verdict"]["kind"] == "fast+stable"
+    assert data["ranking"][0]["verdict"]["signals"] == []
+    assert data["ranking"][1]["verdict"]["kind"] == "slow+reliable"
+    assert data["ranking"][2]["verdict"]["decision"] == "not_ready"
+    assert data["ranking"][2]["verdict"]["kind"] == "timeout"
+    assert data["providers"][0]["verdict"]["decision"] == "ready"
+    assert data["comparison"][2]["verdict"]["kind"] == "timeout"
     assert data["comparison"][0]["freshness"] is None
     assert data["ranking"][0]["freshness"] is None
     assert data["providers"][0]["freshness"] is None

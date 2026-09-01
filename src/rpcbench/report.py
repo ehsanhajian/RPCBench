@@ -20,6 +20,13 @@ from rpcbench.coverage import (
 )
 from rpcbench.reliability import assess as assess_reliability
 from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
+from rpcbench.verdict import (
+    NOT_READY,
+    READY,
+    RISKY,
+    Verdict,
+    assess as assess_verdict,
+)
 from rpcbench.watermark import (
     DOCS_BOUNDARY,
     DOCS_METHODOLOGY,
@@ -300,14 +307,16 @@ def run_to_dict(
     band = normalize_similar_band(similar_band)
     placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
     ranked = tuple(row.outcome for row in placed)
+    marks = _verdict_map(placed, result, band)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     winners = [row for row in placed if row.rank == 1]
     ranking: list[dict[str, Any]] = []
     providers: list[dict[str, Any]] = []
     for row in placed:
-        ranking.append(_ranking_entry(row, rank_by))
-        providers.append(_provider_entry(row, result.method))
+        name = row.outcome.endpoint.name
+        ranking.append(_ranking_entry(row, rank_by, marks[name]))
+        providers.append(_provider_entry(row, result.method, marks[name]))
     return {
         "tool": "rpcbench",
         "version": __version__,
@@ -357,9 +366,29 @@ def run_to_dict(
             "coverage_miss_names": [
                 o.endpoint.name for o in ranked if is_coverage_miss(o)
             ],
+            "ready_names": [
+                row.outcome.endpoint.name
+                for row in placed
+                if marks[row.outcome.endpoint.name].decision == READY
+            ],
+            "risky_names": [
+                row.outcome.endpoint.name
+                for row in placed
+                if marks[row.outcome.endpoint.name].decision == RISKY
+            ],
+            "not_ready_names": [
+                row.outcome.endpoint.name
+                for row in placed
+                if marks[row.outcome.endpoint.name].decision == NOT_READY
+            ],
         },
         "comparison": [
-            _comparison_entry(outcome, result.method) for outcome in result.outcomes
+            _comparison_entry(
+                outcome,
+                result.method,
+                marks[outcome.endpoint.name],
+            )
+            for outcome in result.outcomes
         ],
         "ranking": ranking,
         "methods": _methods_json(result),
@@ -416,6 +445,7 @@ def format_run(
     use_color = color_enabled(color)
     placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
     ranked = tuple(row.outcome for row in placed)
+    marks = _verdict_map(placed, result, band)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     params = f" {list(result.params)}" if result.params else ""
@@ -452,6 +482,7 @@ def format_run(
             result,
         )
     )
+    lines.extend(_verdict_summary_lines(placed, marks, len(result.outcomes), use_color))
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
         [
@@ -471,6 +502,8 @@ def format_run(
                 name_w,
                 use_color,
                 compare_what,
+                placed,
+                marks,
             )
         )
     elif mix:
@@ -529,6 +562,8 @@ def _verbose_sections(
     name_w: int,
     use_color: bool,
     compare_what: str,
+    placed: tuple[RankedPlace, ...],
+    marks: dict[str, Verdict],
 ) -> list[str]:
     lines: list[str] = [
         "",
@@ -543,6 +578,7 @@ def _verbose_sections(
         ]
     )
     lines.extend(_reliability_lines(result, use_color))
+    lines.extend(_signal_lines(placed, marks, use_color))
     lines.extend(_coverage_section(result, use_color))
     if result.profile == "mix" or len(result.workload) > 1:
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
@@ -664,6 +700,87 @@ def _summary_lines(
             else:
                 bits.append(outcome.endpoint.name)
         lines.append(f"  Miss     {len(miss_rows)}/{total}    {', '.join(bits)}")
+    return lines
+
+
+def _verdict_map(
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
+    result: RunResult,
+    similar_band: float,
+) -> dict[str, Verdict]:
+    return {
+        row.outcome.endpoint.name: assess_verdict(
+            row.outcome,
+            rank=row.rank,
+            similar=row.similar,
+            similar_band=similar_band,
+            result=result,
+        )
+        for row in placed
+    }
+
+
+def _verdict_summary_lines(
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
+    marks: dict[str, Verdict],
+    total: int,
+    use_color: bool,
+) -> list[str]:
+    lines = ["", "Verdict  (this workload, this run; not an SLA)"]
+    groups = (
+        (READY, "ready", _GREEN),
+        (RISKY, "risky", _RED),
+        (NOT_READY, "not ready", _RED),
+    )
+    for key, label, color in groups:
+        rows = [
+            row
+            for row in placed
+            if marks[row.outcome.endpoint.name].decision == key
+        ]
+        if not rows:
+            continue
+        if key == READY:
+            names = ", ".join(row.outcome.endpoint.name for row in rows)
+        else:
+            names = ", ".join(
+                f"{row.outcome.endpoint.name} ({marks[row.outcome.endpoint.name].kind})"
+                for row in rows
+            )
+        painted = _paint(label, color, enabled=use_color)
+        lines.append(
+            f"  {_pad_visible(painted, 9, right=False)} {len(rows)}/{total}    {names}"
+        )
+    return lines
+
+
+def _signal_lines(
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
+    marks: dict[str, Verdict],
+    use_color: bool,
+) -> list[str]:
+    lines = [
+        "",
+        "Signals  (problem / why / next; routing and config, not hardening)",
+    ]
+    found = False
+    for row in placed:
+        verdict = marks[row.outcome.endpoint.name]
+        if not verdict.signals:
+            continue
+        found = True
+        name = _paint(
+            row.outcome.endpoint.name,
+            _GREEN if verdict.decision == READY else _RED,
+            enabled=use_color,
+        )
+        lines.append(f"  {name}  {verdict.cli_decision()}  {verdict.kind}")
+        for sig in verdict.signals:
+            lines.append(f"    problem  {sig.problem}")
+            lines.append(f"    why      {sig.why}")
+            lines.append(f"    next     {sig.next}")
+    if not found:
+        lines.append("  none")
     return lines
 
 
@@ -1030,7 +1147,9 @@ def _cell_rps(mean_ms: float | None) -> str:
     return f"{1000.0 / mean_ms:>6.1f}"
 
 
-def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
+def _comparison_entry(
+    outcome: EndpointOutcome, method: str, verdict: Verdict
+) -> dict[str, Any]:
     stats = outcome.stats
     rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
     responded = stats.n_ok > 0
@@ -1055,6 +1174,7 @@ def _comparison_entry(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
         },
         "last_error": _last_error(outcome) or None,
         "reliability": assess_reliability(outcome).as_dict(),
+        "verdict": verdict.as_dict(),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
@@ -1275,7 +1395,7 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
     return lines
 
 
-def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
+def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str, Any]:
     outcome = row.outcome
     stats = outcome.stats
     rel = assess_reliability(outcome)
@@ -1300,13 +1420,14 @@ def _ranking_entry(row: RankedPlace, rank_by: str) -> dict[str, Any]:
         "rank_value": _rank_value(stats, rank_by),
         "score": rel.score,
         "reliability": rel.as_dict(),
+        "verdict": verdict.as_dict(),
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
     }
 
 
-def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
+def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str, Any]:
     outcome = row.outcome
     stats = outcome.stats
     rps = (1000.0 / stats.mean_ms) if stats.mean_ms else None
@@ -1338,6 +1459,7 @@ def _provider_entry(row: RankedPlace, method: str) -> dict[str, Any]:
             "by_class": dict(stats.by_class),
         },
         "reliability": assess_reliability(outcome).as_dict(),
+        "verdict": verdict.as_dict(),
         "capability": {
             "method": method,
             "responded": stats.n_ok > 0,
