@@ -420,6 +420,8 @@ def test_stale_cannot_be_fastest() -> None:
     assert "not ready" in text
     assert "lagged (stale)" in text
     assert "problem  Head lag exceeds" in full
+    assert "Primary   tip" in text
+    assert "Primary   lagged" not in text
 
 
 def test_disagree_cannot_be_fastest() -> None:
@@ -552,6 +554,8 @@ def test_compact_default_omits_detail_tables() -> None:
     text = format_run(_result(*outcomes), color=False)
     assert "Fastest" in text
     assert "Verdict" in text
+    assert "Route" in text
+    assert "Primary" in text
     assert "Ranking" in text
     assert "Signals" not in text
     assert "Comparison" not in text

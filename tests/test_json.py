@@ -117,6 +117,11 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["ranking"][2]["verdict"]["kind"] == "timeout"
     assert data["providers"][0]["verdict"]["decision"] == "ready"
     assert data["comparison"][2]["verdict"]["kind"] == "timeout"
+    assert data["route"]["primary"] == "fast"
+    assert data["route"]["fallback"] == "slow"
+    assert data["summary"]["primary"] == "fast"
+    assert data["summary"]["fallback"] == "slow"
+    assert "fast is ready" in data["route"]["why"]
     assert data["comparison"][0]["freshness"] is None
     assert data["ranking"][0]["freshness"] is None
     assert data["providers"][0]["freshness"] is None
@@ -179,6 +184,8 @@ def test_json_is_enough_to_rebuild_cli_summary() -> None:
     data = run_to_dict(result)
     text = format_run(result, color=False)
     assert f"Fastest  {data['summary']['fastest']}" in text
+    assert f"Primary   {data['summary']['primary']}" in text
+    assert f"Fallback  {data['summary']['fallback']}" in text
     assert "Failed   1/3    dead" in text
     assert data["method"] in text
     ranking_block = text.split("Ranking", 1)[1]

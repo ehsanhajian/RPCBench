@@ -126,6 +126,14 @@ Decisions: **ready** / **risky** / **not ready** (JSON: `ready`, `risky`, `not_r
 
 Each signal is `id`, `problem`, `why`, `next`. Next-actions are operational (raise `--timeout`, pick another endpoint, pin `--block`, localhost is allowed). JSON `verdict` is on ranking, comparison, and providers. Summary lists `ready_names`, `risky_names`, `not_ready_names` in ranking order.
 
+## Primary and fallback
+
+Production routing is two endpoints. **Route** names a **primary** and **fallback** from **ready** providers only (same `ready` as the verdict). Stale, disagree, coverage-miss, and failed endpoints never become primary.
+
+Among ready endpoints in the similar-band of the fastest ready node, primary is the highest reliability score, then lower head lag, then a matching hash, then ranking order. Fallback is the next ready endpoint in ranking order. If primary had a timed error class, fallback skips others with that same class when a diverse ready alternative exists (so two 429s are not the pair).
+
+When fewer than two providers are ready, fallback is omitted (`null` / `none`). Compact CLI prints one paragraph. JSON is `route` (`primary`, `fallback`, `why`) and `summary.primary` / `summary.fallback`. Not an SLA.
+
 ## Jitter and histogram
 
 Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.

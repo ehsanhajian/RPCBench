@@ -18,6 +18,7 @@ from rpcbench.coverage import (
     is_coverage_miss,
     missed_steps,
 )
+from rpcbench.recommend import Route, recommend as recommend_route
 from rpcbench.reliability import assess as assess_reliability
 from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
 from rpcbench.verdict import (
@@ -308,6 +309,7 @@ def run_to_dict(
     placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
     ranked = tuple(row.outcome for row in placed)
     marks = _verdict_map(placed, result, band)
+    route = _route_for(placed, marks)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     winners = [row for row in placed if row.rank == 1]
@@ -381,7 +383,10 @@ def run_to_dict(
                 for row in placed
                 if marks[row.outcome.endpoint.name].decision == NOT_READY
             ],
+            "primary": route.primary,
+            "fallback": route.fallback,
         },
+        "route": route.as_dict(),
         "comparison": [
             _comparison_entry(
                 outcome,
@@ -446,6 +451,7 @@ def format_run(
     placed = place_outcomes(result, rank_by=rank_by, similar_band=band)
     ranked = tuple(row.outcome for row in placed)
     marks = _verdict_map(placed, result, band)
+    route = _route_for(placed, marks)
     ok_rows = [o for o in ranked if o.stats.n_ok]
     fail_rows = [o for o in ranked if not o.stats.n_ok]
     params = f" {list(result.params)}" if result.params else ""
@@ -483,6 +489,7 @@ def format_run(
         )
     )
     lines.extend(_verdict_summary_lines(placed, marks, len(result.outcomes), use_color))
+    lines.extend(_route_lines(route, use_color))
     name_w = max((len(o.endpoint.name) for o in result.outcomes), default=4)
     lines.extend(
         [
@@ -718,6 +725,36 @@ def _verdict_map(
         )
         for row in placed
     }
+
+
+def _route_for(
+    placed: tuple[RankedPlace, ...] | list[RankedPlace],
+    marks: dict[str, Verdict],
+) -> Route:
+    return recommend_route(
+        [
+            (row.outcome, row.rank, marks[row.outcome.endpoint.name])
+            for row in placed
+        ]
+    )
+
+
+def _route_lines(route: Route, use_color: bool) -> list[str]:
+    lines = ["", "Route  (this workload, this run; not an SLA)"]
+    primary = (
+        _paint(route.primary, _BOLD, _GREEN, enabled=use_color)
+        if route.primary
+        else "none"
+    )
+    fallback = (
+        _paint(route.fallback, _GREEN, enabled=use_color)
+        if route.fallback
+        else "none"
+    )
+    lines.append(f"  Primary   {primary}")
+    lines.append(f"  Fallback  {fallback}")
+    lines.append(f"  {route.why}")
+    return lines
 
 
 def _verdict_summary_lines(
