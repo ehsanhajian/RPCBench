@@ -75,7 +75,15 @@
     ],
     "stale_names": [],
     "disagree_names": [],
-    "coverage_miss_names": []
+    "coverage_miss_names": [],
+    "ready_names": [
+      "fast",
+      "slow"
+    ],
+    "risky_names": [],
+    "not_ready_names": [
+      "dead"
+    ]
   },
   "comparison": [
     {
@@ -137,6 +145,11 @@
           "tail": 17.5,
           "coverage": 10.0
         }
+      },
+      "verdict": {
+        "decision": "ready",
+        "kind": "slow+reliable",
+        "signals": []
       },
       "freshness": null,
       "consistency": null,
@@ -202,6 +215,11 @@
           "coverage": 10.0
         }
       },
+      "verdict": {
+        "decision": "ready",
+        "kind": "fast+stable",
+        "signals": []
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -266,6 +284,18 @@
           "coverage": 0.0
         }
       },
+      "verdict": {
+        "decision": "not_ready",
+        "kind": "timeout",
+        "signals": [
+          {
+            "id": "timeout",
+            "problem": "No successful timed samples (timeouts)",
+            "why": "This endpoint did not answer the workload in time",
+            "next": "Route this workload to another endpoint, or raise --timeout"
+          }
+        ]
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -306,6 +336,11 @@
           "coverage": 10.0
         }
       },
+      "verdict": {
+        "decision": "ready",
+        "kind": "fast+stable",
+        "signals": []
+      },
       "freshness": null,
       "consistency": null,
       "timing": null
@@ -343,6 +378,11 @@
           "tail": 17.5,
           "coverage": 10.0
         }
+      },
+      "verdict": {
+        "decision": "ready",
+        "kind": "slow+reliable",
+        "signals": []
       },
       "freshness": null,
       "consistency": null,
@@ -383,6 +423,18 @@
           "tail": 0.0,
           "coverage": 0.0
         }
+      },
+      "verdict": {
+        "decision": "not_ready",
+        "kind": "timeout",
+        "signals": [
+          {
+            "id": "timeout",
+            "problem": "No successful timed samples (timeouts)",
+            "why": "This endpoint did not answer the workload in time",
+            "next": "Route this workload to another endpoint, or raise --timeout"
+          }
+        ]
       },
       "freshness": null,
       "consistency": null,
@@ -510,6 +562,11 @@
           "coverage": 10.0
         }
       },
+      "verdict": {
+        "decision": "ready",
+        "kind": "fast+stable",
+        "signals": []
+      },
       "capability": {
         "method": "eth_blockNumber",
         "responded": true
@@ -610,6 +667,11 @@
           "tail": 17.5,
           "coverage": 10.0
         }
+      },
+      "verdict": {
+        "decision": "ready",
+        "kind": "slow+reliable",
+        "signals": []
       },
       "capability": {
         "method": "eth_blockNumber",
@@ -714,6 +776,18 @@
           "coverage": 0.0
         }
       },
+      "verdict": {
+        "decision": "not_ready",
+        "kind": "timeout",
+        "signals": [
+          {
+            "id": "timeout",
+            "problem": "No successful timed samples (timeouts)",
+            "why": "This endpoint did not answer the workload in time",
+            "next": "Route this workload to another endpoint, or raise --timeout"
+          }
+        ]
+      },
       "capability": {
         "method": "eth_blockNumber",
         "responded": false
@@ -752,3 +826,4 @@
   },
   "pairs": []
 }
+

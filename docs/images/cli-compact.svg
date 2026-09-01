@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1066" height="514" viewBox="0 0 1066 514" role="img" aria-label="rpcbench compare --budget short">
-<rect width="1066" height="514" rx="10" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1066" height="604" viewBox="0 0 1066 604" role="img" aria-label="rpcbench compare --budget short">
+<rect width="1066" height="604" rx="10" fill="#0d1117"/>
 <rect width="1066" height="36" rx="10" fill="#161b22"/>
 <rect y="26" width="1066" height="10" fill="#161b22"/>
 <circle cx="18" cy="18" r="5" fill="#ff5f57"/>
@@ -19,32 +19,42 @@
 <text x="203.2" y="207" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" font-weight="700" xml:space="preserve">drpc</text>
 <text x="235.4" y="207" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  p95=86.0ms  mean=83.7ms  err=0%  (similar within 10% p95)</text>
 <text x="18.0" y="225" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  Failed   1/4    local</text>
-<text x="18.0" y="261" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Ranking  (by p95; similar within 10%; ~ high err, stale, disagree, or miss; failed last)</text>
-<text x="18.0" y="279" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ┌───┬────────────┬────────┬─────┬──────┬─────┬──────────┬──────────┬──────────┬──────────────────────────────────────────────┐</text>
-<text x="18.0" y="297" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ # │ name       │ status │   n │  err │ rel │      p95 │     mean │      jit │ note                                         │</text>
-<text x="18.0" y="315" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ├───┼────────────┼────────┼─────┼──────┼─────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────┤</text>
-<text x="18.0" y="333" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ 1 │ </text>
-<text x="82.4" y="333" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">publicnode</text>
-<text x="162.9" y="333" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve"> │ </text>
-<text x="187.1" y="333" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
-<text x="203.2" y="333" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 3/3 │   0% │ 100 │   86.0ms │   83.7ms │    2.5ms │ —                                            │</text>
-<text x="18.0" y="351" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ 1 │ </text>
-<text x="82.4" y="351" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">drpc</text>
-<text x="114.6" y="351" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">       │ </text>
-<text x="187.1" y="351" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
-<text x="203.2" y="351" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 3/3 │   0% │ 100 │   94.0ms │   91.0ms │    3.0ms │ —                                            │</text>
-<text x="18.0" y="369" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ ~ │ </text>
-<text x="82.4" y="369" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">merkle</text>
-<text x="130.7" y="369" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ </text>
-<text x="187.1" y="369" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
-<text x="203.2" y="369" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 1/3 │  67% │  67 │   42.0ms │   42.0ms │        — │ rate_limit=2  tags=3                         │</text>
-<text x="18.0" y="387" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ — │ </text>
-<text x="82.4" y="387" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">local</text>
-<text x="122.7" y="387" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">      │ </text>
-<text x="187.1" y="387" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">fail</text>
-<text x="219.2" y="387" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">   │ 0/3 │ 100% │   0 │        — │        — │        — │ connection=3  connection: connection refused │</text>
-<text x="18.0" y="405" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  └───┴────────────┴────────┴─────┴──────┴─────┴──────────┴──────────┴──────────┴──────────────────────────────────────────────┘</text>
-<text x="18.0" y="441" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Notes</text>
-<text x="18.0" y="459" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  merkle  rate_limit=2  tags=3</text>
-<text x="18.0" y="495" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">3 ok  1 failed  ·  warmup excluded  ·  --verbose for full report  ·  P99 is the slowest sample until n≥100; need ≥100</text>
+<text x="18.0" y="261" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Verdict  (this workload, this run; not an SLA)</text>
+<text x="18.0" y="279" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  </text>
+<text x="34.1" y="279" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ready</text>
+<text x="74.3" y="279" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     2/4    publicnode, drpc</text>
+<text x="18.0" y="297" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  </text>
+<text x="34.1" y="297" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">risky</text>
+<text x="74.3" y="297" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     1/4    merkle (rate-limited)</text>
+<text x="18.0" y="315" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  </text>
+<text x="34.1" y="315" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">not ready</text>
+<text x="106.6" y="315" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve"> 1/4    local (failed)</text>
+<text x="18.0" y="351" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Ranking  (by p95; similar within 10%; ~ high err, stale, disagree, or miss; failed last)</text>
+<text x="18.0" y="369" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ┌───┬────────────┬────────┬─────┬──────┬─────┬──────────┬──────────┬──────────┬──────────────────────────────────────────────┐</text>
+<text x="18.0" y="387" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ # │ name       │ status │   n │  err │ rel │      p95 │     mean │      jit │ note                                         │</text>
+<text x="18.0" y="405" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ├───┼────────────┼────────┼─────┼──────┼─────┼──────────┼──────────┼──────────┼──────────────────────────────────────────────┤</text>
+<text x="18.0" y="423" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ 1 │ </text>
+<text x="82.4" y="423" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">publicnode</text>
+<text x="162.9" y="423" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve"> │ </text>
+<text x="187.1" y="423" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
+<text x="203.2" y="423" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 3/3 │   0% │ 100 │   86.0ms │   83.7ms │    2.5ms │ —                                            │</text>
+<text x="18.0" y="441" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ 1 │ </text>
+<text x="82.4" y="441" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">drpc</text>
+<text x="114.6" y="441" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">       │ </text>
+<text x="187.1" y="441" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
+<text x="203.2" y="441" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 3/3 │   0% │ 100 │   94.0ms │   91.0ms │    3.0ms │ —                                            │</text>
+<text x="18.0" y="459" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ ~ │ </text>
+<text x="82.4" y="459" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">merkle</text>
+<text x="130.7" y="459" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ </text>
+<text x="187.1" y="459" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">ok</text>
+<text x="203.2" y="459" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">     │ 1/3 │  67% │  67 │   42.0ms │   42.0ms │        — │ rate_limit=2  tags=3                         │</text>
+<text x="18.0" y="477" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ — │ </text>
+<text x="82.4" y="477" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">local</text>
+<text x="122.7" y="477" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">      │ </text>
+<text x="187.1" y="477" fill="#f85149" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">fail</text>
+<text x="219.2" y="477" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">   │ 0/3 │ 100% │   0 │        — │        — │        — │ connection=3  connection: connection refused │</text>
+<text x="18.0" y="495" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  └───┴────────────┴────────┴─────┴──────┴─────┴──────────┴──────────┴──────────┴──────────────────────────────────────────────┘</text>
+<text x="18.0" y="531" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Notes</text>
+<text x="18.0" y="549" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  merkle  rate_limit=2  tags=3</text>
+<text x="18.0" y="585" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">3 ok  1 failed  ·  warmup excluded  ·  --verbose for full report  ·  P99 is the slowest sample until n≥100; need ≥100</text>
 </svg>

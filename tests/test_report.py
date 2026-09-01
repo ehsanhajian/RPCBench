@@ -417,6 +417,9 @@ def test_stale_cannot_be_fastest() -> None:
     assert "stale" in compare
     assert "97" in full
     assert "stale >2 blocks vs cohort median" in full
+    assert "not ready" in text
+    assert "lagged (stale)" in text
+    assert "problem  Head lag exceeds" in full
 
 
 def test_disagree_cannot_be_fastest() -> None:
@@ -494,6 +497,8 @@ def test_burst_section_and_provider_phases() -> None:
     assert "steady" in full.split("Burst", 1)[1]
     assert "rate_limit is 429 / CU throttle" in full
     assert "finding" not in text.lower()
+    assert "node (rate-limited)" in text
+    assert "Timed samples returned 429" in full
 
 
 def test_burst_table_shows_tag_rate_limits() -> None:
@@ -546,7 +551,9 @@ def test_compact_default_omits_detail_tables() -> None:
     )
     text = format_run(_result(*outcomes), color=False)
     assert "Fastest" in text
+    assert "Verdict" in text
     assert "Ranking" in text
+    assert "Signals" not in text
     assert "Comparison" not in text
     assert "Providers" not in text
     assert "Capabilities" not in text
@@ -571,6 +578,7 @@ def test_verbose_keeps_full_report() -> None:
     full = format_run(result, verbose=True, color=False)
     assert "Comparison" in full
     assert "Ranking" in full
+    assert "Signals" in full
     assert "Providers" in full
     assert "Capabilities" in full
     assert "Coverage" in full

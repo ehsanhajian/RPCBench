@@ -112,6 +112,20 @@ Clamped to 0–100. `timeout_share` is timeout count / attempted. `tail` is 0 wh
 
 JSON `reliability` includes the score, success_rate, the inputs, and `parts` (the four weighted terms). Ranking `rel` is that integer. `--verbose` prints the breakdown.
 
+## Production-readiness verdict
+
+A categorical decision for **this workload, this run**. Not an SLA. Not a security finding. Compact CLI always prints **Verdict**; `--verbose` adds **Signals** (problem / why / next — routing and config, not hardening).
+
+Decisions: **ready** / **risky** / **not ready** (JSON: `ready`, `risky`, `not_ready`).
+
+**not ready** if any of: no successful timed samples, stale head, mix coverage miss, or disagreeing pinned hash. Kind is `timeout` / `rate-limited` / `failed` when nothing succeeded, else `stale`, `coverage`, or `disagree`.
+
+**risky** if the endpoint still answered but hit 429s, some timeouts, lag within `--stale-blocks` (`stale-risk`), jitter (stddev) above half of P50, or an error rate above the similar-band (when that is not already a timeout or 429).
+
+**ready** otherwise: place-1 and similar-band co-winner → `similar`; place-1 alone → `fast+stable`; other numbered places → `slow+reliable`.
+
+Each signal is `id`, `problem`, `why`, `next`. Next-actions are operational (raise `--timeout`, pick another endpoint, pin `--block`, localhost is allowed). JSON `verdict` is on ranking, comparison, and providers. Summary lists `ready_names`, `risky_names`, `not_ready_names` in ranking order.
+
 ## Jitter and histogram
 
 Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.

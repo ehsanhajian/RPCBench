@@ -55,7 +55,7 @@ rpcbench run --endpoints endpoints.yaml -o report.json
 
 ## Report
 
-Default is Fastest and the ranked list. `--verbose` is the full dump. `--json` / `-o` is always the complete payload. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
+Default is Fastest, a production-readiness **Verdict**, and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -80,20 +80,22 @@ rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
 The default CLI prints, in order:
 
 1. **Summary** — Fastest (P95 by default; similar-band co-winners, not 81ms vs 84ms)
-2. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last. **`rel`** is the 0–100 reliability score for this run.
-3. **Notes** — one line per endpoint that hit `rate_limit` on timed samples or tags (`merkle  rate_limit=2  tags=2`)
+2. **Verdict** — production-ready / risky / not ready for this workload, this run. Labels: `fast+stable`, `slow+reliable`, `similar`, `stale`, `stale-risk`, `timeout`, `rate-limited`, `coverage`, `disagree`, `jitter`, `failed`, `errors`. Not an SLA.
+3. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last. **`rel`** is the 0–100 reliability score for this run.
+4. **Notes** — one line per endpoint that hit `rate_limit` on timed samples or tags (`merkle  rate_limit=2  tags=2`)
 
 `--verbose` adds the rest (same numbers, no data loss):
 
-4. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
-5. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
-6. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
-7. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
-8. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-9. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-10. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-11. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-12. **Capabilities** — who answered this method
+5. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
+6. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
+7. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
+8. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
+9. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
+10. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+11. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+12. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+13. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+14. **Capabilities** — who answered this method
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -138,7 +140,7 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`.
 
 ## Flags
 
@@ -185,7 +187,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Prints Coverage. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Coverage, Timing, Tags, Burst, Providers, per-sample) |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample) |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 
