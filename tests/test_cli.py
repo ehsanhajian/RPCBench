@@ -368,6 +368,7 @@ def test_cli_compare_prints_report(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "Fastest  ok" in out
     assert "Ranking" in out
     assert "Verdict" in out
+    assert "Primary" in out
     assert "Comparison" not in out
     assert "Signals" not in out
 

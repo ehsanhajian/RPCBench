@@ -83,7 +83,14 @@
     "risky_names": [],
     "not_ready_names": [
       "dead"
-    ]
+    ],
+    "primary": "fast",
+    "fallback": "slow"
+  },
+  "route": {
+    "primary": "fast",
+    "fallback": "slow",
+    "why": "fast is ready (fast+stable, rel 98, lag \u2014, match \u2014). slow is the next ready endpoint."
   },
   "comparison": [
     {
