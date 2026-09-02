@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 from typing import TYPE_CHECKING, Any
 
 from rpcbench.coverage import is_coverage_miss, missed_steps
@@ -143,15 +144,15 @@ def html_block(rows: list[tuple[str, Verdict]]) -> str:
     parts = ['<section aria-label="verdict">']
     for name, verdict in rows:
         parts.append(
-            f"<article><h3>{name}</h3>"
-            f"<p>{verdict.cli_decision()} · {verdict.kind}</p>"
+            f"<article><h3>{escape(name)}</h3>"
+            f"<p>{escape(verdict.cli_decision())} · {escape(verdict.kind)}</p>"
         )
         for sig in verdict.signals:
             parts.append(
                 "<dl>"
-                f"<dt>problem</dt><dd>{sig.problem}</dd>"
-                f"<dt>why</dt><dd>{sig.why}</dd>"
-                f"<dt>next</dt><dd>{sig.next}</dd>"
+                f"<dt>problem</dt><dd>{escape(sig.problem)}</dd>"
+                f"<dt>why</dt><dd>{escape(sig.why)}</dd>"
+                f"<dt>next</dt><dd>{escape(sig.next)}</dd>"
                 "</dl>"
             )
         parts.append("</article>")
