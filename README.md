@@ -49,13 +49,14 @@ endpoints:
 rpcbench run --endpoints endpoints.yaml
 rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
+rpcbench compare --endpoints endpoints.yaml --html -o report.html
 ```
 
 `run` and `compare` are the same command.
 
 ## Report
 
-Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
+Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN). Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -157,6 +158,7 @@ rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --new-connection
 rpcbench run --endpoints endpoints.yaml --verbose
 rpcbench run --endpoints endpoints.yaml --verbose --json
+rpcbench run --endpoints endpoints.yaml --html -o report.html
 ```
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
@@ -191,6 +193,7 @@ rpcbench run --endpoints endpoints.yaml --verbose --json
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample) |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
+| `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, no CDN). Table still prints unless `--json` |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 
 ## Safety

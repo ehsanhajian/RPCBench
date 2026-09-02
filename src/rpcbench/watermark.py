@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
+from html import escape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -98,8 +99,9 @@ def html_footer(result: RunResult) -> str:
     utc = mark["utc"] or "—"
     sha = mark["git_sha"] or "—"
     return (
-        f'<footer>rpcbench {mark["version"]} · sha={sha} · {utc} · '
-        f'family={mark["family"]} · vantage={mark["vantage"] or "—"} · '
+        f'<footer>rpcbench {escape(str(mark["version"]))} · sha={escape(str(sha))} · '
+        f'{escape(str(utc))} · family={escape(str(mark["family"]))} · '
+        f'vantage={escape(str(mark["vantage"] or "—"))} · '
         f'<a href="{DOCS_METHODOLOGY}">methodology</a> · '
         f'<a href="{DOCS_BOUNDARY}">boundary</a></footer>'
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 from typing import TYPE_CHECKING
 
 from rpcbench.reliability import assess as assess_reliability
@@ -68,9 +69,9 @@ def html_block(route: Route) -> str:
     fallback = route.fallback or "none"
     return (
         '<section aria-label="route">'
-        f"<p>Primary {primary}</p>"
-        f"<p>Fallback {fallback}</p>"
-        f"<p>{route.why}</p>"
+        f"<p>Primary {escape(primary)}</p>"
+        f"<p>Fallback {escape(fallback)}</p>"
+        f"<p>{escape(route.why)}</p>"
         "</section>"
     )
 

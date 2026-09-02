@@ -173,6 +173,6 @@ Every JSON report includes a `watermark` object so the numbers can be cited:
 | `samples` / `warmup` | Timed samples and excluded warmup, per method |
 | `methodology` / `boundary` | This page and [BOUNDARY.md](BOUNDARY.md) |
 
-The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. An HTML report (later) reuses the same watermark object in the footer — same links, not a scanner card.
+The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. `--html -o report.html` reuses the same watermark object in the footer — same links, not a scanner card. Ranking, P95, error rate, and freshness sit above the fold; P95 and histogram charts are inline SVG (no network).
 
 Reproduce with the same `--budget`, `--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.

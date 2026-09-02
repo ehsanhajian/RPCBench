@@ -10,6 +10,7 @@ from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
+from rpcbench.html import format_html
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MAX_BURST, MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
@@ -236,10 +237,15 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Print a JSON report to stdout instead of the CLI table",
     )
     run.add_argument(
+        "--html",
+        action="store_true",
+        help="Write a standalone HTML report to -o FILE (inline CSS/SVG, no CDN)",
+    )
+    run.add_argument(
         "-o",
         "--output",
         metavar="FILE",
-        help="Write the JSON report to FILE (CLI table still prints unless --json)",
+        help="Write JSON to FILE, or HTML when --html is set (CLI table still prints unless --json)",
     )
 
 
@@ -275,6 +281,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     stopped = kill_switch_reason()
     if stopped:
         print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
+        return 2
+    if args.html and not args.output:
+        print("rpcbench: --html needs -o FILE", file=sys.stderr)
         return 2
     try:
         apply_sample_budget(args)
@@ -363,16 +372,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
         rps=args.rps,
         new_connection=args.new_connection,
     )
-    payload = format_json(result, rank_by=rank_by, similar_band=similar_band) if (args.json or args.output) else None
+    json_blob = None
+    if args.json or (args.output and not args.html):
+        json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
     if args.output:
         path = Path(args.output)
         try:
-            path.write_text(payload or "", encoding="utf-8")
+            blob = (
+                format_html(result, rank_by=rank_by, similar_band=similar_band)
+                if args.html
+                else json_blob
+            )
+            path.write_text(blob or "", encoding="utf-8")
         except OSError as exc:
             print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
             return 2
     if args.json:
-        sys.stdout.write(payload or "")
+        sys.stdout.write(json_blob or format_json(result, rank_by=rank_by, similar_band=similar_band))
     else:
         sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
     if any(outcome.stats.n_ok for outcome in result.outcomes):

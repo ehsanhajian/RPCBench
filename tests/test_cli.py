@@ -38,6 +38,7 @@ def test_cli_defaults() -> None:
     assert ns.sequential is False
     assert ns.seed == 0
     assert ns.json is False
+    assert ns.html is False
     assert ns.output is None
     assert ns.rank_by == "p95"
     assert ns.similar_band == 0.10
@@ -825,6 +826,69 @@ def test_cli_output_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> Non
     assert data["summary"]["fastest"] == "ok"
     assert data["capabilities"]["responded"] == 1
     assert data["rank_by"] == "p95"
+
+
+def test_cli_html_needs_output(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--html"])
+    assert code == 2
+    assert "--html needs -o FILE" in capsys.readouterr().err
+
+
+def test_cli_html_writes_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.html"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--html",
+            "-o",
+            str(report),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Fastest  ok" in out
+    html = report.read_text(encoding="utf-8")
+    assert html.startswith("<!DOCTYPE html>")
+    assert "Ranking" in html
+    assert "p95" in html
+    assert "<svg" in html
+    assert "<script" not in html.lower()
+    assert "finding" not in html.lower()
 
 
 def test_cli_rejects_bad_rank_by(tmp_path: Path, capsys) -> None:
