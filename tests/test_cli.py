@@ -39,6 +39,8 @@ def test_cli_defaults() -> None:
     assert ns.seed == 0
     assert ns.json is False
     assert ns.html is False
+    assert ns.md is False
+    assert ns.history is None
     assert ns.output is None
     assert ns.rank_by == "p95"
     assert ns.similar_band == 0.10
@@ -892,6 +894,149 @@ def test_cli_html_writes_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -
     assert "Heatmap" in html
     assert "Signals" in html
     assert "@media print" in html
+
+
+def test_cli_md_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    report = tmp_path / "report.md"
+    hist = tmp_path / "history"
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--md",
+            "-o",
+            str(report),
+            "--history",
+            str(hist),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert out.startswith("# RPCBench")
+    assert "| # | name | p95 | err | fresh | verdict |" in out
+    assert "finding" not in out.lower()
+    assert report.read_text(encoding="utf-8") == out
+    files = list(hist.glob("*.json"))
+    assert len(files) == 1
+    assert '"tool": "rpcbench"' in files[0].read_text(encoding="utf-8")
+
+
+def test_cli_md_rejects_json(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--md", "--json"])
+    assert code == 2
+    assert "pick --json or --md" in capsys.readouterr().err
+
+
+def test_cli_diff_exit_codes(tmp_path: Path, capsys) -> None:
+    from rpcbench.config import Endpoint
+    from rpcbench.freshness import Freshness
+    from rpcbench.report import format_json
+    from rpcbench.rpc import ProbeResult
+    from rpcbench.run import EndpointOutcome, RunResult, summarize
+
+    def ok(ms: float) -> ProbeResult:
+        return ProbeResult(
+            ok=True,
+            reachable=True,
+            latency_ms=ms,
+            result="0x1",
+            error=None,
+            error_class=None,
+            attempts=1,
+        )
+
+    def outcome(name: str, ms: float) -> EndpointOutcome:
+        samples = (ok(ms), ok(ms))
+        return EndpointOutcome(
+            endpoint=Endpoint(name=name, url=f"http://127.0.0.1/{name}"),
+            warmup=(),
+            samples=samples,
+            stats=summarize(samples),
+            freshness=Freshness(
+                height=100,
+                height_hex=hex(100),
+                lag_blocks=0,
+                lag_s=0.0,
+                verdict="fresh",
+                cohort_height=100,
+            ),
+        )
+
+    def pair(fast: float, slow: float) -> RunResult:
+        return RunResult(
+            method="eth_blockNumber",
+            params=(),
+            samples=2,
+            warmup=0,
+            timeout=10.0,
+            budget=16,
+            outcomes=(outcome("publicnode", fast), outcome("drpc", slow)),
+            budget_remaining=10,
+        )
+
+    old = tmp_path / "old.json"
+    new = tmp_path / "new.json"
+    old.write_text(format_json(pair(80.0, 88.0)), encoding="utf-8")
+    new.write_text(format_json(pair(84.0, 90.0)), encoding="utf-8")
+    code = main(["diff", str(old), str(new)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "result    ok" in out
+    assert "finding" not in out.lower()
+
+    worse = tmp_path / "worse.json"
+    worse.write_text(format_json(pair(120.0, 90.0)), encoding="utf-8")
+    code = main(["diff", str(old), str(worse)])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "result    FAIL" in out
+
+    hist = tmp_path / "hist"
+    hist.mkdir()
+    (hist / "a.json").write_text(old.read_text(encoding="utf-8"), encoding="utf-8")
+    (hist / "b.json").write_text(worse.read_text(encoding="utf-8"), encoding="utf-8")
+    code = main(["diff", "--history", str(hist)])
+    assert code == 1
+
+
+def test_cli_diff_needs_two_files(capsys) -> None:
+    code = main(["diff"])
+    assert code == 2
+    assert "OLD.json NEW.json" in capsys.readouterr().err
 
 
 def test_cli_rejects_bad_rank_by(tmp_path: Path, capsys) -> None:
