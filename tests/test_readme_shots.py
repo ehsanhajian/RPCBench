@@ -19,9 +19,9 @@ def test_readme_cli_shots_match_renderer() -> None:
     mod = _shots()
     expected = mod.shot_svgs()
     assert expected
-    on_disk = {path.name for path in mod.OUT.glob("cli-*.svg")}
+    on_disk = {path.name for path in mod.OUT.glob("*.svg")}
     assert on_disk == set(expected), (
-        "docs/images/cli-*.svg does not match scripts/render_cli_shots.py. "
+        "docs/images/*.svg does not match scripts/render_cli_shots.py. "
         "Run: PYTHONPATH=src python scripts/render_cli_shots.py"
     )
     for name, svg in expected.items():

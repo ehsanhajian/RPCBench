@@ -111,7 +111,13 @@ def test_html_is_standalone_offline() -> None:
 def test_html_fold_shows_ranking_p95_err_freshness() -> None:
     html = format_html(_compare())
     fold = html.split("<!-- fold -->", 1)[0]
-    assert "Ranking" in fold
+    assert "<th>head</th>" in fold
+    assert 'class="heat ok"' in fold
+    assert 'class="heat miss"' in fold
+    assert "timeout" in fold
+    assert "problem" in fold
+    assert "next" in fold
+    assert "finding" not in html.lower()
     assert "p95" in fold
     assert "err" in fold
     assert "fresh" in fold
@@ -121,6 +127,23 @@ def test_html_fold_shows_ranking_p95_err_freshness() -> None:
     assert "stale" in fold
     assert "Primary" in fold
     assert "rel" in fold
+    assert "Heatmap" in fold
+    assert "Signals" in fold
+    assert "samples" in fold
+    assert "<polyline" in fold
+
+
+def test_html_heatmap_and_signals_are_performance_not_findings() -> None:
+    html = format_html(_compare())
+    fold = html.split("<!-- fold -->", 1)[0]
+    assert "<th>head</th>" in fold
+    assert 'class="heat ok"' in fold
+    assert 'class="heat miss"' in fold
+    assert "timeout" in fold
+    assert "problem" in fold
+    assert "next" in fold
+    assert "finding" not in html.lower()
+    assert "severity" not in html.lower()
 
 
 def test_html_reuses_watermark_footer() -> None:
@@ -140,8 +163,12 @@ def test_html_has_charts_and_sections() -> None:
     assert "Capabilities" in html
     assert "Errors" in html
     assert "timeout" in html
-    assert 'aria-label="verdict"' in html
-    assert 'aria-label="route"' in html
+    assert 'aria-label="heatmap"' in html
+    assert 'aria-label="signals"' in html
+    assert "@media print" in html
+    assert "print-color-adjust" in html
+    assert "Primary" in html
+    assert "Fallback" in html
 
 
 def test_html_redacts_url_secrets() -> None:
@@ -197,7 +224,12 @@ def test_html_mix_includes_methods() -> None:
         workload=MIX_PROFILE,
     )
     html = format_html(result)
+    fold = html.split("<!-- fold -->", 1)[0]
     assert "Methods" in html
     assert "eth_getLogs" in html
     assert "eth_call" in html
+    assert 'aria-label="heatmap"' in fold
+    assert "head" in fold
+    assert "logs" in fold
+    assert "chainId" in fold
     assert "finding" not in html.lower()

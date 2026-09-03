@@ -9,11 +9,13 @@ import html
 import re
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 from rpcbench.config import Endpoint
 from rpcbench.consistency import Consistency
 from rpcbench.freshness import Freshness
-from rpcbench.report import format_run
+from rpcbench.html import _heatmap_grid, _sample_latencies
+from rpcbench.report import format_run, run_to_dict
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, summarize, summarize_timing
 from rpcbench.tags import TagSnapshot
@@ -26,6 +28,8 @@ _FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospa
 _FG = "#e6edf3"
 _BG = "#0d1117"
 _BAR = "#161b22"
+_PANEL = "#161b22"
+_ACCENT = "#388bfd"
 _DIM = "#8b949e"
 _GREEN = "#3fb950"
 _RED = "#f85149"
@@ -401,6 +405,213 @@ def render_svg(text: str, title: str) -> str:
     return "\n".join(parts) + "\n"
 
 
+def _clip(text: str, n: int) -> str:
+    if len(text) <= n:
+        return text
+    return text[: n - 1] + "…"
+
+
+def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> str:
+    """Browser-chrome SVG of the HTML fold (ranking, heatmap, signals)."""
+    data = run_to_dict(result)
+    ranking = data["ranking"]
+    providers = {row["name"]: row for row in data["providers"]}
+    step_names, heat_rows = _heatmap_grid(data)
+    cards: list[tuple[str, dict[str, Any]]] = []
+    for row in ranking:
+        for sig in (row.get("verdict") or {}).get("signals") or []:
+            cards.append((row["name"], sig))
+            if len(cards) >= max_signals:
+                break
+        if len(cards) >= max_signals:
+            break
+
+    width = 800
+    left = 16
+    inner = width - 32
+    row_h = 20
+    y = BAR_H + 14
+    parts: list[str] = []
+
+    def txt(
+        x: float,
+        yy: float,
+        text: str,
+        *,
+        fill: str = _FG,
+        size: int = 12,
+        weight: str = "",
+        anchor: str = "start",
+    ) -> None:
+        extra = f' font-weight="{weight}"' if weight else ""
+        extra += f' text-anchor="{anchor}"' if anchor != "start" else ""
+        parts.append(
+            f'<text x="{x:.1f}" y="{yy:.1f}" fill="{fill}" font-family="{_FONT}" '
+            f'font-size="{size}"{extra} xml:space="preserve">'
+            f"{html.escape(text)}</text>"
+        )
+
+    def panel(height: float) -> float:
+        parts.append(
+            f'<rect x="{left}" y="{y}" width="{inner}" height="{height:.0f}" '
+            f'rx="8" fill="{_PANEL}"/>'
+        )
+        return y
+
+    summary = data["summary"]
+    fastest = ", ".join(summary.get("fastest_names") or []) or "none"
+    method = data["method"] if data["profile"] != "mix" else "mix"
+    why = _clip(str(data["route"]["why"]), 92)
+    hero_h = 94
+    top = panel(hero_h)
+    txt(left + 12, top + 22, "RPCBench", size=16, weight="700")
+    txt(
+        left + 12,
+        top + 40,
+        f"{method} · size {data['sample_budget']} · rank {data['rank_by']}",
+        fill=_DIM,
+        size=11,
+    )
+    txt(
+        left + 12,
+        top + 60,
+        f"Fastest {fastest}   Primary {summary.get('primary') or 'none'}   "
+        f"Fallback {summary.get('fallback') or 'none'}",
+        size=12,
+        weight="700",
+    )
+    txt(left + 12, top + 78, why, fill=_DIM, size=11)
+    y += hero_h + 10
+
+    cols = [12, 40, 150, 230, 290, 350, 430]
+    headers = ["#", "name", "p95", "err", "rel", "fresh", "samples"]
+    rank_h = 36 + row_h * len(ranking) + 8
+    top = panel(rank_h)
+    txt(left + 12, top + 20, "Ranking", fill=_DIM, size=12, weight="600")
+    for x, label in zip(cols, headers, strict=True):
+        txt(left + x, top + 38, label, fill=_DIM, size=11)
+    for i, row in enumerate(ranking):
+        yy = top + 56 + i * row_h
+        rank = "—" if row["rank"] is None else str(row["rank"])
+        p95 = "—" if row["p95_ms"] is None else f"{row['p95_ms']:.1f}ms"
+        err = "—" if row["error_rate"] is None else f"{100 * row['error_rate']:.0f}%"
+        fresh = "—"
+        verd = (row.get("freshness") or {}).get("verdict")
+        if verd == "stale":
+            fresh = "stale"
+        elif verd == "fresh":
+            fresh = "yes"
+        txt(left + cols[0], yy, rank)
+        txt(left + cols[1], yy, str(row["name"]))
+        txt(left + cols[2], yy, p95)
+        txt(left + cols[3], yy, err)
+        txt(left + cols[4], yy, str(row["score"]))
+        txt(left + cols[5], yy, fresh)
+        values = _sample_latencies(providers.get(row["name"]) or {})
+        if len(values) >= 2:
+            lo, hi = min(values), max(values)
+            span = (hi - lo) or 1.0
+            pts = []
+            sx, sy, sw, sh = left + cols[6], yy - 12, 64, 16
+            for j, value in enumerate(values):
+                px = sx + 1 + j / (len(values) - 1) * (sw - 2)
+                py = sy + sh - 1 - (value - lo) / span * (sh - 2)
+                pts.append(f"{px:.1f},{py:.1f}")
+            parts.append(
+                f'<polyline fill="none" stroke="{_ACCENT}" stroke-width="1.2" '
+                f'points="{" ".join(pts)}"/>'
+            )
+        else:
+            txt(left + cols[6], yy, "—", fill=_DIM)
+    y += rank_h + 10
+
+    if step_names:
+        name_w = 108
+        cell_w = max(44.0, min(72.0, (inner - 28 - name_w) / len(step_names)))
+        heat_h = 50 + row_h * (len(heat_rows) + 1) + 8
+        top = panel(heat_h)
+        txt(left + 12, top + 20, "Heatmap", fill=_DIM, size=12, weight="600")
+        txt(
+            left + 12,
+            top + 36,
+            "provider × method; green is faster ok; skip/miss is product fit",
+            fill=_DIM,
+            size=11,
+        )
+        hx = left + 12 + name_w
+        for i, step in enumerate(step_names):
+            txt(hx + i * cell_w + cell_w / 2, top + 54, step, fill=_DIM, size=11, anchor="middle")
+        for r, (name, cells) in enumerate(heat_rows):
+            yy = top + 70 + r * row_h
+            txt(left + 12, yy, name)
+            for c, (label, color, status) in enumerate(cells):
+                cx = hx + c * cell_w
+                parts.append(
+                    f'<rect x="{cx:.1f}" y="{yy - 13:.1f}" width="{cell_w - 6:.1f}" '
+                    f'height="16" rx="3" fill="{color}"/>'
+                )
+                fill = _DIM if status == "skip" else _BG
+                txt(
+                    cx + (cell_w - 6) / 2,
+                    yy,
+                    label,
+                    fill=fill,
+                    size=10,
+                    anchor="middle",
+                )
+        y += heat_h + 10
+
+    sig_h = 36 + (70 * len(cards) if cards else 24)
+    top = panel(sig_h)
+    txt(left + 12, top + 20, "Signals", fill=_DIM, size=12, weight="600")
+    if not cards:
+        txt(left + 12, top + 42, "none", fill=_DIM, size=12)
+    else:
+        cy = top + 32
+        for name, sig in cards:
+            parts.append(
+                f'<rect x="{left + 12}" y="{cy}" width="{inner - 24}" height="62" '
+                f'rx="6" fill="none" stroke="#30363d"/>'
+            )
+            txt(
+                left + 22,
+                cy + 16,
+                f"{name} · {sig.get('id') or ''}",
+                size=12,
+                weight="700",
+            )
+            txt(
+                left + 22,
+                cy + 34,
+                _clip(f"problem  {sig.get('problem') or ''}", 88),
+                size=11,
+            )
+            txt(
+                left + 22,
+                cy + 50,
+                _clip(f"next  {sig.get('next') or ''}", 88),
+                fill=_DIM,
+                size=11,
+            )
+            cy += 70
+    y += sig_h + 16
+    height = y
+    head = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="{html.escape(title)}">',
+        f'<rect width="{width}" height="{height}" rx="10" fill="{_BG}"/>',
+        f'<rect width="{width}" height="{BAR_H}" rx="10" fill="{_BAR}"/>',
+        f'<rect y="{BAR_H - 10}" width="{width}" height="10" fill="{_BAR}"/>',
+        '<circle cx="18" cy="18" r="5" fill="#ff5f57"/>',
+        '<circle cx="36" cy="18" r="5" fill="#febc2e"/>',
+        '<circle cx="54" cy="18" r="5" fill="#28c840"/>',
+        f'<text x="{width / 2}" y="23" text-anchor="middle" fill="{_DIM}" '
+        f'font-family="{_FONT}" font-size="12">{html.escape(title)}</text>',
+    ]
+    return "\n".join(head + parts + ["</svg>"]) + "\n"
+
+
 def shot_svgs() -> dict[str, str]:
     """Map README image name → SVG. Regenerated whenever the CLI report changes."""
     compare = demo_result()
@@ -424,6 +635,15 @@ def shot_svgs() -> dict[str, str]:
         "cli-verbose.svg": render_svg(
             verbose,
             "rpcbench compare --budget short --verbose",
+        ),
+        "html-report.svg": render_html_shot(
+            compare,
+            "rpcbench compare --html -o report.html",
+        ),
+        "html-heatmap.svg": render_html_shot(
+            mix,
+            "rpcbench compare --html --profile mix",
+            max_signals=1,
         ),
     }
 
