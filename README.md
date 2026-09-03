@@ -50,13 +50,15 @@ rpcbench run --endpoints endpoints.yaml
 rpcbench compare --endpoints endpoints.yaml --json
 rpcbench run --endpoints endpoints.yaml -o report.json
 rpcbench compare --endpoints endpoints.yaml --html -o report.html
+rpcbench compare --endpoints endpoints.yaml --md
+rpcbench diff old.json new.json
 ```
 
 `run` and `compare` are the same command.
 
 ## Report
 
-Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
+Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. `--md` is a pasteable GitHub markdown table (ranking, P95, errors, freshness, verdict). `rpcbench diff old.json new.json` compares two JSON runs (P95 delta, winner change, new signals) and exits 1 in CI if the previous **primary** got worse beyond the similar-band. `--history DIR` appends a JSON snapshot after a run so diff can use `--history DIR`. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -153,6 +155,8 @@ These are not mixed into latency stats or Fastest.
 
 `--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, and burst `phases`.
 
+`--md` is that ranking as GitHub-flavored markdown (not the full JSON). `rpcbench diff` reads two of these JSON files. Not a security finding.
+
 ## Flags
 
 ```bash
@@ -167,6 +171,10 @@ rpcbench run --endpoints endpoints.yaml --new-connection
 rpcbench run --endpoints endpoints.yaml --verbose
 rpcbench run --endpoints endpoints.yaml --verbose --json
 rpcbench run --endpoints endpoints.yaml --html -o report.html
+rpcbench run --endpoints endpoints.yaml --md
+rpcbench run --endpoints endpoints.yaml --history reports/
+rpcbench diff old.json new.json
+rpcbench diff --history reports/
 ```
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
@@ -200,8 +208,10 @@ rpcbench run --endpoints endpoints.yaml --html -o report.html
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample) |
-| `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
+| `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json` or `--md`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
+| `--md` | off | GitHub-flavored markdown to stdout (ranking, P95, err, fresh, verdict). `-o FILE` writes the same markdown |
+| `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 
 ## Safety

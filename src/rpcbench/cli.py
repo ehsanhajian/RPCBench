@@ -10,7 +10,17 @@ from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
+from rpcbench.diff import (
+    DiffError,
+    compare_reports,
+    format_diff,
+    format_diff_md,
+    history_files,
+    load_report,
+    write_history,
+)
 from rpcbench.html import format_html
+from rpcbench.markdown import format_md
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import MAX_BURST, MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
@@ -62,6 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
         "compare",
         "Same as run: print a ranked CLI report for configured endpoints",
     )
+    _add_diff_parser(sub)
     return parser
 
 
@@ -242,10 +253,46 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Write a standalone HTML report to -o FILE (inline CSS/SVG, no CDN)",
     )
     run.add_argument(
+        "--md",
+        action="store_true",
+        help="Print a GitHub-flavored markdown report (pasteable). -o FILE writes the same markdown",
+    )
+    run.add_argument(
+        "--history",
+        metavar="DIR",
+        help="Append a JSON snapshot to DIR after the run (local history for rpcbench diff)",
+    )
+    run.add_argument(
         "-o",
         "--output",
         metavar="FILE",
-        help="Write JSON to FILE, or HTML when --html is set (CLI table still prints unless --json)",
+        help="Write JSON to FILE, HTML when --html, or markdown when --md (CLI table still prints unless --json/--md)",
+    )
+
+
+def _add_diff_parser(sub) -> None:
+    diff = sub.add_parser(
+        "diff",
+        help="Compare two JSON reports; exit 1 if the primary got worse beyond the similar-band",
+    )
+    diff.add_argument("old", nargs="?", metavar="OLD.json", help="Earlier rpcbench JSON report")
+    diff.add_argument("new", nargs="?", metavar="NEW.json", help="Later rpcbench JSON report")
+    diff.add_argument(
+        "--history",
+        metavar="DIR",
+        help="Diff the two newest JSON files in DIR instead of passing paths",
+    )
+    diff.add_argument(
+        "--similar-band",
+        type=float,
+        default=None,
+        metavar="FRAC",
+        help="Override the similar-band used for the primary regression check (default: from the new report)",
+    )
+    diff.add_argument(
+        "--md",
+        action="store_true",
+        help="Print the diff as GitHub-flavored markdown",
     )
 
 
@@ -273,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command in {"run", "compare"}:
         return _cmd_run(args)
+    if args.command == "diff":
+        return _cmd_diff(args)
     parser.print_help()
     return 2
 
@@ -284,6 +333,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     if args.html and not args.output:
         print("rpcbench: --html needs -o FILE", file=sys.stderr)
+        return 2
+    if args.json and args.md:
+        print("rpcbench: pick --json or --md", file=sys.stderr)
         return 2
     try:
         apply_sample_budget(args)
@@ -373,27 +425,75 @@ def _cmd_run(args: argparse.Namespace) -> int:
         new_connection=args.new_connection,
     )
     json_blob = None
-    if args.json or (args.output and not args.html):
+    md_blob = None
+    need_json = bool(
+        args.json
+        or args.history
+        or (args.output and not args.html and not args.md)
+    )
+    if need_json:
         json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
+    if args.md:
+        md_blob = format_md(result, rank_by=rank_by, similar_band=similar_band)
     if args.output:
         path = Path(args.output)
         try:
-            blob = (
-                format_html(result, rank_by=rank_by, similar_band=similar_band)
-                if args.html
-                else json_blob
-            )
+            if args.html:
+                blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
+            elif args.md:
+                blob = md_blob
+            else:
+                blob = json_blob
             path.write_text(blob or "", encoding="utf-8")
         except OSError as exc:
             print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
             return 2
+    if args.history:
+        try:
+            if json_blob is None:
+                json_blob = format_json(
+                    result, rank_by=rank_by, similar_band=similar_band
+                )
+            write_history(Path(args.history), json_blob)
+        except OSError as exc:
+            print(f"rpcbench: cannot write history: {exc}", file=sys.stderr)
+            return 2
     if args.json:
         sys.stdout.write(json_blob or format_json(result, rank_by=rank_by, similar_band=similar_band))
+    elif args.md:
+        sys.stdout.write(md_blob or "")
     else:
         sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1
+
+
+def _cmd_diff(args: argparse.Namespace) -> int:
+    try:
+        if args.similar_band is not None:
+            band = normalize_similar_band(args.similar_band)
+        else:
+            band = None
+        if args.history:
+            if args.old or args.new:
+                print("rpcbench: diff --history DIR or OLD.json NEW.json", file=sys.stderr)
+                return 2
+            files = history_files(Path(args.history))
+            old_path, new_path = files[-2], files[-1]
+        else:
+            if not args.old or not args.new:
+                print("rpcbench: diff needs OLD.json NEW.json (or --history DIR)", file=sys.stderr)
+                return 2
+            old_path, new_path = Path(args.old), Path(args.new)
+        old = load_report(old_path)
+        new = load_report(new_path)
+        diff = compare_reports(old, new, similar_band=band)
+    except (DiffError, RankError, OSError) as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
+    sys.stdout.write(format_diff_md(diff) if args.md else format_diff(diff))
+    return 1 if diff.failed else 0
 
 
 if __name__ == "__main__":

@@ -175,4 +175,6 @@ Every JSON report includes a `watermark` object so the numbers can be cited:
 
 The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. `--html -o report.html` reuses the same watermark object in the footer — same links, not a scanner card. Ranking (with sample sparklines), a coverage **heatmap**, **Signals**, P95, error rate, and freshness sit above the fold. Charts are inline SVG (no network). Print CSS keeps sections and SVG on one page. The heatmap is this workload’s coverage and latency (ok / skip / miss), not a method-inventory scan.
 
+`--md` is the compact ranking as GitHub-flavored markdown (P95, error rate, freshness, verdict). `rpcbench diff old.json new.json` compares two JSON watermarks: P95 delta, winner change, and new **signals**. CI exits 1 when the previous **primary**’s rank key got worse beyond the similar-band (same band as ranking; override with `--similar-band`). Not a security finding. `--history DIR` stores JSON snapshots locally for that diff.
+
 Reproduce with the same `--budget`, `--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.
