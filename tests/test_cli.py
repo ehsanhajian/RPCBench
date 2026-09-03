@@ -889,6 +889,9 @@ def test_cli_html_writes_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -
     assert "<svg" in html
     assert "<script" not in html.lower()
     assert "finding" not in html.lower()
+    assert "Heatmap" in html
+    assert "Signals" in html
+    assert "@media print" in html
 
 
 def test_cli_rejects_bad_rank_by(tmp_path: Path, capsys) -> None:

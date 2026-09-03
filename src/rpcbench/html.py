@@ -5,10 +5,8 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
-from rpcbench.recommend import Route, html_block as route_html
 from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, run_to_dict
 from rpcbench.run import RunResult
-from rpcbench.verdict import Signal, Verdict, html_block as verdict_html
 from rpcbench.watermark import html_footer
 
 _BG = "#0d1117"
@@ -33,7 +31,9 @@ def format_html(
     providers = {row["name"]: row for row in data["providers"]}
     body = [
         _hero(data),
-        _ranking_table(ranking),
+        _ranking_table(ranking, providers),
+        _heatmap(data),
+        _signals(ranking),
         _p95_chart(ranking),
         "<!-- fold -->",
         _reliability_chart(ranking),
@@ -42,14 +42,6 @@ def format_html(
         _methods_table(data["methods"]),
         _capabilities(data["capabilities"]),
         _errors(ranking),
-        verdict_html(_verdict_rows(ranking)),
-        route_html(
-            Route(
-                data["route"]["primary"],
-                data["route"]["fallback"],
-                data["route"]["why"],
-            )
-        ),
         html_footer(result),
     ]
     title = escape(f"RPCBench · {data['method']}")
@@ -89,10 +81,14 @@ def _hero(data: dict[str, Any]) -> str:
     )
 
 
-def _ranking_table(ranking: list[dict[str, Any]]) -> str:
+def _ranking_table(
+    ranking: list[dict[str, Any]],
+    providers: dict[str, dict[str, Any]],
+) -> str:
     rows = []
     for row in ranking:
         rank = "—" if row["rank"] is None else str(row["rank"])
+        spark = _sparkline(_sample_latencies(providers.get(row["name"]) or {}))
         rows.append(
             "<tr>"
             f"<td>{escape(rank)}</td>"
@@ -101,6 +97,7 @@ def _ranking_table(ranking: list[dict[str, Any]]) -> str:
             f"<td class=\"num\">{_pct(row['error_rate'])}</td>"
             f"<td class=\"num\">{row['score']}</td>"
             f"<td>{escape(_fresh_cell(row.get('freshness')))}</td>"
+            f"<td class=\"spark\">{spark}</td>"
             "</tr>"
         )
     return (
@@ -108,11 +105,155 @@ def _ranking_table(ranking: list[dict[str, Any]]) -> str:
         "<h2>Ranking</h2>"
         "<table>"
         "<thead><tr>"
-        "<th>#</th><th>name</th><th>p95</th><th>err</th><th>rel</th><th>fresh</th>"
+        "<th>#</th><th>name</th><th>p95</th><th>err</th><th>rel</th><th>fresh</th><th>samples</th>"
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
         "</section>"
+    )
+
+
+def _heatmap(data: dict[str, Any]) -> str:
+    step_names, rows = _heatmap_grid(data)
+    if not step_names:
+        return ""
+    head = "".join(f"<th>{escape(name)}</th>" for name in step_names)
+    body = []
+    for name, cells in rows:
+        tds = "".join(
+            f'<td class="heat {escape(status)}" style="background:{color}">{escape(label)}</td>'
+            for label, color, status in cells
+        )
+        body.append(f"<tr><th>{escape(name)}</th>{tds}</tr>")
+    return (
+        '<section aria-label="heatmap">'
+        "<h2>Heatmap</h2>"
+        '<p class="meta">provider × method; green is faster ok; skip/miss is product fit</p>'
+        '<table class="heat">'
+        f"<thead><tr><th></th>{head}</tr></thead>"
+        f"<tbody>{''.join(body)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _signals(ranking: list[dict[str, Any]]) -> str:
+    cards = []
+    for row in ranking:
+        for sig in (row.get("verdict") or {}).get("signals") or []:
+            cards.append(
+                "<article>"
+                f"<h3>{escape(row['name'])} · {escape(str(sig.get('id') or ''))}</h3>"
+                f"<p><span>problem</span> {escape(str(sig.get('problem') or ''))}</p>"
+                f"<p><span>why</span> {escape(str(sig.get('why') or ''))}</p>"
+                f"<p><span>next</span> {escape(str(sig.get('next') or ''))}</p>"
+                "</article>"
+            )
+    inner = "".join(cards) if cards else "<p>none</p>"
+    return (
+        '<section aria-label="signals">'
+        "<h2>Signals</h2>"
+        '<p class="meta">problem / why / next; routing and config, not hardening</p>'
+        f"{inner}"
+        "</section>"
+    )
+
+
+def _heatmap_grid(
+    data: dict[str, Any],
+) -> tuple[list[str], list[tuple[str, list[tuple[str, str, str]]]]]:
+    cover = data.get("coverage") or {}
+    steps = cover.get("steps") or []
+    if not steps:
+        return [], []
+    by_name = {row["name"]: row for row in cover.get("providers") or []}
+    names = [row["name"] for row in data["ranking"]]
+    ok_p95 = [
+        p95
+        for name in names
+        for step in steps
+        if (p95 := _step_p95(data, name, step["name"], len(steps))) is not None
+        and ((by_name.get(name) or {}).get("cells") or {})
+        .get(step["name"], {})
+        .get("status")
+        == "ok"
+    ]
+    lo = min(ok_p95) if ok_p95 else 0.0
+    hi = max(ok_p95) if ok_p95 else 0.0
+    rows: list[tuple[str, list[tuple[str, str, str]]]] = []
+    for name in names:
+        prov = by_name.get(name) or {"cells": {}}
+        cells: list[tuple[str, str, str]] = []
+        for step in steps:
+            cell = (prov.get("cells") or {}).get(step["name"]) or {}
+            status = cell.get("status") or "skip"
+            p95 = _step_p95(data, name, step["name"], len(steps))
+            color = _heat_color(status, p95, lo, hi)
+            if status == "ok" and p95 is not None:
+                label = f"{p95:.0f}"
+            elif status == "skip":
+                label = "skip"
+            else:
+                label = str(cell.get("error_class") or status)
+            cells.append((label, color, status))
+        rows.append((name, cells))
+    return [step["name"] for step in steps], rows
+
+
+def _step_p95(
+    data: dict[str, Any], name: str, step: str, n_steps: int
+) -> float | None:
+    for row in data.get("methods") or []:
+        if row["name"] == name and row["step"] == step:
+            return row.get("p95_ms")
+    if n_steps == 1:
+        for row in data["ranking"]:
+            if row["name"] == name:
+                return row.get("p95_ms")
+    return None
+
+
+def _heat_color(
+    status: str, p95: float | None, lo: float, hi: float
+) -> str:
+    if status == "skip":
+        return "#30363d"
+    if status != "ok":
+        return _RED
+    if p95 is None or hi <= lo:
+        return _GREEN
+    t = max(0.0, min(1.0, (p95 - lo) / (hi - lo)))
+    # Faster → green; slower ok → amber. Not a severity badge.
+    r = int(63 + t * (210 - 63))
+    g = int(185 + t * (140 - 185))
+    b = int(80 + t * (20 - 80))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _sample_latencies(provider: dict[str, Any]) -> list[float]:
+    out: list[float] = []
+    for hit in provider.get("samples") or []:
+        if hit.get("ok") and hit.get("latency_ms") is not None:
+            out.append(float(hit["latency_ms"]))
+    return out
+
+
+def _sparkline(values: list[float]) -> str:
+    if len(values) < 2:
+        return "—"
+    width, height = 64, 16
+    lo, hi = min(values), max(values)
+    span = (hi - lo) or 1.0
+    pts = []
+    for i, value in enumerate(values):
+        x = 1 + i / (len(values) - 1) * (width - 2)
+        y = height - 1 - (value - lo) / span * (height - 2)
+        pts.append(f"{x:.1f},{y:.1f}")
+    return (
+        f'<svg class="spark" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" aria-hidden="true">'
+        f'<polyline fill="none" stroke="{_BAR}" stroke-width="1.2" '
+        f'points="{" ".join(pts)}"/></svg>'
     )
 
 
@@ -312,18 +453,6 @@ def _h_bars(
     return "".join(parts)
 
 
-def _verdict_rows(ranking: list[dict[str, Any]]) -> list[tuple[str, Verdict]]:
-    rows: list[tuple[str, Verdict]] = []
-    for row in ranking:
-        raw = row["verdict"]
-        signals = tuple(
-            Signal(item["id"], item["problem"], item["why"], item["next"])
-            for item in raw["signals"]
-        )
-        rows.append((row["name"], Verdict(raw["decision"], raw["kind"], signals)))
-    return rows
-
-
 def _fresh_cell(fresh: dict[str, Any] | None) -> str:
     if not fresh:
         return "—"
@@ -365,7 +494,7 @@ body {{
   background: {_BG}; color: {_FG}; font: 13px/1.45 {_FONT};
 }}
 h1 {{ font-size: 18px; margin: 0 0 8px; }}
-h2 {{ font-size: 13px; color: {_DIM}; margin: 20px 0 8px; font-weight: 600; }}
+h2 {{ font-size: 13px; color: {_DIM}; margin: 0 0 8px; font-weight: 600; }}
 .meta, .why {{ color: {_DIM}; margin: 0 0 8px; }}
 .winner {{ margin: 12px 0 8px; }}
 .hero, section, footer {{
@@ -375,12 +504,34 @@ table {{ width: 100%; border-collapse: collapse; }}
 th, td {{ text-align: left; padding: 4px 8px 4px 0; }}
 th {{ color: {_DIM}; font-weight: 500; }}
 td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+td.spark {{ width: 72px; }}
 svg {{ display: block; max-width: 100%; }}
+svg.spark {{ display: inline-block; vertical-align: middle; }}
+table.heat th, table.heat td.heat {{
+  text-align: center; padding: 6px 8px; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}}
+table.heat th:first-child, table.heat tbody th {{ text-align: left; }}
+td.heat {{ color: {_BG}; min-width: 52px; border-radius: 4px; }}
+td.heat.skip {{ color: {_DIM}; }}
 footer {{ color: {_DIM}; }}
 footer a {{ color: {_BAR}; }}
 ul {{ margin: 0; padding-left: 18px; }}
+article {{
+  border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; margin: 0 0 8px;
+}}
+article:last-child {{ margin-bottom: 0; }}
 article h3 {{ margin: 0 0 4px; font-size: 13px; }}
-dl {{ margin: 6px 0; }}
-dt {{ color: {_DIM}; }}
-dd {{ margin: 0 0 4px; }}
+article span {{ color: {_DIM}; display: inline-block; min-width: 52px; }}
+@media print {{
+  :root {{ color-scheme: light; }}
+  * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+  body {{ background: #fff; color: #111; }}
+  h2, .meta, .why, footer, th, article span {{ color: #444; }}
+  .hero, section, footer, article {{
+    background: #fff; color: #111; break-inside: avoid;
+  }}
+  svg {{ break-inside: avoid; }}
+  @page {{ margin: 12mm; }}
+}}
 """

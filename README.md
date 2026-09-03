@@ -56,7 +56,7 @@ rpcbench compare --endpoints endpoints.yaml --html -o report.html
 
 ## Report
 
-Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN). Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
+Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -77,6 +77,14 @@ rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
 **`--verbose`**
 
 ![Verbose CLI](docs/images/cli-verbose.svg)
+
+**HTML report** (`--html -o report.html`) — ranking, heatmap, signals; works offline; print-ready
+
+![HTML compare report](docs/images/html-report.svg)
+
+**`--profile mix` heatmap** (provider × method; skip/miss is product fit, not a scan)
+
+![HTML mix heatmap](docs/images/html-heatmap.svg)
 
 The default CLI prints, in order:
 
@@ -193,7 +201,7 @@ rpcbench run --endpoints endpoints.yaml --html -o report.html
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample) |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`) |
-| `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, no CDN). Table still prints unless `--json` |
+| `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 
 ## Safety
