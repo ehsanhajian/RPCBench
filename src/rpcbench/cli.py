@@ -19,6 +19,7 @@ from rpcbench.diff import (
     load_report,
     write_history,
 )
+from rpcbench.csv import format_csv
 from rpcbench.html import format_html
 from rpcbench.markdown import format_md
 from rpcbench.methods import MethodError, resolve_workload
@@ -258,6 +259,11 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         help="Print a GitHub-flavored markdown report (pasteable). -o FILE writes the same markdown",
     )
     run.add_argument(
+        "--csv",
+        action="store_true",
+        help="Print a flat CSV (one row per provider). -o FILE writes the same CSV; .csv on -o also writes CSV",
+    )
+    run.add_argument(
         "--history",
         metavar="DIR",
         help="Append a JSON snapshot to DIR after the run (local history for rpcbench diff)",
@@ -266,7 +272,10 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "-o",
         "--output",
         metavar="FILE",
-        help="Write JSON to FILE, HTML when --html, or markdown when --md (CLI table still prints unless --json/--md)",
+        help=(
+            "Write JSON to FILE, HTML when --html, markdown when --md, "
+            "or CSV when --csv / FILE ends in .csv (CLI table still prints unless --json/--md/--csv)"
+        ),
     )
 
 
@@ -294,6 +303,12 @@ def _add_diff_parser(sub) -> None:
         action="store_true",
         help="Print the diff as GitHub-flavored markdown",
     )
+
+
+def _output_csv_path(args: argparse.Namespace) -> bool:
+    if not args.output or args.html or args.md or args.json:
+        return False
+    return Path(args.output).suffix.lower() == ".csv"
 
 
 def apply_sample_budget(args: argparse.Namespace) -> argparse.Namespace:
@@ -334,8 +349,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.html and not args.output:
         print("rpcbench: --html needs -o FILE", file=sys.stderr)
         return 2
-    if args.json and args.md:
-        print("rpcbench: pick --json or --md", file=sys.stderr)
+    formats = [name for name, on in (("json", args.json), ("md", args.md), ("csv", args.csv)) if on]
+    if len(formats) > 1:
+        print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
         return 2
     try:
         apply_sample_budget(args)
@@ -426,15 +442,19 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     json_blob = None
     md_blob = None
+    csv_blob = None
+    write_csv = args.csv or _output_csv_path(args)
     need_json = bool(
         args.json
         or args.history
-        or (args.output and not args.html and not args.md)
+        or (args.output and not args.html and not args.md and not write_csv)
     )
     if need_json:
         json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
     if args.md:
         md_blob = format_md(result, rank_by=rank_by, similar_band=similar_band)
+    if write_csv:
+        csv_blob = format_csv(result, rank_by=rank_by, similar_band=similar_band)
     if args.output:
         path = Path(args.output)
         try:
@@ -442,6 +462,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
             elif args.md:
                 blob = md_blob
+            elif write_csv:
+                blob = csv_blob
             else:
                 blob = json_blob
             path.write_text(blob or "", encoding="utf-8")
@@ -462,6 +484,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         sys.stdout.write(json_blob or format_json(result, rank_by=rank_by, similar_band=similar_band))
     elif args.md:
         sys.stdout.write(md_blob or "")
+    elif args.csv:
+        sys.stdout.write(csv_blob or "")
     else:
         sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
     if any(outcome.stats.n_ok for outcome in result.outcomes):

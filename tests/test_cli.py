@@ -40,6 +40,7 @@ def test_cli_defaults() -> None:
     assert ns.json is False
     assert ns.html is False
     assert ns.md is False
+    assert ns.csv is False
     assert ns.history is None
     assert ns.output is None
     assert ns.rank_by == "p95"
@@ -958,7 +959,112 @@ def test_cli_md_rejects_json(tmp_path: Path, capsys) -> None:
     )
     code = main(["run", "--endpoints", str(cfg), "--md", "--json"])
     assert code == 2
-    assert "pick --json or --md" in capsys.readouterr().err
+    assert "pick --json, --md, or --csv" in capsys.readouterr().err
+
+
+def test_cli_csv_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
+    import csv
+    import io
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    report = tmp_path / "report.csv"
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--csv",
+            "-o",
+            str(report),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    rows = list(csv.DictReader(io.StringIO(out)))
+    assert rows[0]["name"] == "ok"
+    assert "p95_ms" in rows[0]
+    assert "error_rate" in rows[0]
+    assert "score" in rows[0]
+    assert "rank" in rows[0]
+    assert "finding" not in out.lower()
+    assert report.read_text(encoding="utf-8") == out
+
+
+def test_cli_output_csv_suffix_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
+    import csv
+    import io
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x2a"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    report = tmp_path / "out.csv"
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "-o",
+            str(report),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Fastest  ok" in out
+    rows = list(csv.DictReader(io.StringIO(report.read_text(encoding="utf-8"))))
+    assert rows[0]["name"] == "ok"
+    assert rows[0]["responded"] == "true"
 
 
 def test_cli_diff_exit_codes(tmp_path: Path, capsys) -> None:
