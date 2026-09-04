@@ -72,7 +72,7 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     data = run_to_dict(_sample_result())
     assert data["schema"] == 1
     mark = data["watermark"]
-    assert mark["version"] == "0.2.0"
+    assert mark["version"] == "0.3.0"
     assert mark["git_sha"] is None
     assert mark["utc"] is None
     assert mark["budget"] == "standard"
