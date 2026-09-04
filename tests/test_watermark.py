@@ -66,7 +66,7 @@ def test_watermark_nulls_when_unset() -> None:
 
 def test_cite_line_uses_dashes_when_unset() -> None:
     text = format_run(_result(), color=False)
-    assert "Cite      0.2.0  sha=—  family=evm  vantage=—  utc=—" in text
+    assert "Cite      0.3.0  sha=—  family=evm  vantage=—  utc=—" in text
     assert "methodology" in text
     assert "boundary" in text
     assert "Timing" not in text

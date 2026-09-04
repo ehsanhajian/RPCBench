@@ -147,7 +147,7 @@ def test_report_makes_winner_obvious() -> None:
     assert "size standard" in text
     assert "requests 32" in text
     assert "similar 10%" in text
-    assert "Cite      0.2.0  sha=—  family=evm  vantage=—  utc=—" in text
+    assert "Cite      0.3.0  sha=—  family=evm  vantage=—  utc=—" in text
     assert "Ranking  (by p95; similar within 10%; ~ high err, stale, disagree, or miss; failed last)" in text
     assert "Failed   1/3    dead" in text
     summary = text.split("Ranking", 1)[0]

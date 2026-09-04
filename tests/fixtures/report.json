@@ -1,9 +1,9 @@
 {
   "tool": "rpcbench",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "schema": 1,
   "watermark": {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "git_sha": null,
     "utc": null,
     "budget": "standard",
