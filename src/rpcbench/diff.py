@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from rpcbench.markdown import _md_table
 from rpcbench.report import DEFAULT_SIMILAR_BAND, values_similar
 from rpcbench.watermark import utc_stamp
 
@@ -210,23 +211,21 @@ def format_diff_md(diff: ReportDiff) -> str:
         + (" · changed" if diff.winner_changed else ""),
         f"**Signals** {_cell(_signals_line(diff))}",
         "",
-        "| # | name | old | new | Δ |",
-        "| --- | --- | --- | --- | --- |",
-    ]
-    for i, row in enumerate(diff.rows, start=1):
-        lines.append(
-            "| "
-            + " | ".join(
+        *_md_table(
+            ["#", "name", "old", "new", "Δ"],
+            [
                 [
                     str(i),
-                    _cell(row.name),
-                    _cell(_ms(row.old_p95_ms)),
-                    _cell(_ms(row.new_p95_ms)),
-                    _cell(_delta_cell(row)),
+                    row.name,
+                    _ms(row.old_p95_ms),
+                    _ms(row.new_p95_ms),
+                    _delta_cell(row),
                 ]
-            )
-            + " |"
-        )
+                for i, row in enumerate(diff.rows, start=1)
+            ],
+            right=(True, False, True, True, True),
+        ),
+    ]
     if diff.failed:
         who = diff.old_primary or "primary"
         lines.extend(

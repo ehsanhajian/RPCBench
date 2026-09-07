@@ -39,6 +39,7 @@ _ACCENT = "#388bfd"
 _DIM = "#8b949e"
 _GREEN = "#3fb950"
 _RED = "#f85149"
+_AMBER = "#d29922"
 CHAR_W = 8.05
 LINE_H = 18
 PAD_X = 18
@@ -487,14 +488,16 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
         fill=_DIM,
         size=11,
     )
-    txt(
-        left + 12,
-        top + 60,
-        f"Fastest {fastest}   Primary {summary.get('primary') or 'none'}   "
-        f"Fallback {summary.get('fallback') or 'none'}",
-        size=12,
-        weight="700",
-    )
+    x = left + 12
+    for label, value, fill in (
+        ("Fastest", fastest, _GREEN),
+        ("Primary", str(summary.get("primary") or "none"), _GREEN),
+        ("Fallback", str(summary.get("fallback") or "none"), _ACCENT),
+    ):
+        txt(x, top + 60, label + " ", fill=_DIM, size=12, weight="700")
+        x += (len(label) + 1) * 7.4
+        txt(x, top + 60, value, fill=fill, size=12, weight="700")
+        x += (len(value) + 3) * 7.4
     txt(left + 12, top + 78, why, fill=_DIM, size=11)
     y += hero_h + 10
 
@@ -516,12 +519,23 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
             fresh = "stale"
         elif verd == "fresh":
             fresh = "yes"
-        txt(left + cols[0], yy, rank)
-        txt(left + cols[1], yy, str(row["name"]))
-        txt(left + cols[2], yy, p95)
-        txt(left + cols[3], yy, err)
-        txt(left + cols[4], yy, str(row["score"]))
-        txt(left + cols[5], yy, fresh)
+        name_fill = _GREEN if row.get("ok") else _RED
+        if (row.get("freshness") or {}).get("verdict") == "stale":
+            name_fill = _AMBER
+        txt(left + cols[0], yy, rank, fill=name_fill)
+        txt(left + cols[1], yy, str(row["name"]), fill=name_fill)
+        txt(left + cols[2], yy, p95, fill=name_fill if row.get("p95_ms") is not None else _DIM)
+        err_fill = (
+            _GREEN
+            if row.get("error_rate") == 0
+            else (_RED if row.get("error_rate") else _DIM)
+        )
+        txt(left + cols[3], yy, err, fill=err_fill)
+        txt(left + cols[4], yy, str(row["score"]), fill=name_fill)
+        fresh_fill = (
+            _GREEN if fresh == "yes" else (_AMBER if fresh == "stale" else _DIM)
+        )
+        txt(left + cols[5], yy, fresh, fill=fresh_fill)
         values = _sample_latencies(providers.get(row["name"]) or {})
         if len(values) >= 2:
             lo, hi = min(values), max(values)

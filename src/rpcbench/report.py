@@ -1592,15 +1592,15 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "ok": hit.ok,
         "reachable": hit.reachable,
         "latency_ms": hit.latency_ms,
-        "error": hit.error,
-        "error_class": hit.error_class,
-        "attempts": hit.attempts,
         "method": hit.method,
-        "timing": _hit_timing_json(hit.timing),
         "http_version": hit.http_version,
         "encoding": hit.encoding,
         "bytes_out": hit.bytes_out,
         "bytes_in": hit.bytes_in,
+        "error": hit.error,
+        "error_class": hit.error_class,
+        "attempts": hit.attempts,
+        "timing": _hit_timing_json(hit.timing),
     }
 
 

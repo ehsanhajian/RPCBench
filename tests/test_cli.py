@@ -945,7 +945,11 @@ def test_cli_md_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
     out = capsys.readouterr().out
     assert code == 0
     assert out.startswith("# RPCBench")
-    assert "| # | name | p95 | err | fresh | verdict |" in out
+    table = [line for line in out.splitlines() if line.startswith("|")]
+    assert table
+    assert len({len(line) for line in table}) == 1
+    assert "p95" in table[0]
+    assert "rel" in table[0]
     assert "finding" not in out.lower()
     assert report.read_text(encoding="utf-8") == out
     files = list(hist.glob("*.json"))

@@ -9,7 +9,12 @@
 <rect x="16" y="50" width="768" height="94" rx="8" fill="#161b22"/>
 <text x="28.0" y="72.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="16" font-weight="700" xml:space="preserve">RPCBench</text>
 <text x="28.0" y="90.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">mix · size short · rank p95</text>
-<text x="28.0" y="110.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">Fastest publicnode, drpc   Primary publicnode   Fallback drpc</text>
+<text x="28.0" y="110.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">Fastest </text>
+<text x="87.2" y="110.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">publicnode, drpc</text>
+<text x="227.8" y="110.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">Primary </text>
+<text x="287.0" y="110.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">publicnode</text>
+<text x="383.2" y="110.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">Fallback </text>
+<text x="449.8" y="110.0" fill="#388bfd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">drpc</text>
 <text x="28.0" y="128.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">publicnode is ready (similar, rel 98, lag 0, match yes). drpc is the next ready endpoint.</text>
 <rect x="16" y="154" width="768" height="84" rx="8" fill="#161b22"/>
 <text x="28.0" y="174.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="600" xml:space="preserve">Ranking</text>
@@ -20,19 +25,19 @@
 <text x="306.0" y="192.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">rel</text>
 <text x="366.0" y="192.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">fresh</text>
 <text x="446.0" y="192.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">samples</text>
-<text x="28.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">1</text>
-<text x="56.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">publicnode</text>
-<text x="166.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">103.0ms</text>
-<text x="246.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">0%</text>
-<text x="306.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">98</text>
-<text x="366.0" y="210.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">yes</text>
+<text x="28.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">1</text>
+<text x="56.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">publicnode</text>
+<text x="166.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">103.0ms</text>
+<text x="246.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">0%</text>
+<text x="306.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">98</text>
+<text x="366.0" y="210.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">yes</text>
 <polyline fill="none" stroke="#388bfd" stroke-width="1.2" points="447.0,213.0 452.6,211.7 458.3,210.5 463.9,209.2 469.5,207.9 475.2,206.6 480.8,205.4 486.5,204.1 492.1,202.8 497.7,201.5 503.4,200.3 509.0,199.0"/>
-<text x="28.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">1</text>
-<text x="56.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">drpc</text>
-<text x="166.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">111.0ms</text>
-<text x="246.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">0%</text>
-<text x="306.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">98</text>
-<text x="366.0" y="230.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">yes</text>
+<text x="28.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">1</text>
+<text x="56.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">drpc</text>
+<text x="166.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">111.0ms</text>
+<text x="246.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">0%</text>
+<text x="306.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">98</text>
+<text x="366.0" y="230.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">yes</text>
 <polyline fill="none" stroke="#388bfd" stroke-width="1.2" points="447.0,233.0 452.6,231.7 458.3,230.5 463.9,229.2 469.5,227.9 475.2,226.6 480.8,225.4 486.5,224.1 492.1,222.8 497.7,221.5 503.4,220.3 509.0,219.0"/>
 <rect x="16" y="248" width="768" height="118" rx="8" fill="#161b22"/>
 <text x="28.0" y="268.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="600" xml:space="preserve">Heatmap</text>

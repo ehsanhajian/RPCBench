@@ -598,29 +598,29 @@
           "ok": true,
           "reachable": true,
           "latency_ms": 10.0,
-          "error": null,
-          "error_class": null,
-          "attempts": 1,
           "method": null,
-          "timing": null,
           "http_version": null,
           "encoding": null,
           "bytes_out": null,
-          "bytes_in": null
+          "bytes_in": null,
+          "error": null,
+          "error_class": null,
+          "attempts": 1,
+          "timing": null
         },
         {
           "ok": true,
           "reachable": true,
           "latency_ms": 12.0,
-          "error": null,
-          "error_class": null,
-          "attempts": 1,
           "method": null,
-          "timing": null,
           "http_version": null,
           "encoding": null,
           "bytes_out": null,
-          "bytes_in": null
+          "bytes_in": null,
+          "error": null,
+          "error_class": null,
+          "attempts": 1,
+          "timing": null
         }
       ]
     },
@@ -713,29 +713,29 @@
           "ok": true,
           "reachable": true,
           "latency_ms": 40.0,
-          "error": null,
-          "error_class": null,
-          "attempts": 1,
           "method": null,
-          "timing": null,
           "http_version": null,
           "encoding": null,
           "bytes_out": null,
-          "bytes_in": null
+          "bytes_in": null,
+          "error": null,
+          "error_class": null,
+          "attempts": 1,
+          "timing": null
         },
         {
           "ok": true,
           "reachable": true,
           "latency_ms": 50.0,
-          "error": null,
-          "error_class": null,
-          "attempts": 1,
           "method": null,
-          "timing": null,
           "http_version": null,
           "encoding": null,
           "bytes_out": null,
-          "bytes_in": null
+          "bytes_in": null,
+          "error": null,
+          "error_class": null,
+          "attempts": 1,
+          "timing": null
         }
       ]
     },
@@ -837,15 +837,15 @@
           "ok": false,
           "reachable": false,
           "latency_ms": 5.0,
-          "error": "took too long",
-          "error_class": "timeout",
-          "attempts": 1,
           "method": null,
-          "timing": null,
           "http_version": null,
           "encoding": null,
           "bytes_out": null,
-          "bytes_in": null
+          "bytes_in": null,
+          "error": "took too long",
+          "error_class": "timeout",
+          "attempts": 1,
+          "timing": null
         }
       ]
     }

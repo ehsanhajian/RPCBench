@@ -133,6 +133,21 @@ def test_html_fold_shows_ranking_p95_err_freshness() -> None:
     assert "<polyline" in fold
 
 
+def test_html_uses_status_color_and_aligned_columns() -> None:
+    html = format_html(_compare())
+    fold = html.split("<!-- fold -->", 1)[0]
+    assert 'class="ok"' in fold
+    assert 'class="bad"' in fold
+    assert 'class="stale"' in fold
+    assert 'class="label">Fastest</span>' in fold
+    assert 'class="label">Primary</span>' in fold
+    assert 'th class="num"' in fold
+    assert "width: auto" in html
+    assert "finding" not in html.lower()
+    assert "severity" not in html.lower()
+    assert "size vs latency" not in html
+
+
 def test_html_heatmap_and_signals_are_performance_not_findings() -> None:
     html = format_html(_compare())
     fold = html.split("<!-- fold -->", 1)[0]
