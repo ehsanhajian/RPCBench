@@ -17,7 +17,13 @@ from rpcbench.freshness import Freshness
 from rpcbench.html import _heatmap_grid, _sample_latencies
 from rpcbench.report import format_run, run_to_dict
 from rpcbench.rpc import ProbeResult
-from rpcbench.run import EndpointOutcome, RunResult, summarize, summarize_timing
+from rpcbench.run import (
+    EndpointOutcome,
+    RunResult,
+    summarize,
+    summarize_timing,
+    summarize_transport,
+)
 from rpcbench.tags import TagSnapshot
 from rpcbench.timing import HttpTiming
 
@@ -60,6 +66,10 @@ def _ok(ms: float, *, server: float | None = None) -> ProbeResult:
             body_ms=0.8,
             parse_ms=0.2,
         ),
+        http_version="1.1",
+        encoding="gzip",
+        bytes_out=64,
+        bytes_in=82,
     )
 
 
@@ -150,6 +160,7 @@ def _outcome(
         burst_stats=summarize(samples[:burst_n]) if burst_n else None,
         steady_stats=summarize(samples[burst_n:]) if burst_n else None,
         timing=summarize_timing(samples),
+        transport=summarize_transport(samples),
     )
 
 
@@ -229,6 +240,10 @@ def cold_result() -> RunResult:
                 body_ms=1.2,
                 parse_ms=0.2,
             ),
+            http_version="1.1",
+            encoding="gzip",
+            bytes_out=64,
+            bytes_in=82,
         )
 
     public = _outcome(

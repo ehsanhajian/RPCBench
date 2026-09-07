@@ -40,6 +40,8 @@ def format_html(
         _comparison_table(data["comparison"]),
         _histogram_chart(ranking, providers),
         _methods_table(data["methods"]),
+        _transport_table(data),
+        _size_scatter(data),
         _capabilities(data["capabilities"]),
         _errors(ranking),
         html_footer(result),
@@ -294,13 +296,14 @@ def _methods_table(methods: list[dict[str, Any]]) -> str:
             f"<td>{escape(row['method'])}</td>"
             f"<td class=\"num\">{_ms(row['p95_ms'])}</td>"
             f"<td class=\"num\">{_pct(row['error_rate'])}</td>"
+            f"<td class=\"num\">{_bytes(row.get('bytes_in_p95'))}</td>"
             "</tr>"
         )
     return (
         '<section aria-label="methods">'
         "<h2>Methods</h2>"
         "<table>"
-        "<thead><tr><th>name</th><th>method</th><th>p95</th><th>err</th></tr></thead>"
+        "<thead><tr><th>name</th><th>method</th><th>p95</th><th>err</th><th>in p95</th></tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
         "</section>"
@@ -451,6 +454,100 @@ def _h_bars(
         )
     parts.append("</svg></section>")
     return "".join(parts)
+
+
+def _transport_table(data: dict[str, Any]) -> str:
+    rows = []
+    for row in data.get("ranking") or []:
+        summary = row.get("transport")
+        if not summary:
+            continue
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(row['name']))}</td>"
+            f"<td>{escape(str(summary.get('http_version') or '—'))}</td>"
+            f"<td>{escape(str(summary.get('encoding') or '—'))}</td>"
+            f"<td class=\"num\">{_bytes(summary.get('bytes_out_mean'))}</td>"
+            f"<td class=\"num\">{_bytes(summary.get('bytes_in_mean'))}</td>"
+            f"<td class=\"num\">{_bytes(summary.get('bytes_in_p95'))}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<section aria-label="transport">'
+        "<h2>Transport</h2>"
+        '<p class="meta">negotiated proto, content-encoding, wire bytes; not mixed into ranking</p>'
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th><th>proto</th><th>enc</th><th>out</th><th>in</th><th>in p95</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _size_scatter(data: dict[str, Any]) -> str:
+    points: list[tuple[float, float, str, str]] = []
+    method_default = str(data.get("method") or "")
+    for prov in data.get("providers") or []:
+        name = str(prov.get("name") or "")
+        for hit in prov.get("samples") or []:
+            if not hit.get("ok"):
+                continue
+            size = hit.get("bytes_in")
+            latency = hit.get("latency_ms")
+            if size is None or latency is None:
+                continue
+            method = str(hit.get("method") or method_default)
+            points.append((float(size), float(latency), method, name))
+    if not points:
+        return ""
+    left, top, plot_w, plot_h = 56, 20, 360, 140
+    width = left + plot_w + 16
+    height = top + plot_h + 36
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    xmax = max(xs) or 1.0
+    ymax = max(ys) or 1.0
+    parts = [
+        '<section aria-label="size vs latency">'
+        "<h2>Size vs latency</h2>"
+        '<p class="meta">wire bytes vs RTT; logs are brighter; not mixed into ranking</p>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-label="size vs latency">'
+        f'<rect width="100%" height="100%" fill="{_PANEL}"/>'
+    ]
+    for size, latency, method, name in points:
+        x = left + (size / xmax) * (plot_w - 8)
+        y = top + plot_h - (latency / ymax) * (plot_h - 8)
+        color = _GREEN if method == "eth_getLogs" else _BAR
+        r = 4 if method == "eth_getLogs" else 3
+        parts.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{color}">'
+            f"<title>{escape(name)} {escape(method)} {size:.0f}B {latency:.1f}ms</title>"
+            "</circle>"
+        )
+    parts.append(
+        f'<text x="{left}" y="{top + plot_h + 16}" fill="{_DIM}" font-size="11" '
+        f'font-family="{_FONT}">0B</text>'
+        f'<text x="{left + plot_w}" y="{top + plot_h + 16}" text-anchor="end" '
+        f'fill="{_DIM}" font-size="11" font-family="{_FONT}">{_bytes(xmax)}</text>'
+        "</svg></section>"
+    )
+    return "".join(parts)
+
+
+def _bytes(value: float | None) -> str:
+    if value is None:
+        return "—"
+    n = int(round(value))
+    if n < 1000:
+        return f"{n}B"
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}kB"
+    return f"{n / 1_000_000:.1f}MB"
 
 
 def _fresh_cell(fresh: dict[str, Any] | None) -> str:

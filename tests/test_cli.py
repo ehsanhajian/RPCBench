@@ -54,6 +54,8 @@ def test_cli_defaults() -> None:
     assert ns.burst == 0
     assert ns.rps == 0.0
     assert ns.new_connection is False
+    assert ns.http2 is False
+    assert ns.http1 is False
 
 
 def test_cli_sample_budget_short() -> None:

@@ -92,7 +92,15 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["burst"] == 0
     assert data["rps"] == 0.0
     assert data["connection"] == "keepalive"
+    assert data["http"] == "1.1"
     assert data["comparison"][0]["timing"] is None
+    assert data["comparison"][0]["transport"] is None
+    assert data["ranking"][0]["transport"] is None
+    assert data["providers"][0]["transport"] is None
+    assert data["providers"][0]["samples"][0]["http_version"] is None
+    assert data["providers"][0]["samples"][0]["encoding"] is None
+    assert data["providers"][0]["samples"][0]["bytes_out"] is None
+    assert data["providers"][0]["samples"][0]["bytes_in"] is None
     assert data["providers"][0]["phases"] is None
     assert data["rank_by"] == "p95"
     assert data["similar_band"] == 0.10

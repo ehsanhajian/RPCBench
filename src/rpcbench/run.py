@@ -25,7 +25,7 @@ from rpcbench.freshness import (
     parse_block_height,
 )
 from rpcbench.methods import CallSpec
-from rpcbench.rpc import ProbeResult, RequestBudget, make_client, probe
+from rpcbench.rpc import HTTP_1, HTTP_2, ProbeResult, RequestBudget, make_client, probe
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
 from rpcbench.tags import (
@@ -97,6 +97,17 @@ class TimingSummary:
 
 
 @dataclass(frozen=True)
+class TransportSummary:
+    http_version: str | None
+    encoding: str | None
+    n: int
+    bytes_out_mean: float | None
+    bytes_in_mean: float | None
+    bytes_in_p50: float | None
+    bytes_in_p95: float | None
+
+
+@dataclass(frozen=True)
 class EndpointOutcome:
     endpoint: Endpoint
     warmup: tuple[ProbeResult, ...]
@@ -110,6 +121,7 @@ class EndpointOutcome:
     burst_stats: LatencyStats | None = None
     steady_stats: LatencyStats | None = None
     timing: TimingSummary | None = None
+    transport: TransportSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -146,6 +158,7 @@ class RunResult:
     burst: int = 0
     rps: float = 0.0
     connection: str = CONN_KEEPALIVE
+    http: str = HTTP_1
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -294,6 +307,39 @@ def summarize_timing(samples: tuple[ProbeResult, ...]) -> TimingSummary | None:
     )
 
 
+def _most_common(values: list[str]) -> str | None:
+    if not values:
+        return None
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
+
+def summarize_transport(samples: tuple[ProbeResult, ...]) -> TransportSummary | None:
+    measured = [
+        hit
+        for hit in samples
+        if hit.http_version or hit.bytes_in is not None or hit.bytes_out is not None
+    ]
+    if not measured:
+        return None
+    hits = [hit for hit in measured if hit.ok] or measured
+    incoming = [float(hit.bytes_in) for hit in hits if hit.bytes_in is not None]
+    outgoing = [float(hit.bytes_out) for hit in hits if hit.bytes_out is not None]
+    return TransportSummary(
+        http_version=_most_common(
+            [hit.http_version for hit in hits if hit.http_version]
+        ),
+        encoding=_most_common([hit.encoding for hit in hits if hit.encoding]),
+        n=len(hits),
+        bytes_out_mean=(sum(outgoing) / len(outgoing)) if outgoing else None,
+        bytes_in_mean=(sum(incoming) / len(incoming)) if incoming else None,
+        bytes_in_p50=percentile(incoming, 0.50) if incoming else None,
+        bytes_in_p95=percentile(incoming, 0.95) if incoming else None,
+    )
+
+
 def expand_steps(
     workload: tuple[CallSpec, ...], warmup: int, samples: int
 ) -> list[tuple[str, int, CallSpec]]:
@@ -361,6 +407,7 @@ def run_endpoints(
     burst: int = 0,
     rps: float = 0.0,
     new_connection: bool = False,
+    http2: bool = False,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -389,9 +436,12 @@ def run_endpoints(
         workload=_workload_blob(steps) if len(steps) > 1 else None,
     )
     connection = CONN_NEW if new_connection else CONN_KEEPALIVE
+    http = HTTP_2 if http2 else HTTP_1
     owns_client = client is None
     if owns_client:
-        client = make_client(timeout=timeout, new_connection=new_connection)
+        client = make_client(
+            timeout=timeout, new_connection=new_connection, http2=http2
+        )
     try:
         return _execute_run(
             config,
@@ -417,6 +467,7 @@ def run_endpoints(
             rps=rps,
             seq_id=seq_id,
             connection=connection,
+            http=http,
         )
     finally:
         if owns_client:
@@ -448,6 +499,7 @@ def _execute_run(
     rps: float,
     seq_id: str,
     connection: str,
+    http: str,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -592,6 +644,7 @@ def _execute_run(
         burst=min(burst, samples * len(steps)),
         rps=rps,
         connection=connection,
+        http=http,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -793,6 +846,7 @@ def _finish_outcome(
         burst_stats=burst_stats,
         steady_stats=steady_stats,
         timing=summarize_timing(measured),
+        transport=summarize_transport(measured),
     )
 
 

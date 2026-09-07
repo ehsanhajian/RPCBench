@@ -33,6 +33,9 @@ COLUMNS = (
     "verdict",
     "kind",
     "primary",
+    "http_version",
+    "encoding",
+    "bytes_in_p95",
 )
 
 
@@ -89,6 +92,9 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "verdict": (row.get("verdict") or {}).get("decision") or "",
                 "kind": (row.get("verdict") or {}).get("kind") or "",
                 "primary": _bool(row.get("name") == primary and primary),
+                "http_version": (row.get("transport") or {}).get("http_version") or "",
+                "encoding": (row.get("transport") or {}).get("encoding") or "",
+                "bytes_in_p95": _num((row.get("transport") or {}).get("bytes_in_p95")),
             }
         )
     return buf.getvalue()
