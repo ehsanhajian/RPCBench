@@ -81,7 +81,7 @@ rpcbench compare --endpoints endpoints.yaml --profile mix --budget short
 
 ![Verbose CLI](docs/images/cli-verbose.svg)
 
-**HTML report** (`--html -o report.html`) — ranking, heatmap, signals; works offline; print-ready
+**HTML report** (`--html -o report.html`) — colored ranking, heatmap, and signals table; works offline; print-ready
 
 ![HTML compare report](docs/images/html-report.svg)
 
