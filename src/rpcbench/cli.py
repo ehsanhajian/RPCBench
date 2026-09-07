@@ -193,6 +193,19 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         ),
     )
     run.add_argument(
+        "--http2",
+        action="store_true",
+        help=(
+            "Prefer HTTP/2 via ALPN (falls back to HTTP/1.1 if the peer does not offer it). "
+            "Not mixed into ranking."
+        ),
+    )
+    run.add_argument(
+        "--http1",
+        action="store_true",
+        help="Force HTTP/1.1 (default).",
+    )
+    run.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -239,8 +252,8 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "-v",
         action="store_true",
         help=(
-            "Print the full report: Comparison, Reliability, Signals, Coverage, Methods, Timing, Tags, "
-            "Burst, Providers, Capabilities, and per-sample rows"
+            "Print the full report: Comparison, Reliability, Signals, Coverage, Methods, Timing, "
+            "Transport, Tags, Burst, Providers, Capabilities, and per-sample rows"
         ),
     )
     run.add_argument(
@@ -349,6 +362,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if args.html and not args.output:
         print("rpcbench: --html needs -o FILE", file=sys.stderr)
         return 2
+    if args.http1 and args.http2:
+        print("rpcbench: pick --http1 or --http2, not both", file=sys.stderr)
+        return 2
     formats = [name for name, on in (("json", args.json), ("md", args.md), ("csv", args.csv)) if on]
     if len(formats) > 1:
         print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
@@ -439,6 +455,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         burst=args.burst,
         rps=args.rps,
         new_connection=args.new_connection,
+        http2=args.http2,
     )
     json_blob = None
     md_blob = None

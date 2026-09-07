@@ -33,41 +33,44 @@ def format_md_dict(data: dict[str, Any]) -> str:
     band_txt = f"{100 * band:.0f}%" if isinstance(band, (int, float)) else "—"
     mark = data.get("watermark") or {}
     sha = mark.get("git_sha") or "—"
+    ranking_rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        rank = "—" if row.get("rank") is None else str(row["rank"])
+        ranking_rows.append(
+            [
+                rank,
+                str(row.get("name") or "—"),
+                _ms(row.get("p95_ms")),
+                _pct(row.get("error_rate")),
+                str(row.get("score") if row.get("score") is not None else "—"),
+                _fresh(row.get("freshness")),
+                _verdict(row.get("verdict")),
+            ]
+        )
     lines = [
         "# RPCBench",
         "",
-        f"{_cell(method)} · size {_cell(data.get('sample_budget'))} · "
-        f"rank {_cell(data.get('rank_by'))} · similar {band_txt} · "
-        f"sha={_cell(sha)}",
+        f"{_esc(method)} · size {_esc(data.get('sample_budget'))} · "
+        f"rank {_esc(data.get('rank_by'))} · similar {band_txt} · "
+        f"sha={_esc(sha)}",
         "",
-        f"**Fastest** {_cell(fastest_txt)} · "
-        f"**Primary** {_cell(summary.get('primary') or 'none')} · "
-        f"**Fallback** {_cell(summary.get('fallback') or 'none')}",
+        f"**Fastest** {_esc(fastest_txt)} · "
+        f"**Primary** {_esc(summary.get('primary') or 'none')} · "
+        f"**Fallback** {_esc(summary.get('fallback') or 'none')}",
         "",
-        _cell((data.get("route") or {}).get("why") or ""),
+        _esc((data.get("route") or {}).get("why") or ""),
         "",
         "## Ranking",
         "",
-        "| # | name | p95 | err | fresh | verdict |",
-        "| --- | --- | --- | --- | --- | --- |",
+        *_md_table(
+            ["#", "name", "p95", "err", "rel", "fresh", "verdict"],
+            ranking_rows,
+            right=(True, False, True, True, True, False, False),
+        ),
+        "",
+        "## Signals",
+        "",
     ]
-    for row in data.get("ranking") or []:
-        rank = "—" if row.get("rank") is None else str(row["rank"])
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    _cell(rank),
-                    _cell(row.get("name")),
-                    _cell(_ms(row.get("p95_ms"))),
-                    _cell(_pct(row.get("error_rate"))),
-                    _cell(_fresh(row.get("freshness"))),
-                    _cell(_verdict(row.get("verdict"))),
-                ]
-            )
-            + " |"
-        )
-    lines.extend(["", "## Signals", ""])
     cards = _signal_cards(data.get("ranking") or [])
     if not cards:
         lines.append("none")
@@ -79,13 +82,47 @@ def format_md_dict(data: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            f"Cite `{_cell(version)}` sha={_cell(sha)} family={_cell(mark.get('family') or 'evm')} "
-            f"vantage={_cell(vantage)} utc={_cell(utc)} · "
+            f"Cite `{_esc(version)}` sha={_esc(sha)} family={_esc(mark.get('family') or 'evm')} "
+            f"vantage={_esc(vantage)} utc={_esc(utc)} · "
             f"[methodology]({DOCS_METHODOLOGY}) · [boundary]({DOCS_BOUNDARY})",
             "",
         ]
     )
     return "\n".join(lines)
+
+
+def _md_table(
+    headers: list[str],
+    rows: list[list[str]],
+    *,
+    right: tuple[bool, ...] | None = None,
+) -> list[str]:
+    """Padded GFM table so pipes line up in the file and on GitHub."""
+    cols = len(headers)
+    align = right or tuple(False for _ in headers)
+    grid = [[_esc(h) for h in headers]]
+    for row in rows:
+        padded = [_esc(cell) for cell in row] + ["—"] * cols
+        grid.append(padded[:cols])
+    widths = [3] * cols
+    for row in grid:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    def cell(text: str, i: int) -> str:
+        fill = widths[i] - len(text)
+        return (" " * fill + text) if align[i] else (text + " " * fill)
+
+    def pipe(row: list[str]) -> str:
+        return "| " + " | ".join(cell(row[i], i) for i in range(cols)) + " |"
+
+    rules: list[str] = []
+    for i, width in enumerate(widths):
+        dash = "-" * width
+        rules.append((dash[:-1] + ":") if align[i] else dash)
+    return [pipe(grid[0]), "| " + " | ".join(rules) + " |"] + [
+        pipe(row) for row in grid[1:]
+    ]
 
 
 def _signal_cards(ranking: list[dict[str, Any]]) -> list[str]:
@@ -94,10 +131,10 @@ def _signal_cards(ranking: list[dict[str, Any]]) -> list[str]:
         for sig in (row.get("verdict") or {}).get("signals") or []:
             name = row.get("name")
             sid = sig.get("id") or ""
-            lines.append(f"**{_cell(name)} · {_cell(sid)}**")
-            lines.append(f"- problem {_cell(sig.get('problem') or '')}")
-            lines.append(f"- why {_cell(sig.get('why') or '')}")
-            lines.append(f"- next {_cell(sig.get('next') or '')}")
+            lines.append(f"**{_esc(name)} · {_esc(sid)}**")
+            lines.append(f"- problem {_esc(sig.get('problem') or '')}")
+            lines.append(f"- why {_esc(sig.get('why') or '')}")
+            lines.append(f"- next {_esc(sig.get('next') or '')}")
             lines.append("")
     if lines and lines[-1] == "":
         lines.pop()
@@ -137,6 +174,6 @@ def _pct(value: float | None) -> str:
     return f"{100 * value:.0f}%"
 
 
-def _cell(value: Any) -> str:
+def _esc(value: Any) -> str:
     text = "—" if value is None else str(value)
     return text.replace("|", "\\|").replace("\n", " ")

@@ -132,7 +132,10 @@ def test_diff_winner_change_and_new_signals() -> None:
     assert "finding" not in text.lower()
     md = format_diff_md(diff)
     assert md.startswith("# RPCBench diff")
-    assert "| # | name | old | new | Δ |" in md
+    table = [line for line in md.splitlines() if line.startswith("|")]
+    assert table
+    assert len({len(line) for line in table}) == 1
+    assert "name" in table[0]
     assert "finding" not in md.lower()
 
 

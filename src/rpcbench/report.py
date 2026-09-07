@@ -20,7 +20,13 @@ from rpcbench.coverage import (
 )
 from rpcbench.recommend import Route, recommend as recommend_route
 from rpcbench.reliability import assess as assess_reliability
-from rpcbench.run import EndpointOutcome, HISTOGRAM_EDGES_MS, HISTOGRAM_LABELS, RunResult
+from rpcbench.run import (
+    EndpointOutcome,
+    HISTOGRAM_EDGES_MS,
+    HISTOGRAM_LABELS,
+    RunResult,
+    percentile,
+)
 from rpcbench.verdict import (
     NOT_READY,
     READY,
@@ -345,6 +351,7 @@ def run_to_dict(
         "burst": result.burst,
         "rps": result.rps,
         "connection": result.connection,
+        "http": result.http,
         "mode": result.mode,
         "seed": result.seed,
         "sequence_id": result.sequence_id,
@@ -600,6 +607,15 @@ def _verbose_sections(
             ]
         )
         lines.extend(_timing_lines(result, name_w, use_color))
+    if any(outcome.transport for outcome in result.outcomes):
+        lines.extend(
+            [
+                "",
+                "Transport  (negotiated proto, content-encoding, bytes in/out; "
+                f"not mixed into ranking; http={result.http})",
+            ]
+        )
+        lines.extend(_transport_lines(result, name_w, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -949,6 +965,44 @@ def _timing_lines(
     )
 
 
+def _fmt_bytes(value: float | None) -> str:
+    if value is None:
+        return "—"
+    n = int(round(value))
+    if n < 1000:
+        return f"{n}B"
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}kB"
+    return f"{n / 1_000_000:.1f}MB"
+
+
+def _transport_lines(
+    result: RunResult, name_w: int, use_color: bool
+) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        summary = outcome.transport
+        if summary is None:
+            rows.append([name, "—", "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                summary.http_version or "—",
+                summary.encoding or "—",
+                _fmt_bytes(summary.bytes_out_mean),
+                _fmt_bytes(summary.bytes_in_mean),
+                _fmt_bytes(summary.bytes_in_p95),
+            ]
+        )
+    return _grid(
+        ["name", "proto", "enc", "out", "in", "in_p95"],
+        rows,
+        right=(False, False, False, True, True, True),
+    )
+
+
 def _tags_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
@@ -1019,9 +1073,27 @@ def _methods_json(result: RunResult) -> list[dict[str, Any]]:
                     "p99_reliable": p99_reliable(stats.n_ok),
                     "mean_ms": stats.mean_ms,
                     "jitter_ms": stats.jitter_ms,
+                    **_method_transport(outcome, lookup.get(step, step)),
                 }
             )
     return rows
+
+
+def _method_transport(outcome: EndpointOutcome, method: str) -> dict[str, Any]:
+    hits = [
+        hit
+        for hit in outcome.samples
+        if (hit.method or "") == method and hit.ok
+    ]
+    incoming = [float(hit.bytes_in) for hit in hits if hit.bytes_in is not None]
+    outgoing = [float(hit.bytes_out) for hit in hits if hit.bytes_out is not None]
+    encodings = [hit.encoding for hit in hits if hit.encoding]
+    counts: Counter[str] = Counter(encodings)
+    return {
+        "bytes_in_p95": percentile(incoming, 0.95) if incoming else None,
+        "bytes_out_mean": (sum(outgoing) / len(outgoing)) if outgoing else None,
+        "encoding": counts.most_common(1)[0][0] if counts else None,
+    }
 
 
 def _tags_json(result: RunResult) -> list[dict[str, Any]]:
@@ -1215,6 +1287,7 @@ def _comparison_entry(
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
+        "transport": _transport_summary_json(outcome.transport),
     }
 
 
@@ -1461,6 +1534,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "freshness": _freshness_json(outcome),
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
+        "transport": _transport_summary_json(outcome.transport),
     }
 
 
@@ -1506,6 +1580,7 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "tags": [_tag_entry(outcome.endpoint.name, snap) for snap in outcome.tags],
         "phases": _phases_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
+        "transport": _transport_summary_json(outcome.transport),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -1517,10 +1592,14 @@ def _hit_entry(hit: Any) -> dict[str, Any]:
         "ok": hit.ok,
         "reachable": hit.reachable,
         "latency_ms": hit.latency_ms,
+        "method": hit.method,
+        "http_version": hit.http_version,
+        "encoding": hit.encoding,
+        "bytes_out": hit.bytes_out,
+        "bytes_in": hit.bytes_in,
         "error": hit.error,
         "error_class": hit.error_class,
         "attempts": hit.attempts,
-        "method": hit.method,
         "timing": _hit_timing_json(hit.timing),
     }
 
@@ -1554,6 +1633,20 @@ def _timing_summary_json(summary: Any) -> dict[str, Any] | None:
         "tls": _timing_phase_json(summary.tls),
         "body": _timing_phase_json(summary.body),
         "parse": _timing_phase_json(summary.parse),
+    }
+
+
+def _transport_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "http_version": summary.http_version,
+        "encoding": summary.encoding,
+        "n": summary.n,
+        "bytes_out_mean": summary.bytes_out_mean,
+        "bytes_in_mean": summary.bytes_in_mean,
+        "bytes_in_p50": summary.bytes_in_p50,
+        "bytes_in_p95": summary.bytes_in_p95,
     }
 
 

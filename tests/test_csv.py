@@ -96,6 +96,17 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
     assert [row["name"] for row in rows] == ["tip", "lagged", "dead"]
     assert len(rows) == 3
     assert "finding" not in text.lower()
+    assert list(COLUMNS)[:8] == [
+        "utc",
+        "vantage",
+        "workload",
+        "rank_by",
+        "rank",
+        "name",
+        "ok",
+        "responded",
+    ]
+    assert COLUMNS[-3:] == ("http_version", "encoding", "bytes_in_p95")
 
 
 def test_csv_core_metrics_parse() -> None:

@@ -152,6 +152,12 @@ Default is **keep-alive** (one pooled client per run). **`--new-connection`** cl
 
 JSON includes p50/p95/p99 for each phase on the provider.
 
+## HTTP transport
+
+Each sample records the negotiated HTTP version (`1.1` or `2`), `Content-Encoding` (`gzip`, `br`, …), request bytes, and response **wire** bytes (the encoded size). Large `eth_getLogs` bodies and missing compression look like slow nodes. Ranking still uses total round-trip, not size. Default is HTTP/1.1. **`--http2`** asks for HTTP/2 via ALPN and falls back to 1.1 if the peer does not offer it. **`--http1`** forces HTTP/1.1. Not a TLS, CORS, or compression-as-security check.
+
+JSON includes proto, encoding, and byte counts on each sample plus a provider `transport` summary. HTML plots size vs latency below the fold only when payloads actually differ (mix / `eth_getLogs`); a 50-byte head read is omitted.
+
 ## Non-claims
 
 Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential `rps` is `1000 / mean_ms`, not parallel throughput.

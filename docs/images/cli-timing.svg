@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1130" height="190" viewBox="0 0 1130 190" role="img" aria-label="rpcbench compare --new-connection --verbose">
-<rect width="1130" height="190" rx="10" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1130" height="334" viewBox="0 0 1130 334" role="img" aria-label="rpcbench compare --new-connection --verbose">
+<rect width="1130" height="334" rx="10" fill="#0d1117"/>
 <rect width="1130" height="36" rx="10" fill="#161b22"/>
 <rect y="26" width="1130" height="10" fill="#161b22"/>
 <circle cx="18" cy="18" r="5" fill="#ff5f57"/>
@@ -17,4 +17,15 @@
 <text x="50.2" y="153" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">drpc</text>
 <text x="82.4" y="153" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">       │ 3 │    75.0ms │   96.0ms │    1.4ms │    9.0ms │    5.0ms │   61.0ms │    1.2ms │    0.2ms │</text>
 <text x="18.0" y="171" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  └────────────┴───┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘</text>
+<text x="18.0" y="207" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">Transport  (negotiated proto, content-encoding, bytes in/out; not mixed into ranking; http=1.1)</text>
+<text x="18.0" y="225" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ┌────────────┬───────┬──────┬─────┬─────┬────────┐</text>
+<text x="18.0" y="243" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ name       │ proto │ enc  │ out │  in │ in_p95 │</text>
+<text x="18.0" y="261" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  ├────────────┼───────┼──────┼─────┼─────┼────────┤</text>
+<text x="18.0" y="279" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ </text>
+<text x="50.2" y="279" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">publicnode</text>
+<text x="130.7" y="279" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve"> │ 1.1   │ gzip │ 64B │ 82B │    82B │</text>
+<text x="18.0" y="297" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  │ </text>
+<text x="50.2" y="297" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">drpc</text>
+<text x="82.4" y="297" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">       │ 1.1   │ gzip │ 64B │ 82B │    82B │</text>
+<text x="18.0" y="315" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="13" xml:space="preserve">  └────────────┴───────┴──────┴─────┴─────┴────────┘</text>
 </svg>

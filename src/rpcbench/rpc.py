@@ -23,6 +23,8 @@ from rpcbench.timing import (
 )
 
 USER_AGENT = f"RPCBench/{__version__} (+https://github.com/ehsanhajian/RPCBench)"
+HTTP_1 = "1.1"
+HTTP_2 = "2"
 
 # Reliability class, not a security finding. Tight on purpose: "limit" alone is too broad.
 _RATE_LIMIT_MARKERS = (
@@ -90,9 +92,15 @@ class ProbeResult:
     body_hash: str | None = None
     method: str | None = None
     timing: HttpTiming | None = None
+    http_version: str | None = None
+    encoding: str | None = None
+    bytes_out: int | None = None
+    bytes_in: int | None = None
 
 
-def make_client(*, timeout: float, new_connection: bool = False) -> httpx.Client:
+def make_client(
+    *, timeout: float, new_connection: bool = False, http2: bool = False
+) -> httpx.Client:
     limits = (
         httpx.Limits(max_keepalive_connections=0, keepalive_expiry=0.0)
         if new_connection
@@ -104,10 +112,68 @@ def make_client(*, timeout: float, new_connection: bool = False) -> httpx.Client
         headers={
             "User-Agent": USER_AGENT,
             "Accept": "application/json",
+            "Accept-Encoding": "gzip, deflate, br",
             "Content-Type": "application/json",
         },
-        transport=TimingTransport(limits=limits),
+        transport=TimingTransport(limits=limits, http2=http2),
     )
+
+
+def normalize_http_version(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    blob = raw.upper().replace("HTTP/", "").strip()
+    if blob.startswith("2"):
+        return HTTP_2
+    if blob.startswith("1.1"):
+        return HTTP_1
+    if blob.startswith("1"):
+        return "1.0"
+    return blob.lower()
+
+
+def _content_encoding(response: httpx.Response | None) -> str | None:
+    if response is None:
+        return None
+    raw = response.headers.get("content-encoding")
+    if not raw:
+        return None
+    first = raw.split(",")[0].strip().lower()
+    if first in {"", "identity"}:
+        return None
+    return first
+
+
+def _bytes_out(request: httpx.Request | None) -> int | None:
+    if request is None or request.content is None:
+        return None
+    return len(request.content)
+
+
+def _bytes_in(response: httpx.Response | None) -> int | None:
+    if response is None:
+        return None
+    raw = response.headers.get("content-length")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return int(response.num_bytes_downloaded)
+
+
+def _transport_fields(
+    request: httpx.Request | None, response: httpx.Response | None
+) -> dict[str, str | int | None]:
+    version = None
+    if response is not None:
+        version = normalize_http_version(response.http_version)
+    return {
+        "http_version": version,
+        "encoding": _content_encoding(response),
+        "bytes_out": _bytes_out(request),
+        "bytes_in": _bytes_in(response),
+    }
 
 
 def probe(
@@ -141,6 +207,7 @@ def probe(
     last_class = "error"
     last_latency: float | None = None
     last_timing: HttpTiming | None = None
+    last_transport: dict[str, str | int | None] = {}
     try:
         max_tries = max(1, retries + 1)
         for attempt in range(max_tries):
@@ -164,6 +231,7 @@ def probe(
             body_at: float | None = None
             parse_ms: float | None = None
             raw: bytes | None = None
+            request: httpx.Request | None = None
             response: httpx.Response | None = None
             try:
                 request = http.build_request(
@@ -191,6 +259,7 @@ def probe(
                     error=str(exc),
                     error_class="invalid_url",
                     attempts=attempts,
+                    **_transport_fields(request, response),
                 )
             except httpx.TimeoutException as exc:
                 last_error = str(exc) or "timeout"
@@ -199,6 +268,7 @@ def probe(
                 last_timing = snapshot_timing(
                     scratch, started, headers_at, body_at, parse_ms
                 )
+                last_transport = _transport_fields(request, response)
                 end_timing()
                 continue
             except httpx.ConnectError as exc:
@@ -208,6 +278,7 @@ def probe(
                 last_timing = snapshot_timing(
                     scratch, started, headers_at, body_at, parse_ms
                 )
+                last_transport = _transport_fields(request, response)
                 end_timing()
                 continue
             except httpx.RequestError as exc:
@@ -217,6 +288,7 @@ def probe(
                 last_timing = snapshot_timing(
                     scratch, started, headers_at, body_at, parse_ms
                 )
+                last_transport = _transport_fields(request, response)
                 end_timing()
                 continue
             finally:
@@ -224,6 +296,7 @@ def probe(
                     response.close()
             assert body_at is not None and raw is not None and response is not None
             latency_ms = (body_at - started) * 1000
+            transport = _transport_fields(request, response)
             if response.status_code >= 400:
                 code = response.status_code
                 body_msg = _jsonrpc_error_from_bytes(raw)
@@ -241,6 +314,7 @@ def probe(
                     error_class=_http_error_class(code, error),
                     attempts=attempts,
                     timing=timing,
+                    **transport,
                 )
             parse_started = body_at
             try:
@@ -260,6 +334,7 @@ def probe(
                     error_class="malformed",
                     attempts=attempts,
                     timing=timing,
+                    **transport,
                 )
             parse_ms = (time.monotonic() - parse_started) * 1000
             timing = snapshot_timing(scratch, started, headers_at, body_at, parse_ms)
@@ -274,6 +349,7 @@ def probe(
                     error_class="malformed",
                     attempts=attempts,
                     timing=timing,
+                    **transport,
                 )
             if payload.get("error"):
                 message = _error_message(payload.get("error"))
@@ -288,6 +364,7 @@ def probe(
                     ),
                     attempts=attempts,
                     timing=timing,
+                    **transport,
                 )
             return ProbeResult(
                 ok=True,
@@ -299,6 +376,7 @@ def probe(
                 attempts=attempts,
                 body_hash=_body_hash(payload.get("result")),
                 timing=timing,
+                **transport,
             )
         return ProbeResult(
             ok=False,
@@ -309,6 +387,7 @@ def probe(
             error_class=last_class,
             attempts=attempts,
             timing=last_timing,
+            **last_transport,
         )
     finally:
         if owns:

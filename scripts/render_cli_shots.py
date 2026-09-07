@@ -17,7 +17,13 @@ from rpcbench.freshness import Freshness
 from rpcbench.html import _heatmap_grid, _sample_latencies
 from rpcbench.report import format_run, run_to_dict
 from rpcbench.rpc import ProbeResult
-from rpcbench.run import EndpointOutcome, RunResult, summarize, summarize_timing
+from rpcbench.run import (
+    EndpointOutcome,
+    RunResult,
+    summarize,
+    summarize_timing,
+    summarize_transport,
+)
 from rpcbench.tags import TagSnapshot
 from rpcbench.timing import HttpTiming
 
@@ -33,6 +39,7 @@ _ACCENT = "#388bfd"
 _DIM = "#8b949e"
 _GREEN = "#3fb950"
 _RED = "#f85149"
+_AMBER = "#d29922"
 CHAR_W = 8.05
 LINE_H = 18
 PAD_X = 18
@@ -60,6 +67,10 @@ def _ok(ms: float, *, server: float | None = None) -> ProbeResult:
             body_ms=0.8,
             parse_ms=0.2,
         ),
+        http_version="1.1",
+        encoding="gzip",
+        bytes_out=64,
+        bytes_in=82,
     )
 
 
@@ -150,6 +161,7 @@ def _outcome(
         burst_stats=summarize(samples[:burst_n]) if burst_n else None,
         steady_stats=summarize(samples[burst_n:]) if burst_n else None,
         timing=summarize_timing(samples),
+        transport=summarize_transport(samples),
     )
 
 
@@ -229,6 +241,10 @@ def cold_result() -> RunResult:
                 body_ms=1.2,
                 parse_ms=0.2,
             ),
+            http_version="1.1",
+            encoding="gzip",
+            bytes_out=64,
+            bytes_in=82,
         )
 
     public = _outcome(
@@ -472,14 +488,16 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
         fill=_DIM,
         size=11,
     )
-    txt(
-        left + 12,
-        top + 60,
-        f"Fastest {fastest}   Primary {summary.get('primary') or 'none'}   "
-        f"Fallback {summary.get('fallback') or 'none'}",
-        size=12,
-        weight="700",
-    )
+    x = left + 12
+    for label, value, fill in (
+        ("Fastest", fastest, _GREEN),
+        ("Primary", str(summary.get("primary") or "none"), _GREEN),
+        ("Fallback", str(summary.get("fallback") or "none"), _ACCENT),
+    ):
+        txt(x, top + 60, label + " ", fill=_DIM, size=12, weight="700")
+        x += (len(label) + 1) * 7.4
+        txt(x, top + 60, value, fill=fill, size=12, weight="700")
+        x += (len(value) + 3) * 7.4
     txt(left + 12, top + 78, why, fill=_DIM, size=11)
     y += hero_h + 10
 
@@ -501,12 +519,23 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
             fresh = "stale"
         elif verd == "fresh":
             fresh = "yes"
-        txt(left + cols[0], yy, rank)
-        txt(left + cols[1], yy, str(row["name"]))
-        txt(left + cols[2], yy, p95)
-        txt(left + cols[3], yy, err)
-        txt(left + cols[4], yy, str(row["score"]))
-        txt(left + cols[5], yy, fresh)
+        name_fill = _GREEN if row.get("ok") else _RED
+        if (row.get("freshness") or {}).get("verdict") == "stale":
+            name_fill = _AMBER
+        txt(left + cols[0], yy, rank, fill=name_fill)
+        txt(left + cols[1], yy, str(row["name"]), fill=name_fill)
+        txt(left + cols[2], yy, p95, fill=name_fill if row.get("p95_ms") is not None else _DIM)
+        err_fill = (
+            _GREEN
+            if row.get("error_rate") == 0
+            else (_RED if row.get("error_rate") else _DIM)
+        )
+        txt(left + cols[3], yy, err, fill=err_fill)
+        txt(left + cols[4], yy, str(row["score"]), fill=name_fill)
+        fresh_fill = (
+            _GREEN if fresh == "yes" else (_AMBER if fresh == "stale" else _DIM)
+        )
+        txt(left + cols[5], yy, fresh, fill=fresh_fill)
         values = _sample_latencies(providers.get(row["name"]) or {})
         if len(values) >= 2:
             lo, hi = min(values), max(values)
@@ -526,9 +555,9 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
     y += rank_h + 10
 
     if step_names:
-        name_w = 108
-        cell_w = max(44.0, min(72.0, (inner - 28 - name_w) / len(step_names)))
-        heat_h = 50 + row_h * (len(heat_rows) + 1) + 8
+        name_w = 96
+        cell_w = max(52.0, min(80.0, (inner - 20 - name_w) / len(step_names)))
+        heat_h = 48 + 22 * (len(heat_rows) + 1) + 8
         top = panel(heat_h)
         txt(left + 12, top + 20, "Heatmap", fill=_DIM, size=12, weight="600")
         txt(
@@ -542,12 +571,12 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
         for i, step in enumerate(step_names):
             txt(hx + i * cell_w + cell_w / 2, top + 54, step, fill=_DIM, size=11, anchor="middle")
         for r, (name, cells) in enumerate(heat_rows):
-            yy = top + 70 + r * row_h
-            txt(left + 12, yy, name)
+            yy = top + 72 + r * 22
+            txt(left + 12, yy, name, size=12)
             for c, (label, color, status) in enumerate(cells):
                 cx = hx + c * cell_w
                 parts.append(
-                    f'<rect x="{cx:.1f}" y="{yy - 13:.1f}" width="{cell_w - 6:.1f}" '
+                    f'<rect x="{cx:.1f}" y="{yy - 11:.1f}" width="{cell_w - 6:.1f}" '
                     f'height="16" rx="3" fill="{color}"/>'
                 )
                 fill = _DIM if status == "skip" else _BG
@@ -561,39 +590,22 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
                 )
         y += heat_h + 10
 
-    sig_h = 36 + (70 * len(cards) if cards else 24)
+    sig_h = 40 + (22 * max(len(cards), 1) if cards else 28)
     top = panel(sig_h)
     txt(left + 12, top + 20, "Signals", fill=_DIM, size=12, weight="600")
     if not cards:
         txt(left + 12, top + 42, "none", fill=_DIM, size=12)
     else:
-        cy = top + 32
-        for name, sig in cards:
-            parts.append(
-                f'<rect x="{left + 12}" y="{cy}" width="{inner - 24}" height="62" '
-                f'rx="6" fill="none" stroke="#30363d"/>'
-            )
-            txt(
-                left + 22,
-                cy + 16,
-                f"{name} · {sig.get('id') or ''}",
-                size=12,
-                weight="700",
-            )
-            txt(
-                left + 22,
-                cy + 34,
-                _clip(f"problem  {sig.get('problem') or ''}", 88),
-                size=11,
-            )
-            txt(
-                left + 22,
-                cy + 50,
-                _clip(f"next  {sig.get('next') or ''}", 88),
-                fill=_DIM,
-                size=11,
-            )
-            cy += 70
+        cols = [12, 110, 190, 420]
+        headers = ["name", "id", "problem", "next"]
+        for x, label in zip(cols, headers, strict=True):
+            txt(left + x, top + 38, label, fill=_DIM, size=11)
+        for i, (name, sig) in enumerate(cards):
+            yy = top + 56 + i * 18
+            txt(left + cols[0], yy, _clip(str(name), 12), size=11, fill=_GREEN)
+            txt(left + cols[1], yy, _clip(str(sig.get("id") or "—"), 10), size=11, fill=_ACCENT)
+            txt(left + cols[2], yy, _clip(str(sig.get("problem") or "—"), 28), size=11)
+            txt(left + cols[3], yy, _clip(str(sig.get("next") or "—"), 36), size=11, fill=_DIM)
     y += sig_h + 16
     height = y
     head = [

@@ -133,6 +133,21 @@ def test_html_fold_shows_ranking_p95_err_freshness() -> None:
     assert "<polyline" in fold
 
 
+def test_html_uses_status_color_and_aligned_columns() -> None:
+    html = format_html(_compare())
+    fold = html.split("<!-- fold -->", 1)[0]
+    assert 'class="ok"' in fold
+    assert 'class="bad"' in fold
+    assert 'class="stale"' in fold
+    assert 'class="label">Fastest</span>' in fold
+    assert 'class="label">Primary</span>' in fold
+    assert 'th class="num"' in fold
+    assert "width: auto" in html
+    assert "finding" not in html.lower()
+    assert "severity" not in html.lower()
+    assert "size vs latency" not in html
+
+
 def test_html_heatmap_and_signals_are_performance_not_findings() -> None:
     html = format_html(_compare())
     fold = html.split("<!-- fold -->", 1)[0]
@@ -162,6 +177,10 @@ def test_html_has_charts_and_sections() -> None:
     assert "Comparison" in html
     assert "Capabilities" in html
     assert "Errors" in html
+    assert "<th>responded</th>" in html
+    assert "<th>class</th>" in html
+    assert 'aria-label="errors"' in html
+    assert 'class="wrap"' in html
     assert "timeout" in html
     assert 'aria-label="heatmap"' in html
     assert 'aria-label="signals"' in html
@@ -169,6 +188,10 @@ def test_html_has_charts_and_sections() -> None:
     assert "print-color-adjust" in html
     assert "Primary" in html
     assert "Fallback" in html
+    assert 'dominant-baseline="central"' in html
+    assert "successful samples per latency bucket" in html
+    assert "heat-name" in html
+    assert "finding" not in html.lower()
 
 
 def test_html_redacts_url_secrets() -> None:

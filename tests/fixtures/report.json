@@ -30,6 +30,7 @@
   "burst": 0,
   "rps": 0.0,
   "connection": "keepalive",
+  "http": "1.1",
   "mode": "paired",
   "seed": 0,
   "sequence_id": "",
@@ -160,7 +161,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     },
     {
       "name": "fast",
@@ -229,7 +231,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     },
     {
       "name": "dead",
@@ -305,7 +308,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     }
   ],
   "ranking": [
@@ -350,7 +354,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     },
     {
       "rank": 2,
@@ -393,7 +398,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     },
     {
       "rank": null,
@@ -445,7 +451,8 @@
       },
       "freshness": null,
       "consistency": null,
-      "timing": null
+      "timing": null,
+      "transport": null
     }
   ],
   "methods": [],
@@ -583,6 +590,7 @@
       "tags": [],
       "phases": null,
       "timing": null,
+      "transport": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -590,20 +598,28 @@
           "ok": true,
           "reachable": true,
           "latency_ms": 10.0,
+          "method": null,
+          "http_version": null,
+          "encoding": null,
+          "bytes_out": null,
+          "bytes_in": null,
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null,
           "timing": null
         },
         {
           "ok": true,
           "reachable": true,
           "latency_ms": 12.0,
+          "method": null,
+          "http_version": null,
+          "encoding": null,
+          "bytes_out": null,
+          "bytes_in": null,
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null,
           "timing": null
         }
       ]
@@ -689,6 +705,7 @@
       "tags": [],
       "phases": null,
       "timing": null,
+      "transport": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -696,20 +713,28 @@
           "ok": true,
           "reachable": true,
           "latency_ms": 40.0,
+          "method": null,
+          "http_version": null,
+          "encoding": null,
+          "bytes_out": null,
+          "bytes_in": null,
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null,
           "timing": null
         },
         {
           "ok": true,
           "reachable": true,
           "latency_ms": 50.0,
+          "method": null,
+          "http_version": null,
+          "encoding": null,
+          "bytes_out": null,
+          "bytes_in": null,
           "error": null,
           "error_class": null,
           "attempts": 1,
-          "method": null,
           "timing": null
         }
       ]
@@ -804,6 +829,7 @@
       "tags": [],
       "phases": null,
       "timing": null,
+      "transport": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [
@@ -811,10 +837,14 @@
           "ok": false,
           "reachable": false,
           "latency_ms": 5.0,
+          "method": null,
+          "http_version": null,
+          "encoding": null,
+          "bytes_out": null,
+          "bytes_in": null,
           "error": "took too long",
           "error_class": "timeout",
           "attempts": 1,
-          "method": null,
           "timing": null
         }
       ]
@@ -833,4 +863,3 @@
   },
   "pairs": []
 }
-
