@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="456" viewBox="0 0 800 456" role="img" aria-label="rpcbench compare --html --profile mix">
-<rect width="800" height="456" rx="10" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="464" viewBox="0 0 800 464" role="img" aria-label="rpcbench compare --html --profile mix">
+<rect width="800" height="464" rx="10" fill="#0d1117"/>
 <rect width="800" height="36" rx="10" fill="#161b22"/>
 <rect y="26" width="800" height="10" fill="#161b22"/>
 <circle cx="18" cy="18" r="5" fill="#ff5f57"/>
@@ -74,7 +74,7 @@
 <text x="481.0" y="342.0" fill="#0d1117" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="10" text-anchor="middle" xml:space="preserve">105</text>
 <rect x="524.0" y="331.0" width="74.0" height="16" rx="3" fill="#d28c14"/>
 <text x="561.0" y="342.0" fill="#0d1117" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="10" text-anchor="middle" xml:space="preserve">111</text>
-<rect x="16" y="380" width="768" height="60" rx="8" fill="#161b22"/>
+<rect x="16" y="380" width="768" height="68" rx="8" fill="#161b22"/>
 <text x="28.0" y="400.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="600" xml:space="preserve">Signals</text>
 <text x="28.0" y="422.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">none</text>
 </svg>

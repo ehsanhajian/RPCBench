@@ -177,6 +177,10 @@ def test_html_has_charts_and_sections() -> None:
     assert "Comparison" in html
     assert "Capabilities" in html
     assert "Errors" in html
+    assert "<th>responded</th>" in html
+    assert "<th>class</th>" in html
+    assert 'aria-label="errors"' in html
+    assert 'class="wrap"' in html
     assert "timeout" in html
     assert 'aria-label="heatmap"' in html
     assert 'aria-label="signals"' in html

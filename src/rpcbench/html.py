@@ -43,7 +43,7 @@ def format_html(
         _methods_table(data["methods"]),
         _transport_table(data),
         _size_scatter(data),
-        _capabilities(data["capabilities"]),
+        _capabilities(data["capabilities"], ranking),
         _errors(ranking),
         html_footer(result),
     ]
@@ -144,23 +144,34 @@ def _heatmap(data: dict[str, Any]) -> str:
 
 
 def _signals(ranking: list[dict[str, Any]]) -> str:
-    cards = []
+    rows = []
     for row in ranking:
         for sig in (row.get("verdict") or {}).get("signals") or []:
-            cards.append(
-                "<article>"
-                f"<h3>{escape(row['name'])} · {escape(str(sig.get('id') or ''))}</h3>"
-                f"<p><span>problem</span> {escape(str(sig.get('problem') or ''))}</p>"
-                f"<p><span>why</span> {escape(str(sig.get('why') or ''))}</p>"
-                f"<p><span>next</span> {escape(str(sig.get('next') or ''))}</p>"
-                "</article>"
+            rows.append(
+                "<tr>"
+                f'<td class="{_row_tone(row)}">{escape(row["name"])}</td>'
+                f'<td class="accent">{escape(str(sig.get("id") or "—"))}</td>'
+                f'<td class="wrap">{escape(str(sig.get("problem") or "—"))}</td>'
+                f'<td class="wrap">{escape(str(sig.get("why") or "—"))}</td>'
+                f'<td class="wrap">{escape(str(sig.get("next") or "—"))}</td>'
+                "</tr>"
             )
-    inner = "".join(cards) if cards else "<p>none</p>"
+    if not rows:
+        body = '<p class="dim">none</p>'
+    else:
+        body = (
+            "<table>"
+            "<thead><tr>"
+            "<th>name</th><th>id</th><th>problem</th><th>why</th><th>next</th>"
+            "</tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+        )
     return (
         '<section aria-label="signals">'
         "<h2>Signals</h2>"
         '<p class="meta">problem / why / next; routing and config, not hardening</p>'
-        f"{inner}"
+        f"{body}"
         "</section>"
     )
 
@@ -321,17 +332,38 @@ def _methods_table(methods: list[dict[str, Any]]) -> str:
     )
 
 
-def _capabilities(cap: dict[str, Any]) -> str:
-    missed = cap.get("missed") or []
-    bits = ", ".join(
-        f"{row['name']} ({row['error_class'] or 'error'})" for row in missed
-    )
-    extra = f"<p>missed {escape(bits)}</p>" if bits else ""
+def _capabilities(cap: dict[str, Any], ranking: list[dict[str, Any]]) -> str:
+    method = str(cap.get("method") or "—")
+    missed = {
+        str(row.get("name") or ""): str(row.get("error_class") or "error")
+        for row in cap.get("missed") or []
+    }
+    rows = []
+    for row in ranking:
+        name = str(row.get("name") or "")
+        cls = missed.get(name)
+        ok = cls is None and bool(row.get("ok"))
+        tone = "ok" if ok else "bad"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(name)}</td>'
+            f'<td class="{tone}">{"yes" if ok else "no"}</td>'
+            f'<td class="{"dim" if ok else "bad"}">{escape(cls or "—")}</td>'
+            "</tr>"
+        )
+    table = ""
+    if rows:
+        table = (
+            "<table>"
+            "<thead><tr><th>name</th><th>responded</th><th>class</th></tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+        )
     return (
         '<section aria-label="capabilities">'
         "<h2>Capabilities</h2>"
-        f"<p>{escape(str(cap['method']))} · {cap['responded']}/{cap['total']} responded</p>"
-        f"{extra}"
+        f'<p class="meta">{escape(method)} · {cap.get("responded")}/{cap.get("total")} responded</p>'
+        f"{table}"
         "</section>"
     )
 
@@ -342,15 +374,32 @@ def _errors(ranking: list[dict[str, Any]]) -> str:
         by = row.get("errors") or {}
         if not by:
             continue
-        bits = ", ".join(f"{cls}={n}" for cls, n in by.items())
-        rows.append(f"<li>{escape(row['name'])} · {escape(bits)}</li>")
+        tone = _row_tone(row)
+        for cls, n in by.items():
+            rows.append(
+                "<tr>"
+                f'<td class="{tone}">{escape(row["name"])}</td>'
+                f'<td class="bad">{escape(str(cls))}</td>'
+                f'<td class="num">{escape(str(n))}</td>'
+                "</tr>"
+            )
     if not rows:
-        return (
-            '<section aria-label="errors"><h2>Errors</h2><p>none</p></section>'
+        body = '<p class="dim">none</p>'
+    else:
+        body = (
+            "<table>"
+            "<thead><tr>"
+            '<th>name</th><th>class</th><th class="num">n</th>'
+            "</tr></thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
         )
     return (
-        '<section aria-label="errors"><h2>Errors</h2>'
-        f"<ul>{''.join(rows)}</ul></section>"
+        '<section aria-label="errors">'
+        "<h2>Errors</h2>"
+        '<p class="meta">timed-sample error classes</p>'
+        f"{body}"
+        "</section>"
     )
 
 
@@ -708,6 +757,7 @@ th, td {{
 th {{ color: {_DIM}; font-weight: 500; }}
 th.num, td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 td.spark {{ width: 72px; padding-right: 0; }}
+td.wrap {{ white-space: normal; max-width: 220px; }}
 svg {{ display: block; max-width: 100%; }}
 svg.spark {{ display: inline-block; vertical-align: middle; }}
 table.heat {{
@@ -725,23 +775,16 @@ td.heat {{ color: {_BG}; min-width: 72px; border-radius: 4px; }}
 td.heat.skip {{ color: {_DIM}; }}
 footer {{ color: {_DIM}; }}
 footer a {{ color: {_BAR}; }}
-ul {{ margin: 0; padding-left: 18px; }}
-article {{
-  border: 1px solid #30363d; border-radius: 6px; padding: 8px 10px; margin: 0 0 8px;
-}}
-article:last-child {{ margin-bottom: 0; }}
-article h3 {{ margin: 0 0 4px; font-size: 13px; }}
-article span {{ color: {_DIM}; display: inline-block; min-width: 52px; }}
 @media print {{
   :root {{ color-scheme: light; }}
   * {{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
   body {{ background: #fff; color: #111; }}
-  h2, .meta, .why, .label, .dim, footer, th, article span {{ color: #444; }}
+  h2, .meta, .why, .label, .dim, footer, th {{ color: #444; }}
   .ok {{ color: #1a7f37; }}
   .bad {{ color: #cf222e; }}
   .stale {{ color: #9a6700; }}
   .accent {{ color: #0969da; }}
-  .hero, section, footer, article {{
+  .hero, section, footer {{
     background: #fff; color: #111; break-inside: avoid;
   }}
   svg {{ break-inside: avoid; }}

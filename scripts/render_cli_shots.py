@@ -590,39 +590,22 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
                 )
         y += heat_h + 10
 
-    sig_h = 36 + (70 * len(cards) if cards else 24)
+    sig_h = 40 + (22 * max(len(cards), 1) if cards else 28)
     top = panel(sig_h)
     txt(left + 12, top + 20, "Signals", fill=_DIM, size=12, weight="600")
     if not cards:
         txt(left + 12, top + 42, "none", fill=_DIM, size=12)
     else:
-        cy = top + 32
-        for name, sig in cards:
-            parts.append(
-                f'<rect x="{left + 12}" y="{cy}" width="{inner - 24}" height="62" '
-                f'rx="6" fill="none" stroke="#30363d"/>'
-            )
-            txt(
-                left + 22,
-                cy + 16,
-                f"{name} · {sig.get('id') or ''}",
-                size=12,
-                weight="700",
-            )
-            txt(
-                left + 22,
-                cy + 34,
-                _clip(f"problem  {sig.get('problem') or ''}", 88),
-                size=11,
-            )
-            txt(
-                left + 22,
-                cy + 50,
-                _clip(f"next  {sig.get('next') or ''}", 88),
-                fill=_DIM,
-                size=11,
-            )
-            cy += 70
+        cols = [12, 110, 190, 420]
+        headers = ["name", "id", "problem", "next"]
+        for x, label in zip(cols, headers, strict=True):
+            txt(left + x, top + 38, label, fill=_DIM, size=11)
+        for i, (name, sig) in enumerate(cards):
+            yy = top + 56 + i * 18
+            txt(left + cols[0], yy, _clip(str(name), 12), size=11, fill=_GREEN)
+            txt(left + cols[1], yy, _clip(str(sig.get("id") or "—"), 10), size=11, fill=_ACCENT)
+            txt(left + cols[2], yy, _clip(str(sig.get("problem") or "—"), 28), size=11)
+            txt(left + cols[3], yy, _clip(str(sig.get("next") or "—"), 36), size=11, fill=_DIM)
     y += sig_h + 16
     height = y
     head = [

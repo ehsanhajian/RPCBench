@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="656" viewBox="0 0 800 656" role="img" aria-label="rpcbench compare --html -o report.html">
-<rect width="800" height="656" rx="10" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="564" viewBox="0 0 800 564" role="img" aria-label="rpcbench compare --html -o report.html">
+<rect width="800" height="564" rx="10" fill="#0d1117"/>
 <rect width="800" height="36" rx="10" fill="#161b22"/>
 <rect y="26" width="800" height="10" fill="#161b22"/>
 <circle cx="18" cy="18" r="5" fill="#ff5f57"/>
@@ -69,14 +69,18 @@
 <text x="28.0" y="426.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" xml:space="preserve">local</text>
 <rect x="124.0" y="415.0" width="74.0" height="16" rx="3" fill="#f85149"/>
 <text x="161.0" y="426.0" fill="#0d1117" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="10" text-anchor="middle" xml:space="preserve">connection</text>
-<rect x="16" y="464" width="768" height="176" rx="8" fill="#161b22"/>
+<rect x="16" y="464" width="768" height="84" rx="8" fill="#161b22"/>
 <text x="28.0" y="484.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="600" xml:space="preserve">Signals</text>
-<rect x="28" y="496" width="744" height="62" rx="6" fill="none" stroke="#30363d"/>
-<text x="38.0" y="512.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">merkle · rate-limited</text>
-<text x="38.0" y="530.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">problem  Timed samples returned 429 / CU throttle</text>
-<text x="38.0" y="546.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">next  Spread requests, raise the provider quota, or pick another endpoint</text>
-<rect x="28" y="566" width="744" height="62" rx="6" fill="none" stroke="#30363d"/>
-<text x="38.0" y="582.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12" font-weight="700" xml:space="preserve">local · failed</text>
-<text x="38.0" y="600.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">problem  No successful timed samples</text>
-<text x="38.0" y="616.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">next  Check the URL is reachable from this machine (localhost is allowed)</text>
+<text x="28.0" y="502.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">name</text>
+<text x="126.0" y="502.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">id</text>
+<text x="206.0" y="502.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">problem</text>
+<text x="436.0" y="502.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">next</text>
+<text x="28.0" y="520.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">merkle</text>
+<text x="126.0" y="520.0" fill="#388bfd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">rate-limi…</text>
+<text x="206.0" y="520.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">Timed samples returned 429 …</text>
+<text x="436.0" y="520.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">Spread requests, raise the provider…</text>
+<text x="28.0" y="538.0" fill="#3fb950" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">local</text>
+<text x="126.0" y="538.0" fill="#388bfd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">failed</text>
+<text x="206.0" y="538.0" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">No successful timed samples</text>
+<text x="436.0" y="538.0" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="11" xml:space="preserve">Check the URL is reachable from thi…</text>
 </svg>
