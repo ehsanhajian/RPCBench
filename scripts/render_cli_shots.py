@@ -555,9 +555,9 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
     y += rank_h + 10
 
     if step_names:
-        name_w = 108
-        cell_w = max(44.0, min(72.0, (inner - 28 - name_w) / len(step_names)))
-        heat_h = 50 + row_h * (len(heat_rows) + 1) + 8
+        name_w = 96
+        cell_w = max(52.0, min(80.0, (inner - 20 - name_w) / len(step_names)))
+        heat_h = 48 + 22 * (len(heat_rows) + 1) + 8
         top = panel(heat_h)
         txt(left + 12, top + 20, "Heatmap", fill=_DIM, size=12, weight="600")
         txt(
@@ -571,12 +571,12 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
         for i, step in enumerate(step_names):
             txt(hx + i * cell_w + cell_w / 2, top + 54, step, fill=_DIM, size=11, anchor="middle")
         for r, (name, cells) in enumerate(heat_rows):
-            yy = top + 70 + r * row_h
-            txt(left + 12, yy, name)
+            yy = top + 72 + r * 22
+            txt(left + 12, yy, name, size=12)
             for c, (label, color, status) in enumerate(cells):
                 cx = hx + c * cell_w
                 parts.append(
-                    f'<rect x="{cx:.1f}" y="{yy - 13:.1f}" width="{cell_w - 6:.1f}" '
+                    f'<rect x="{cx:.1f}" y="{yy - 11:.1f}" width="{cell_w - 6:.1f}" '
                     f'height="16" rx="3" fill="{color}"/>'
                 )
                 fill = _DIM if status == "skip" else _BG

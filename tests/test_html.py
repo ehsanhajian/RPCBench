@@ -184,6 +184,10 @@ def test_html_has_charts_and_sections() -> None:
     assert "print-color-adjust" in html
     assert "Primary" in html
     assert "Fallback" in html
+    assert 'dominant-baseline="central"' in html
+    assert "successful samples per latency bucket" in html
+    assert "heat-name" in html
+    assert "finding" not in html.lower()
 
 
 def test_html_redacts_url_secrets() -> None:

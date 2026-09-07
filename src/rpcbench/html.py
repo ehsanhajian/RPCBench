@@ -130,13 +130,13 @@ def _heatmap(data: dict[str, Any]) -> str:
             f'<td class="heat {escape(status)}" style="background:{color}">{escape(label)}</td>'
             for label, color, status in cells
         )
-        body.append(f"<tr><th>{escape(name)}</th>{tds}</tr>")
+        body.append(f'<tr><th class="heat-name">{escape(name)}</th>{tds}</tr>')
     return (
         '<section aria-label="heatmap">'
         "<h2>Heatmap</h2>"
         '<p class="meta">provider × method; green is faster ok; skip/miss is product fit</p>'
         '<table class="heat">'
-        f"<thead><tr><th></th>{head}</tr></thead>"
+        f"<thead><tr><th class=\"heat-name\"></th>{head}</tr></thead>"
         f"<tbody>{''.join(body)}</tbody>"
         "</table>"
         "</section>"
@@ -375,45 +375,67 @@ def _histogram_chart(
         hist = (prov.get("performance") or {}).get("histogram") or []
         if not labels and hist:
             labels = [str(bucket["label"]) for bucket in hist]
-        series.append((row["name"], [int(bucket["n"]) for bucket in hist]))
-    if not labels or not any(sum(vals) for _, vals in series):
+        vals = [int(bucket["n"]) for bucket in hist]
+        if sum(vals):
+            series.append((row["name"], vals))
+    if not labels or not series:
         return (
             '<section aria-label="histogram"><h2>Histogram</h2>'
-            "<p>no successful samples</p></section>"
+            "<p class=\"meta\">no successful samples</p></section>"
         )
     n_g = len(series)
     n_b = len(labels)
-    left = 72
-    top = 28
-    plot_w = max(280, n_b * max(36, n_g * 12 + 16))
-    plot_h = 120
-    width = left + plot_w + 16
-    height = top + plot_h + 36
+    left = 36
+    top = 16
+    group_w = max(56.0, 18.0 + n_g * 10.0)
+    plot_w = n_b * group_w
+    plot_h = 100
+    legend_h = 16 + 16 * n_g
+    width = max(left + plot_w + 12, 280)
+    height = top + plot_h + 28 + legend_h
     peak = max((n for _, vals in series for n in vals), default=1) or 1
-    group_w = plot_w / n_b
-    bar_w = max(4.0, (group_w - 8) / max(n_g, 1))
+    bar_w = max(6.0, min(14.0, (group_w - 12) / max(n_g, 1)))
+    cluster = n_g * bar_w
     parts = [
-        f'<section aria-label="histogram"><h2>Histogram</h2>'
+        '<section aria-label="histogram"><h2>Histogram</h2>'
+        '<p class="meta">successful samples per latency bucket</p>'
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
         f'viewBox="0 0 {width:.0f} {height:.0f}" role="img" aria-label="latency histogram">'
-        f'<rect width="100%" height="100%" fill="{_PANEL}"/>'
+        f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}" '
+        f'stroke="#30363d" stroke-width="1"/>'
+        f'<text x="8" y="{top + 8}" fill="{_DIM}" font-size="10" '
+        f'font-family="{_FONT}">{peak}</text>'
+        f'<text x="8" y="{top + plot_h}" fill="{_DIM}" font-size="10" '
+        f'font-family="{_FONT}">0</text>'
     ]
-    palette = (_BAR, _GREEN, "#d2a8ff", "#ffa657", _RED)
+    palette = (_BAR, _GREEN, "#d2a8ff", "#ffa657", _RED, "#79c0ff", "#f778ba", "#e3b341")
     for gi, (name, vals) in enumerate(series):
         color = palette[gi % len(palette)]
         for bi, n in enumerate(vals):
-            h = (n / peak) * (plot_h - 4)
-            x = left + bi * group_w + 4 + gi * bar_w
+            if n <= 0:
+                continue
+            h = max(2.0, (n / peak) * (plot_h - 6))
+            x = left + bi * group_w + (group_w - cluster) / 2 + gi * bar_w
             y = top + plot_h - h
             parts.append(
-                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w - 1:.1f}" height="{h:.1f}" '
-                f'fill="{color}"><title>{escape(name)} {escape(labels[bi])} {n}</title></rect>'
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w - 1.5:.1f}" height="{h:.1f}" '
+                f'rx="1.5" fill="{color}">'
+                f"<title>{escape(name)} {escape(labels[bi])} {n}</title></rect>"
             )
     for bi, label in enumerate(labels):
         x = left + bi * group_w + group_w / 2
         parts.append(
             f'<text x="{x:.1f}" y="{top + plot_h + 16:.0f}" text-anchor="middle" '
             f'fill="{_DIM}" font-size="11" font-family="{_FONT}">{escape(label)}</text>'
+        )
+    ly = top + plot_h + 32
+    for gi, (name, _) in enumerate(series):
+        color = palette[gi % len(palette)]
+        yy = ly + gi * 16
+        parts.append(
+            f'<rect x="{left}" y="{yy - 8:.0f}" width="8" height="8" rx="1" fill="{color}"/>'
+            f'<text x="{left + 14}" y="{yy:.0f}" fill="{_FG}" font-size="11" '
+            f'dominant-baseline="central" font-family="{_FONT}">{escape(name)}</text>'
         )
     parts.append("</svg></section>")
     return "".join(parts)
@@ -426,42 +448,46 @@ def _h_bars(
     unit: str,
     cap: float | None = None,
 ) -> str:
-    known = [value for _, value, _ in items if value is not None]
+    known = [value for _, value, ok in items if value is not None and ok]
     peak = cap if cap is not None else (max(known) if known else 1.0)
     if peak <= 0:
         peak = 1.0
-    left = 100
-    top = 8
-    bar_h = 16
-    gap = 10
-    plot_w = 320
-    height = top + max(len(items), 1) * (bar_h + gap) + 8
-    width = left + plot_w + 72
+    name_w = max((len(name) for name, _, _ in items), default=4)
+    left = max(92.0, min(148.0, 16 + name_w * 7.6))
+    top = 6
+    bar_h = 14
+    gap = 8
+    plot_w = 280
+    row_h = bar_h + gap
+    height = top + max(len(items), 1) * row_h + 4
+    width = left + plot_w + 80
     parts = [
         f'<section aria-label="{escape(title.lower())}"><h2>{escape(title)}</h2>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {width} {height}" role="img" aria-label="{escape(title)}">'
-        f'<rect width="100%" height="100%" fill="{_PANEL}"/>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}" '
+        f'viewBox="0 0 {width:.0f} {height:.0f}" role="img" aria-label="{escape(title)}">'
     ]
     for i, (name, value, ok) in enumerate(items):
-        y = top + i * (bar_h + gap)
-        color = _GREEN if ok else _RED
+        y = top + i * row_h
+        mid = y + bar_h / 2
+        name_fill = _GREEN if ok else _RED
         parts.append(
-            f'<text x="8" y="{y + 13}" fill="{_FG}" font-size="12" '
-            f'font-family="{_FONT}">{escape(name)}</text>'
+            f'<text x="8" y="{mid:.1f}" fill="{name_fill}" font-size="12" '
+            f'dominant-baseline="central" font-family="{_FONT}">{escape(name)}</text>'
         )
-        if value is None:
+        empty = value is None or (not ok and (value or 0) == 0)
+        if empty:
             parts.append(
-                f'<text x="{left}" y="{y + 13}" fill="{_DIM}" font-size="12" '
-                f'font-family="{_FONT}">—</text>'
+                f'<text x="{left}" y="{mid:.1f}" fill="{_DIM}" font-size="12" '
+                f'dominant-baseline="central" font-family="{_FONT}">—</text>'
             )
             continue
-        w = max(2.0, (value / peak) * plot_w)
+        w = max(4.0, (value / peak) * plot_w)
+        color = _GREEN if ok else _RED
         label = f"{value:.1f}{unit}" if unit else f"{value:.0f}"
         parts.append(
-            f'<rect x="{left}" y="{y}" width="{w:.1f}" height="{bar_h}" fill="{color}"/>'
-            f'<text x="{left + w + 6:.1f}" y="{y + 13}" fill="{_FG}" font-size="12" '
-            f'font-family="{_FONT}">{escape(label)}</text>'
+            f'<rect x="{left}" y="{y}" width="{w:.1f}" height="{bar_h}" rx="3" fill="{color}"/>'
+            f'<text x="{left + w + 8:.1f}" y="{mid:.1f}" fill="{_FG}" font-size="12" '
+            f'dominant-baseline="central" font-family="{_FONT}">{escape(label)}</text>'
         )
     parts.append("</svg></section>")
     return "".join(parts)
@@ -684,13 +710,18 @@ th.num, td.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 td.spark {{ width: 72px; padding-right: 0; }}
 svg {{ display: block; max-width: 100%; }}
 svg.spark {{ display: inline-block; vertical-align: middle; }}
-table.heat {{ width: 100%; }}
-table.heat th, table.heat td.heat {{
-  text-align: center; padding: 6px 8px; font-size: 11px;
-  font-variant-numeric: tabular-nums; white-space: nowrap;
+table.heat {{
+  width: auto; border-collapse: separate; border-spacing: 4px 4px;
 }}
-table.heat th:first-child, table.heat tbody th {{ text-align: left; }}
-td.heat {{ color: {_BG}; min-width: 52px; border-radius: 4px; }}
+table.heat th, table.heat td.heat {{
+  text-align: center; padding: 0 10px; height: 28px; line-height: 28px;
+  font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap;
+  vertical-align: middle;
+}}
+table.heat th.heat-name, table.heat tbody th.heat-name {{
+  text-align: left; padding: 0 12px 0 0; color: {_FG}; font-weight: 500;
+}}
+td.heat {{ color: {_BG}; min-width: 72px; border-radius: 4px; }}
 td.heat.skip {{ color: {_DIM}; }}
 footer {{ color: {_DIM}; }}
 footer a {{ color: {_BAR}; }}
