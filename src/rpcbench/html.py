@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from html import escape
 from typing import Any
 
@@ -18,6 +19,16 @@ _RED = "#f85149"
 _AMBER = "#d29922"
 _BAR = "#388bfd"
 _FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace"
+_METHOD_COLORS: dict[str, str] = {
+    "eth_blockNumber": _BAR,
+    "eth_chainId": "#79c0ff",
+    "eth_getBlockByNumber": "#d2a8ff",
+    "eth_getBalance": "#ffa657",
+    "eth_call": "#f778ba",
+    "eth_getLogs": _GREEN,
+}
+_METHOD_FALLBACK = ("#e3b341", _RED, "#58a6ff", "#a371f7")
+_GRID = "#30363d"
 
 
 def format_html(
@@ -655,41 +666,152 @@ def _size_scatter(data: dict[str, Any]) -> str:
     # Head-only runs are ~40–80B; a blob of dots teaches nothing.
     if not has_logs and xmax < 1024 and (xmax - xmin) < 256:
         return ""
-    left, top, plot_w, plot_h = 56, 20, 360, 140
+    methods = list(dict.fromkeys(p[2] for p in points))
+    colors = _method_color_map(methods)
+    y_top = _axis_max(ymax)
+    x_lo = max(xmin, 1.0)
+    x_hi = max(xmax, x_lo * 1.01)
+    left, top, plot_w, plot_h = 72, 10, 680, 240
+    x_ticks = _log_byte_ticks(x_lo, x_hi)
+    y_ticks = _ms_ticks(y_top)
+    legend_cols = 3
+    legend_rows = max(1, math.ceil(len(methods) / legend_cols))
+    legend_h = 18 * legend_rows + 8
     width = left + plot_w + 16
-    height = top + plot_h + 36
-    span = xmax if xmax > 0 else 1.0
+    height = top + plot_h + 36 + legend_h
     parts = [
         '<section aria-label="size vs latency">'
         "<h2>Size vs latency</h2>"
-        '<p class="meta">wire bytes vs RTT; a fat getLogs sitting high is the payload, '
-        "not a slow node; logs are brighter</p>"
+        '<p class="meta">one successful sample per dot; X is log(response bytes). '
+        "High RTT at ~40B is the node; getBlock/getLogs sit to the right when the body is large</p>"
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}" role="img" aria-label="size vs latency">'
-        f'<rect width="100%" height="100%" fill="{_PANEL}"/>'
-        f'<text x="8" y="{top + 10}" fill="{_DIM}" font-size="10" '
-        f'font-family="{_FONT}">{ymax:.0f}ms</text>'
-        f'<text x="8" y="{top + plot_h}" fill="{_DIM}" font-size="10" '
-        f'font-family="{_FONT}">0ms</text>'
+        f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" '
+        f'stroke="{_GRID}" stroke-width="1"/>'
+        f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" y2="{top + plot_h}" '
+        f'stroke="{_GRID}" stroke-width="1"/>'
     ]
-    for size, latency, method, name in points:
-        x = left + (size / span) * (plot_w - 8)
-        y = top + plot_h - (latency / ymax) * (plot_h - 8)
-        color = _GREEN if method == "eth_getLogs" else _BAR
-        r = 4 if method == "eth_getLogs" else 3
+    for tick in y_ticks:
+        y = _y_pos(tick, y_top, top, plot_h)
         parts.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{color}">'
-            f"<title>{escape(name)} {escape(method)} {size:.0f}B {latency:.1f}ms</title>"
-            "</circle>"
+            f'<line x1="{left}" y1="{y:.1f}" x2="{left + plot_w}" y2="{y:.1f}" '
+            f'stroke="{_GRID}" stroke-width="1" stroke-dasharray="3 4"/>'
+            f'<text x="{left - 8}" y="{y:.1f}" text-anchor="end" fill="{_DIM}" '
+            f'font-size="10" dominant-baseline="central" font-family="{_FONT}">'
+            f"{_ms_tick_label(tick)}</text>"
+        )
+    for tick in x_ticks:
+        x = _x_pos(tick, x_lo, x_hi, left, plot_w)
+        parts.append(
+            f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + plot_h}" '
+            f'stroke="{_GRID}" stroke-width="1" stroke-dasharray="3 4"/>'
+            f'<text x="{x:.1f}" y="{top + plot_h + 16}" text-anchor="middle" fill="{_DIM}" '
+            f'font-size="10" font-family="{_FONT}">{_bytes(tick)}</text>'
         )
     parts.append(
-        f'<text x="{left}" y="{top + plot_h + 16}" fill="{_DIM}" font-size="11" '
-        f'font-family="{_FONT}">0B</text>'
-        f'<text x="{left + plot_w}" y="{top + plot_h + 16}" text-anchor="end" '
-        f'fill="{_DIM}" font-size="11" font-family="{_FONT}">{_bytes(xmax)}</text>'
-        "</svg></section>"
+        f'<text x="{left + plot_w / 2:.1f}" y="{top + plot_h + 32}" text-anchor="middle" '
+        f'fill="{_DIM}" font-size="10" font-family="{_FONT}">response bytes (log)</text>'
     )
+    ordered = sorted(points, key=lambda p: (p[2] == "eth_getLogs", p[0], p[1]))
+    for size, latency, method, name in ordered:
+        x = _x_pos(size, x_lo, x_hi, left, plot_w)
+        y = _y_pos(latency, y_top, top, plot_h)
+        color = colors[method]
+        r = 4.5 if method == "eth_getLogs" else 3.5
+        parts.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{color}" '
+            f'fill-opacity="0.85" stroke="{_BG}" stroke-width="0.7">'
+            f"<title>{escape(name)} {escape(method)} {_bytes(size)} {_ms(latency)}</title>"
+            "</circle>"
+        )
+    legend_y = top + plot_h + 48
+    col_w = plot_w / legend_cols
+    for i, method in enumerate(methods):
+        col = i % legend_cols
+        row = i // legend_cols
+        lx = left + col * col_w
+        ly = legend_y + row * 18
+        parts.append(
+            f'<circle cx="{lx + 5:.1f}" cy="{ly:.1f}" r="3.5" fill="{colors[method]}"/>'
+            f'<text x="{lx + 14:.1f}" y="{ly:.1f}" fill="{_FG}" font-size="11" '
+            f'dominant-baseline="central" font-family="{_FONT}">'
+            f"{escape(_method_label(method))}</text>"
+        )
+    parts.append("</svg></section>")
     return "".join(parts)
+
+
+def _method_label(method: str) -> str:
+    return method[4:] if method.startswith("eth_") else method
+
+
+def _method_color_map(methods: list[str]) -> dict[str, str]:
+    colors: dict[str, str] = {}
+    extra = 0
+    for method in methods:
+        if method in _METHOD_COLORS:
+            colors[method] = _METHOD_COLORS[method]
+        else:
+            colors[method] = _METHOD_FALLBACK[extra % len(_METHOD_FALLBACK)]
+            extra += 1
+    return colors
+
+
+def _axis_max(value: float) -> float:
+    if value <= 0:
+        return 1.0
+    exp = 10 ** math.floor(math.log10(value))
+    for mult in (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0):
+        if mult * exp >= value:
+            return mult * exp
+    return math.ceil(value / exp) * exp
+
+
+def _ms_ticks(top: float) -> list[float]:
+    if top <= 0:
+        return [0.0]
+    n = 4
+    step = top / n
+    ticks = [i * step for i in range(n + 1)]
+    return ticks
+
+
+def _ms_tick_label(value: float) -> str:
+    if value <= 0:
+        return "0ms"
+    return f"{value:.0f}ms"
+
+
+def _log_byte_ticks(lo: float, hi: float) -> list[float]:
+    ticks: list[float] = []
+    start = int(math.floor(math.log10(max(lo, 1.0))))
+    end = int(math.ceil(math.log10(max(hi, 1.0))))
+    for exp in range(max(0, start), end + 1):
+        v = float(10 ** exp)
+        if lo * 0.9 <= v <= hi * 1.05:
+            ticks.append(v)
+    if not ticks or ticks[0] > lo * 1.4:
+        ticks.insert(0, lo)
+    if not ticks or ticks[-1] < hi / 1.4:
+        ticks.append(hi)
+    seen: list[float] = []
+    for tick in ticks:
+        if not seen or abs(math.log10(tick) - math.log10(seen[-1])) > 0.15:
+            seen.append(tick)
+    return seen
+
+
+def _x_pos(size: float, lo: float, hi: float, left: float, plot_w: float) -> float:
+    a = math.log10(max(size, 1.0))
+    b = math.log10(max(lo, 1.0))
+    c = math.log10(max(hi, 1.0))
+    t = 0.5 if c <= b else (a - b) / (c - b)
+    return left + t * (plot_w - 8) + 4
+
+
+def _y_pos(latency: float, top_ms: float, top: float, plot_h: float) -> float:
+    t = 0.0 if top_ms <= 0 else min(1.0, latency / top_ms)
+    return top + plot_h - t * (plot_h - 4) - 2
 
 
 def _bytes(value: float | None) -> str:
