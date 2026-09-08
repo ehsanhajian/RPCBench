@@ -98,6 +98,27 @@ class ProbeResult:
     bytes_in: int | None = None
 
 
+@dataclass(frozen=True)
+class BatchProbeResult:
+    """One JSON-RPC batch POST. Not mixed into ranking samples."""
+
+    size: int
+    supported: bool
+    partial: bool
+    ok: bool
+    reachable: bool
+    latency_ms: float | None
+    n_ok: int
+    n_fail: int
+    error: str | None
+    error_class: str | None
+    attempts: int
+    http_version: str | None = None
+    encoding: str | None = None
+    bytes_out: int | None = None
+    bytes_in: int | None = None
+
+
 def make_client(
     *, timeout: float, new_connection: bool = False, http2: bool = False
 ) -> httpx.Client:
@@ -392,6 +413,220 @@ def probe(
     finally:
         if owns:
             http.close()
+
+
+def probe_batch(
+    url: str,
+    method: str,
+    *,
+    params: list[Any] | None = None,
+    size: int = 3,
+    timeout: float = 10.0,
+    budget: RequestBudget | None = None,
+    client: httpx.Client | None = None,
+    headers: Sequence[tuple[str, str]] | None = None,
+) -> BatchProbeResult:
+    """POST a JSON-RPC array of ``size`` calls. Transport failures do not retry."""
+    reason = _invalid_url_reason(url)
+    if reason:
+        return _batch_miss(size, reason, "invalid_url")
+    if size < 1:
+        return _batch_miss(size, "batch size must be at least 1", "malformed")
+    extra = dict(headers or ())
+    owns = client is None
+    http = client or make_client(timeout=timeout)
+    request: httpx.Request | None = None
+    response: httpx.Response | None = None
+    try:
+        if budget is not None:
+            try:
+                budget.consume()
+            except BudgetExceeded as exc:
+                return _batch_miss(size, str(exc), "budget")
+        started = time.monotonic()
+        raw: bytes | None = None
+        try:
+            request = http.build_request(
+                "POST",
+                url,
+                json=[
+                    {
+                        "jsonrpc": "2.0",
+                        "id": i,
+                        "method": method,
+                        "params": params or [],
+                    }
+                    for i in range(1, size + 1)
+                ],
+                headers=extra or None,
+            )
+            response = http.send(request, stream=True)
+            raw = response.read()
+        except httpx.InvalidURL as exc:
+            return _batch_miss(
+                size,
+                str(exc),
+                "invalid_url",
+                **_transport_fields(request, response),
+            )
+        except httpx.TimeoutException as exc:
+            return _batch_miss(
+                size,
+                str(exc) or "timeout",
+                "timeout",
+                latency_ms=(time.monotonic() - started) * 1000,
+                reachable=False,
+                **_transport_fields(request, response),
+            )
+        except httpx.RequestError as exc:
+            return _batch_miss(
+                size,
+                str(exc) or "connection failed",
+                "connection",
+                latency_ms=(time.monotonic() - started) * 1000,
+                reachable=False,
+                **_transport_fields(request, response),
+            )
+        finally:
+            if response is not None:
+                response.close()
+        assert raw is not None and response is not None
+        latency_ms = (time.monotonic() - started) * 1000
+        transport = _transport_fields(request, response)
+        if response.status_code >= 400:
+            code = response.status_code
+            body_msg = _jsonrpc_error_from_bytes(raw)
+            error = body_msg or f"HTTP {code}"
+            return BatchProbeResult(
+                size=size,
+                supported=False,
+                partial=False,
+                ok=False,
+                reachable=True,
+                latency_ms=latency_ms,
+                n_ok=0,
+                n_fail=size,
+                error=error,
+                error_class=_http_error_class(code, error),
+                attempts=1,
+                **transport,
+            )
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return BatchProbeResult(
+                size=size,
+                supported=False,
+                partial=False,
+                ok=False,
+                reachable=True,
+                latency_ms=latency_ms,
+                n_ok=0,
+                n_fail=size,
+                error="response is not JSON",
+                error_class="malformed",
+                attempts=1,
+                **transport,
+            )
+        supported, partial, n_ok, n_fail, error, error_class = _parse_batch_payload(
+            payload, size
+        )
+        return BatchProbeResult(
+            size=size,
+            supported=supported,
+            partial=partial,
+            ok=supported and n_ok == size and n_fail == 0,
+            reachable=True,
+            latency_ms=latency_ms,
+            n_ok=n_ok,
+            n_fail=n_fail,
+            error=error,
+            error_class=error_class,
+            attempts=1,
+            **transport,
+        )
+    finally:
+        if owns:
+            http.close()
+
+
+def _batch_miss(
+    size: int,
+    error: str,
+    error_class: str,
+    *,
+    latency_ms: float | None = None,
+    reachable: bool = False,
+    http_version: str | None = None,
+    encoding: str | None = None,
+    bytes_out: int | None = None,
+    bytes_in: int | None = None,
+) -> BatchProbeResult:
+    return BatchProbeResult(
+        size=size,
+        supported=False,
+        partial=False,
+        ok=False,
+        reachable=reachable,
+        latency_ms=latency_ms,
+        n_ok=0,
+        n_fail=size,
+        error=error,
+        error_class=error_class,
+        attempts=0 if error_class in {"invalid_url", "budget"} else 1,
+        http_version=http_version,
+        encoding=encoding,
+        bytes_out=bytes_out,
+        bytes_in=bytes_in,
+    )
+
+
+def _parse_batch_payload(
+    payload: Any, size: int
+) -> tuple[bool, bool, int, int, str | None, str | None]:
+    """Classify a JSON-RPC batch body. A single object means batch is unsupported."""
+    if isinstance(payload, dict):
+        message = (
+            _error_message(payload.get("error"))
+            if payload.get("error")
+            else "JSON-RPC batch response is not an array"
+        )
+        return False, False, 0, size, message, "batch_unsupported"
+    if not isinstance(payload, list):
+        return False, False, 0, size, "JSON-RPC response is not an array", "malformed"
+    by_id: dict[Any, dict[str, Any]] = {}
+    for item in payload:
+        if isinstance(item, dict) and "id" in item:
+            by_id[item.get("id")] = item
+    n_ok = 0
+    n_fail = 0
+    first_error: str | None = None
+    first_class: str | None = None
+    for i in range(1, size + 1):
+        item = by_id.get(i)
+        if item is None:
+            n_fail += 1
+            if first_error is None:
+                first_error = f"missing response id {i}"
+                first_class = "partial"
+            continue
+        if item.get("error"):
+            n_fail += 1
+            if first_error is None:
+                first_error = _error_message(item.get("error"))
+                first_class = (
+                    "rate_limit" if is_rate_limit_message(first_error) else "jsonrpc"
+                )
+            continue
+        n_ok += 1
+    extra = len(payload) != size
+    missing = n_ok + n_fail < size or extra
+    if n_fail == 0 and not extra:
+        return True, False, n_ok, 0, None, None
+    if missing and first_class is None:
+        first_error = first_error or "batch response length does not match"
+        first_class = "partial"
+    return True, True, n_ok, n_fail, first_error, first_class or "partial"
 
 
 def is_rate_limit_message(text: str) -> bool:

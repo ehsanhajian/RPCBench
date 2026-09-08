@@ -42,6 +42,7 @@ def format_html(
         _histogram_chart(ranking, providers),
         _methods_table(data["methods"]),
         _transport_table(data),
+        _batch_table(data),
         _size_scatter(data),
         _capabilities(data["capabilities"], ranking),
         _errors(ranking),
@@ -570,6 +571,59 @@ def _transport_table(data: dict[str, Any]) -> str:
         "<thead><tr>"
         '<th>name</th><th>proto</th><th>enc</th>'
         '<th class="num">out</th><th class="num">in</th><th class="num">in p95</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _batch_table(data: dict[str, Any]) -> str:
+    if int(data.get("batch") or 0) <= 0:
+        return ""
+    rows = []
+    for row in data.get("ranking") or []:
+        summary = row.get("batch")
+        if not summary:
+            continue
+        supported = bool(summary.get("supported"))
+        partial = bool(summary.get("partial"))
+        if not supported:
+            support, tone = "no", "bad"
+        elif partial:
+            support, tone = "partial", "stale"
+        else:
+            support, tone = "yes", "ok"
+        items = (
+            str(summary.get("error_class") or "—")
+            if not supported
+            else f"{summary.get('n_ok')}/{summary.get('size')}"
+        )
+        ratio = summary.get("ratio")
+        ratio_txt = "—" if ratio is None else f"{float(ratio):.1f}×"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row["name"]))}</td>'
+            f'<td class="{tone}">{escape(support)}</td>'
+            f'<td class="num">{_ms(summary.get("batch_ms"))}</td>'
+            f'<td class="num">{_ms(summary.get("serial_ms"))}</td>'
+            f'<td class="num">{escape(ratio_txt)}</td>'
+            f"<td>{escape(str(items))}</td>"
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    size = data.get("batch")
+    return (
+        '<section aria-label="batch">'
+        "<h2>Batch</h2>"
+        f'<p class="meta">{escape(str(size))} calls in one POST vs the same '
+        f"{escape(str(size))} sent one-by-one; not mixed into ranking</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th><th>support</th>"
+        '<th class="num">batch</th><th class="num">serial</th>'
+        '<th class="num">ratio</th><th>items</th>'
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"

@@ -24,7 +24,14 @@ from rpcbench.html import format_html
 from rpcbench.markdown import format_md
 from rpcbench.methods import MethodError, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
-from rpcbench.run import MAX_BURST, MODE_PAIRED, MODE_SEQUENTIAL, run_endpoints
+from rpcbench.run import (
+    DEFAULT_BATCH,
+    MAX_BATCH,
+    MAX_BURST,
+    MODE_PAIRED,
+    MODE_SEQUENTIAL,
+    run_endpoints,
+)
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
 from rpcbench.tags import META_REQUESTS_PER_ENDPOINT
 
@@ -178,6 +185,19 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         default=0.0,
         metavar="N",
         help="Cap starts per second after --burst (0=off). Does not raise the request budget.",
+    )
+    run.add_argument(
+        "--batch",
+        type=int,
+        nargs="?",
+        const=DEFAULT_BATCH,
+        default=0,
+        metavar="N",
+        help=(
+            f"Compare a JSON-RPC batch of N calls vs the same N sent one-by-one "
+            f"(0=off, omit N for {DEFAULT_BATCH}, max {MAX_BATCH}). "
+            "Adds 1+N requests per endpoint; not mixed into ranking."
+        ),
     )
     run.add_argument(
         "--sequential",
@@ -388,6 +408,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             needed += len(config.endpoints)
         needed += len(config.endpoints)
         needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
+        if args.batch > 0:
+            needed += len(config.endpoints) * (1 + args.batch)
         max_requests = args.max_requests
         if args.profile == "mix" and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
@@ -412,13 +434,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.stale_blocks < 0
         or args.burst < 0
         or args.burst > MAX_BURST
+        or args.batch < 0
+        or args.batch > MAX_BATCH
         or args.rps < 0
         or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
-            f"--concurrency >= 0, --burst 0–{MAX_BURST}, --rps >= 0, "
+            f"--concurrency >= 0, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
+            "--rps >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
         )
@@ -456,6 +481,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         rps=args.rps,
         new_connection=args.new_connection,
         http2=args.http2,
+        batch=args.batch,
     )
     json_blob = None
     md_blob = None
