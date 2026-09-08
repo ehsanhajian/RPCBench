@@ -164,7 +164,7 @@ JSON includes p50/p95/p99 for each phase on the provider.
 
 Each sample records the negotiated HTTP version (`1.1` or `2`), `Content-Encoding` (`gzip`, `br`, …), request bytes, and response **wire** bytes (the encoded size). Large `eth_getLogs` bodies and missing compression look like slow nodes. Ranking still uses total round-trip, not size. Default is HTTP/1.1. **`--http2`** asks for HTTP/2 via ALPN and falls back to 1.1 if the peer does not offer it. **`--http1`** forces HTTP/1.1. Not a TLS, CORS, or compression-as-security check.
 
-JSON includes proto, encoding, and byte counts on each sample plus a provider `transport` summary. HTML plots size vs latency below the fold only when payloads actually differ (mix / `eth_getLogs`); a 50-byte head read is omitted.
+JSON includes proto, encoding, and byte counts on each sample plus a provider `transport` summary. HTML plots size vs latency below the fold only when payloads actually differ (mix / `eth_getLogs`); a 50-byte head read is omitted. The scatter uses a **log X** (response bytes) so a 40-byte head and a 7kB `getBlock` are not stacked on the axis; dots are colored by method.
 
 ## Non-claims
 
