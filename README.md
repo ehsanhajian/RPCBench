@@ -96,19 +96,19 @@ The default CLI prints, in order:
 3. **Route** — **primary** and **fallback** among ready endpoints. Stale or disagreeing nodes are never primary. Fallback prefers a different error class (not two 429s). Named when 2+ providers are ready; otherwise fallback is `none`. One paragraph explains the choice.
 4. **Ranking** — one table, ordered by `--rank-by`; similar share a place; high error, stale, or disagree is `~`; failed last. **`rel`** is the 0–100 reliability score for this run.
 5. **Notes** — one line per endpoint that hit `rate_limit` on timed samples or tags (`merkle  rate_limit=2  tags=2`)
+6. **Batch** — when `--batch` is set: support, batch vs serial wall-clock, ratio. `skip` means the extra read did not run (`budget` / `duration`). Not mixed into ranking.
 
 `--verbose` adds the rest (same numbers, no data loss):
 
-6. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
-7. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
-8. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
-9. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
-10. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
-11. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-12. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML. Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
-13. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-14. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-15. **Batch** — one JSON-RPC array of N calls vs the same N sent one-by-one when `--batch` is set. Unsupported or partial batch is a capability/error, not a crash. Extra read; not mixed into ranking.
+7. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
+8. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
+9. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
+10. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--profile mix` prints this table; JSON is `coverage`.
+11. **Methods** — per-method P50/P95/P99 and errors when `--profile mix` (ranking still uses the whole mix)
+12. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+13. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML. Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
+14. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+15. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
 16. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
 17. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
@@ -218,7 +218,7 @@ rpcbench diff --history reports/
 | `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Prints Coverage. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Batch, Providers, per-sample) |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch is already in the compact report when `--batch` is set |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
 | `--md` | off | GitHub-flavored markdown to stdout (aligned ranking table: P95, err, rel, fresh, verdict). `-o FILE` writes the same markdown |

@@ -1235,6 +1235,35 @@ def test_cli_mix_budget_too_low(tmp_path: Path, capsys) -> None:
     assert "--max-requests 22" in err
 
 
+def test_cli_batch_budget_too_low(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n"
+        "  - name: a\n    url: http://127.0.0.1:1\n"
+        "  - name: b\n    url: http://127.0.0.1:2\n",
+        encoding="utf-8",
+    )
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--batch",
+            "8",
+            "--max-requests",
+            "10",
+        ]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--batch 8 needs" in err
+    assert "--max-requests" in err
+
+
 def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:
     import json
 
