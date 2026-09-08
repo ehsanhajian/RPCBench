@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -171,6 +172,19 @@ def test_html_size_vs_latency_highlights_logs() -> None:
     assert "Transport" in html
     assert 'aria-label="size vs latency"' in html
     assert "eth_getLogs" in html
+    assert "response bytes (log)" in html
+    assert "fat getLogs" not in html
+    assert ">getLogs</text>" in html or ">getLogs<" in html
+    assert "blockNumber" in html
+    def cx_for(method: str) -> float:
+        match = re.search(
+            rf'cx="([0-9.]+)"[^>]*>\s*<title>[^<]*{method}',
+            html,
+        )
+        assert match is not None, method
+        return float(match.group(1))
+
+    assert cx_for("eth_getLogs") > cx_for("eth_blockNumber") + 80
     assert "finding" not in html.lower()
     fold = html.split("<!-- fold -->", 1)[0]
     assert "size vs latency" not in fold
