@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, run_to_dict
+from rpcbench.report import (
+    DEFAULT_RANK_BY,
+    DEFAULT_SIMILAR_BAND,
+    batch_support_label,
+    run_to_dict,
+)
 from rpcbench.run import RunResult
 from rpcbench.verdict import NOT_READY, READY, RISKY
 from rpcbench.watermark import DOCS_BOUNDARY, DOCS_METHODOLOGY
@@ -44,6 +49,7 @@ def format_md_dict(data: dict[str, Any]) -> str:
                 _pct(row.get("error_rate")),
                 str(row.get("score") if row.get("score") is not None else "—"),
                 _fresh(row.get("freshness")),
+                _match(row.get("consistency")),
                 _verdict(row.get("verdict")),
             ]
         )
@@ -63,11 +69,12 @@ def format_md_dict(data: dict[str, Any]) -> str:
         "## Ranking",
         "",
         *_md_table(
-            ["#", "name", "p95", "err", "rel", "fresh", "verdict"],
+            ["#", "name", "p95", "err", "rel", "fresh", "match", "verdict"],
             ranking_rows,
-            right=(True, False, True, True, True, False, False),
+            right=(True, False, True, True, True, False, False, False),
         ),
         "",
+        *_optional_sections(data),
         "## Signals",
         "",
     ]
@@ -125,6 +132,89 @@ def _md_table(
     ]
 
 
+def _optional_sections(data: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    transport = _transport_rows(data)
+    if transport:
+        lines.extend(
+            [
+                "## Transport",
+                "",
+                *_md_table(
+                    ["name", "proto", "enc", "out", "in", "in p95"],
+                    transport,
+                    right=(False, False, False, True, True, True),
+                ),
+                "",
+            ]
+        )
+    batch = _batch_rows(data)
+    if batch:
+        size = data.get("batch")
+        lines.extend(
+            [
+                "## Batch",
+                "",
+                f"{size} calls in one POST vs the same {size} sent one-by-one; "
+                "not mixed into ranking",
+                "",
+                *_md_table(
+                    ["name", "support", "batch", "serial", "ratio", "items"],
+                    batch,
+                    right=(False, False, True, True, True, True),
+                ),
+                "",
+            ]
+        )
+    return lines
+
+
+def _transport_rows(data: dict[str, Any]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("transport")
+        if not summary:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                str(summary.get("http_version") or "—"),
+                str(summary.get("encoding") or "—"),
+                _bytes(summary.get("bytes_out_mean")),
+                _bytes(summary.get("bytes_in_mean")),
+                _bytes(summary.get("bytes_in_p95")),
+            ]
+        )
+    return rows
+
+
+def _batch_rows(data: dict[str, Any]) -> list[list[str]]:
+    if int(data.get("batch") or 0) <= 0:
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("batch")
+        if not summary:
+            continue
+        support = batch_support_label(summary)
+        items = (
+            str(summary.get("error_class") or "—")
+            if support in {"no", "skip"}
+            else f"{summary.get('n_ok')}/{summary.get('size')}"
+        )
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                support,
+                _ms(summary.get("batch_ms")),
+                _ms(summary.get("serial_ms")),
+                _ratio(summary.get("ratio")),
+                items,
+            ]
+        )
+    return rows
+
+
 def _signal_cards(ranking: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     for row in ranking:
@@ -162,10 +252,38 @@ def _fresh(raw: dict[str, Any] | None) -> str:
     return "—"
 
 
+def _match(raw: dict[str, Any] | None) -> str:
+    if not raw:
+        return "—"
+    verdict = raw.get("verdict")
+    if verdict == "agree":
+        return "yes"
+    if verdict == "disagree":
+        return "no"
+    return "—"
+
+
 def _ms(value: float | None) -> str:
     if value is None:
         return "—"
     return f"{value:.1f}ms"
+
+
+def _ratio(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{float(value):.1f}×"
+
+
+def _bytes(value: float | None) -> str:
+    if value is None:
+        return "—"
+    n = int(round(value))
+    if n < 1000:
+        return f"{n}B"
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}kB"
+    return f"{n / 1_000_000:.1f}MB"
 
 
 def _pct(value: float | None) -> str:

@@ -106,13 +106,14 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "ok",
         "responded",
     ]
-    assert COLUMNS[-6:] == (
+    assert COLUMNS[-7:] == (
         "http_version",
         "encoding",
         "bytes_in_p95",
         "batch_supported",
         "batch_ms",
         "serial_ms",
+        "batch_ratio",
     )
 
 
