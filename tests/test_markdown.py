@@ -90,17 +90,28 @@ def _compare() -> RunResult:
 def test_md_is_pasteable_github_table() -> None:
     text = format_md(_compare())
     assert text.startswith("# RPCBench\n")
-    table = [line for line in text.splitlines() if line.startswith("|")]
-    assert table, "ranking table missing"
-    assert len({len(line) for line in table}) == 1
-    header = table[0]
+    groups: list[list[str]] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("|"):
+            current.append(line)
+        elif current:
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+    assert groups, "ranking table missing"
+    for block in groups:
+        assert len({len(line) for line in block}) == 1
+    header = groups[0][0]
     assert "name" in header
     assert "p95" in header
     assert "err" in header
     assert "rel" in header
     assert "fresh" in header
+    assert "match" in header
     assert "verdict" in header
-    assert ": |" in table[1] or table[1].endswith(": |")
+    assert ": |" in groups[0][1] or groups[0][1].endswith(": |")
     assert "20.0ms" in text
     assert "stale" in text
     assert "**Primary** tip" in text

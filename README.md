@@ -161,7 +161,7 @@ These are not mixed into latency stats or Fastest.
 
 `--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is that ranking as GitHub-flavored markdown with aligned columns (not the full JSON). `--csv` is one row per provider, columns grouped run → rank → latency → verdict → transport → batch (not per-sample rows). `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport and Batch tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, and batch fields (including ratio). `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -221,8 +221,8 @@ rpcbench diff --history reports/
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch is already in the compact report when `--batch` is set |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
-| `--md` | off | GitHub-flavored markdown to stdout (aligned ranking table: P95, err, rel, fresh, verdict). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV to stdout (one row per provider; run, rank, latency, verdict, transport, batch columns). `-o FILE` or `-o report.csv` writes CSV |
+| `--md` | off | GitHub-flavored markdown (ranking + match; Transport and Batch when measured). `-o FILE` writes the same markdown |
+| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch + ratio). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 

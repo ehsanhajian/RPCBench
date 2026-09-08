@@ -6,7 +6,12 @@ import csv
 import io
 from typing import Any
 
-from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, run_to_dict
+from rpcbench.report import (
+    DEFAULT_RANK_BY,
+    DEFAULT_SIMILAR_BAND,
+    batch_support_label,
+    run_to_dict,
+)
 from rpcbench.run import RunResult
 
 COLUMNS = (
@@ -39,6 +44,7 @@ COLUMNS = (
     "batch_supported",
     "batch_ms",
     "serial_ms",
+    "batch_ratio",
 )
 
 
@@ -101,6 +107,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "batch_supported": _batch_supported(row.get("batch")),
                 "batch_ms": _num((row.get("batch") or {}).get("batch_ms")),
                 "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
+                "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
             }
         )
     return buf.getvalue()
@@ -131,8 +138,11 @@ def _match(raw: dict[str, Any] | None) -> str:
 def _batch_supported(raw: dict[str, Any] | None) -> str:
     if not raw:
         return ""
-    if raw.get("supported"):
-        return "partial" if raw.get("partial") else "true"
+    label = batch_support_label(raw)
+    if label == "yes":
+        return "true"
+    if label in {"partial", "skip"}:
+        return label
     return "false"
 
 
