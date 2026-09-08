@@ -108,8 +108,9 @@ The default CLI prints, in order:
 12. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML. Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
 13. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
 14. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-15. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-16. **Capabilities** — who answered this method
+15. **Batch** — one JSON-RPC array of N calls vs the same N sent one-by-one when `--batch` is set. Unsupported or partial batch is a capability/error, not a crash. Extra read; not mixed into ranking.
+16. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+17. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -123,6 +124,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many samples to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
 - **`--profile mix`** runs a documented read-only mix (head, chainId, getBlockByNumber latest, getBalance of the zero address, eth_call of empty data to the zero address, getLogs latest→latest on the zero address). `--samples` is per method. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for an indexer, not a vuln. Payloads: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
+- **Batch** is opt-in (`--batch N`, omit N for 3, max 8). After timed samples, RPCBench sends one JSON-RPC array of N copies of the primary method, then the same N calls one-by-one, and reports wall-clock and the serial/batch ratio. A single-object error means the provider does not support batch (capability, not a crash). Partial item errors are marked `partial`. Adds 1+N requests per endpoint. Default is off (`--batch 0`). Not HTTP/2 multiplexing.
 
 ### Stats
 
@@ -153,12 +155,13 @@ These are not mixed into latency stats or Fastest.
 - **Consistency** is whether providers return the same block **hash** at one pinned height (default: that cohort median). `--block HEX|N` pins the check when heads naturally diverge by one block. A unique majority hash is canonical; a split is disagreement for everyone who returned a hash. Tables print **yes** / **no** under match. Missing/unparseable hashes are unknown, not disagree. JSON still uses `agree` / `disagree`. Not fork choice and not a security finding.
 - **Client** is a volunteered `web3_clientVersion` string stored as a label (Erigon vs Geth). Missing or hex-only results are omitted. Not a disclosure finding, not outdated-client recon, not a CVE check.
 - **Tags** are one paired `eth_getBlockByNumber` snapshot each for `latest`, `safe`, and `finalized`. Latency and freshness are per tag vs that tag’s cohort. Unsupported tags are skipped with a reason and do not change Fastest. Full P95 of one tag is `--method eth_getBlockByNumber --params '["finalized", false]'`.
+- **Batch** is one JSON-RPC array of N calls vs the same N sent serially (`--batch N`). Wall-clock and ratio are extra reads. Unsupported batch is `batch_unsupported`; partial item errors are `partial`. Not mixed into Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is that ranking as GitHub-flavored markdown with aligned columns (not the full JSON). `--csv` is one row per provider, columns grouped run → rank → latency → verdict → transport (not per-sample rows). `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is that ranking as GitHub-flavored markdown with aligned columns (not the full JSON). `--csv` is one row per provider, columns grouped run → rank → latency → verdict → transport → batch (not per-sample rows). `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -169,6 +172,7 @@ rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-re
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
+rpcbench run --endpoints endpoints.yaml --batch
 rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --new-connection
 rpcbench run --endpoints endpoints.yaml --verbose
@@ -200,6 +204,7 @@ rpcbench diff --history reports/
 | `--concurrency` | 0 | Paired-wave cap (`0` = all providers). Not a load burst |
 | `--burst` | 0 | Overlap the first N timed samples (`0`=off, max 8). Same request budget |
 | `--rps` | 0 | Cap starts/sec after `--burst` (`0`=off). Does not raise the budget |
+| `--batch` | 0 | JSON-RPC batch of N vs N serial (`0`=off, omit N for 3, max 8). Extra 1+N requests/endpoint |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |
@@ -213,11 +218,11 @@ rpcbench diff --history reports/
 | `--profile` | | `mix` — head, chainId, block, balance, call, bounded logs. Prints Coverage. Do not combine with `--method` or `--preset` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample) |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Batch, Providers, per-sample) |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
 | `--md` | off | GitHub-flavored markdown to stdout (aligned ranking table: P95, err, rel, fresh, verdict). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV to stdout (one row per provider; run, rank, latency, verdict, transport columns). `-o FILE` or `-o report.csv` writes CSV |
+| `--csv` | off | Flat CSV to stdout (one row per provider; run, rank, latency, verdict, transport, batch columns). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 

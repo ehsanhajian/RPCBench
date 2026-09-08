@@ -36,6 +36,9 @@ COLUMNS = (
     "http_version",
     "encoding",
     "bytes_in_p95",
+    "batch_supported",
+    "batch_ms",
+    "serial_ms",
 )
 
 
@@ -95,6 +98,9 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "http_version": (row.get("transport") or {}).get("http_version") or "",
                 "encoding": (row.get("transport") or {}).get("encoding") or "",
                 "bytes_in_p95": _num((row.get("transport") or {}).get("bytes_in_p95")),
+                "batch_supported": _batch_supported(row.get("batch")),
+                "batch_ms": _num((row.get("batch") or {}).get("batch_ms")),
+                "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
             }
         )
     return buf.getvalue()
@@ -120,6 +126,14 @@ def _match(raw: dict[str, Any] | None) -> str:
     if verdict == "disagree":
         return "no"
     return ""
+
+
+def _batch_supported(raw: dict[str, Any] | None) -> str:
+    if not raw:
+        return ""
+    if raw.get("supported"):
+        return "partial" if raw.get("partial") else "true"
+    return "false"
 
 
 def _bool(value: Any) -> str:

@@ -350,6 +350,7 @@ def run_to_dict(
         "concurrency": result.concurrency,
         "burst": result.burst,
         "rps": result.rps,
+        "batch": result.batch,
         "connection": result.connection,
         "http": result.http,
         "mode": result.mode,
@@ -479,6 +480,7 @@ def format_run(
         f"seq={result.sequence_id or '—'}  ·  "
         f"concurrency={_concurrency_label(result.concurrency)}"
         f"{_burst_mode_suffix(result)}"
+        f"{_batch_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result),
         "",
@@ -616,6 +618,16 @@ def _verbose_sections(
             ]
         )
         lines.extend(_transport_lines(result, name_w, use_color))
+    if result.batch > 0:
+        lines.extend(
+            [
+                "",
+                "Batch  ("
+                f"{result.batch} calls in one POST vs the same {result.batch} "
+                "sent one-by-one; extra read; not mixed into ranking)",
+            ]
+        )
+        lines.extend(_batch_lines(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1003,6 +1015,51 @@ def _transport_lines(
     )
 
 
+def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        summary = outcome.batch
+        if summary is None:
+            rows.append([name, "—", "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                _batch_support_cell(summary),
+                _cell_ms(summary.batch_ms),
+                _cell_ms(summary.serial_ms),
+                _fmt_ratio(summary.ratio),
+                _batch_items_cell(summary),
+            ]
+        )
+    return _grid(
+        ["name", "support", "batch", "serial", "ratio", "items"],
+        rows,
+        right=(False, False, True, True, True, True),
+    )
+
+
+def _batch_support_cell(summary: Any) -> str:
+    if not summary.supported:
+        return "no"
+    if summary.partial:
+        return "partial"
+    return "yes"
+
+
+def _batch_items_cell(summary: Any) -> str:
+    if not summary.supported:
+        return summary.error_class or "—"
+    return f"{summary.n_ok}/{summary.size}"
+
+
+def _fmt_ratio(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}×"
+
+
 def _tags_lines(
     result: RunResult, name_w: int, use_color: bool
 ) -> list[str]:
@@ -1288,6 +1345,7 @@ def _comparison_entry(
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
+        "batch": _batch_summary_json(outcome.batch),
     }
 
 
@@ -1502,6 +1560,35 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
                 cls = _last_error(outcome).split(":", 1)[0]
             bits.append(f"{outcome.endpoint.name} ({cls})")
         lines.append(f"  missed     {', '.join(bits)}")
+    if result.batch > 0:
+        supported = [
+            o.endpoint.name
+            for o in ranked
+            if o.batch is not None and o.batch.supported
+        ]
+        rejected = [
+            o
+            for o in ranked
+            if o.batch is not None and not o.batch.supported
+        ]
+        method = next(
+            (o.batch.method for o in ranked if o.batch is not None),
+            result.method,
+        )
+        lines.append(
+            f"  batch ({method} × {result.batch})  "
+            f"{len(supported)}/{total} supported"
+        )
+        if rejected:
+            bits = []
+            for outcome in rejected:
+                cls = (
+                    outcome.batch.error_class
+                    if outcome.batch is not None
+                    else "error"
+                )
+                bits.append(f"{outcome.endpoint.name} ({cls})")
+            lines.append(f"  missed     {', '.join(bits)}")
     return lines
 
 
@@ -1535,6 +1622,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "consistency": _consistency_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
+        "batch": _batch_summary_json(outcome.batch),
     }
 
 
@@ -1581,6 +1669,7 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "phases": _phases_json(outcome),
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
+        "batch": _batch_summary_json(outcome.batch),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -1709,6 +1798,30 @@ def _burst_mode_suffix(result: RunResult) -> str:
     if result.rps > 0:
         extra += f"  ·  rps={result.rps:g}"
     return extra
+
+
+def _batch_mode_suffix(result: RunResult) -> str:
+    if result.batch <= 0:
+        return ""
+    return f"  ·  batch={result.batch}"
+
+
+def _batch_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "size": summary.size,
+        "method": summary.method,
+        "supported": summary.supported,
+        "partial": summary.partial,
+        "batch_ms": summary.batch_ms,
+        "serial_ms": summary.serial_ms,
+        "ratio": summary.ratio,
+        "n_ok": summary.n_ok,
+        "n_fail": summary.n_fail,
+        "error": summary.error,
+        "error_class": summary.error_class,
+    }
 
 
 def _rps_label(rps: float) -> str:

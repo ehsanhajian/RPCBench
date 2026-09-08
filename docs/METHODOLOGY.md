@@ -91,6 +91,14 @@ HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many reque
 
 **`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget, then runs the rest as a steady phase. **`--rps`** caps how often steady samples start (`0` = as fast as responses allow). Neither flag adds requests or searches for a ceiling. Burst vs steady error rate and recovered rps are reported only when `--burst` is set. Extra `latest`/`safe`/`finalized` 429s are listed as `tags=N` on that table; they do not change timed n/err. Load shapes (ramp/spike/soak) are separate.
 
+## JSON-RPC batch
+
+**`--batch N`** (default 0 = off, omit N for 3, max 8) is an extra read after timed samples, tags, and client. RPCBench POSTs one JSON array of N copies of the primary workload method (ids `1..N`), then sends the same N calls one-by-one on the same keep-alive client. Reported numbers are wall-clock `batch_ms`, `serial_ms`, and `ratio = serial_ms / batch_ms` (>1 means the batch was faster). These are **not** mixed into ranking, reliability, or Fastest.
+
+A JSON **array** means the provider accepted batch. A single JSON-RPC **object** (error or otherwise) is **`batch_unsupported`** — a capability result, not a crash. Item-level errors or missing ids are **`partial`**. HTTP 4xx/5xx stay those classes. Huge batches are out of scope; this is not an HTTP/2 multiplexing study.
+
+Adds **1+N HTTP requests per endpoint**.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.

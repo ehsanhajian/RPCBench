@@ -25,7 +25,15 @@ from rpcbench.freshness import (
     parse_block_height,
 )
 from rpcbench.methods import CallSpec
-from rpcbench.rpc import HTTP_1, HTTP_2, ProbeResult, RequestBudget, make_client, probe
+from rpcbench.rpc import (
+    HTTP_1,
+    HTTP_2,
+    ProbeResult,
+    RequestBudget,
+    make_client,
+    probe,
+    probe_batch,
+)
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
 from rpcbench.tags import (
@@ -54,6 +62,9 @@ MODE_PAIRED = "paired"
 MODE_SEQUENTIAL = "sequential"
 # Opt-in overlap of existing timed samples. Not an unbounded limit probe.
 MAX_BURST = 8
+# Opt-in JSON-RPC batch vs serial extra read. Small and bounded.
+DEFAULT_BATCH = 3
+MAX_BATCH = 8
 # Exclusive upper bounds; last bucket is ≥ the final edge. Shared with CLI/JSON/HTML.
 HISTOGRAM_EDGES_MS: tuple[float, ...] = (50.0, 100.0, 250.0, 1000.0)
 HISTOGRAM_LABELS: tuple[str, ...] = ("<50ms", "<100ms", "<250ms", "<1s", "≥1s")
@@ -108,6 +119,23 @@ class TransportSummary:
 
 
 @dataclass(frozen=True)
+class BatchSummary:
+    """Batch POST vs N serial calls. Extra read; not mixed into ranking."""
+
+    size: int
+    method: str
+    supported: bool
+    partial: bool
+    batch_ms: float | None
+    serial_ms: float | None
+    ratio: float | None
+    n_ok: int
+    n_fail: int
+    error: str | None
+    error_class: str | None
+
+
+@dataclass(frozen=True)
 class EndpointOutcome:
     endpoint: Endpoint
     warmup: tuple[ProbeResult, ...]
@@ -122,6 +150,7 @@ class EndpointOutcome:
     steady_stats: LatencyStats | None = None
     timing: TimingSummary | None = None
     transport: TransportSummary | None = None
+    batch: BatchSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +188,7 @@ class RunResult:
     rps: float = 0.0
     connection: str = CONN_KEEPALIVE
     http: str = HTTP_1
+    batch: int = 0
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -408,6 +438,7 @@ def run_endpoints(
     rps: float = 0.0,
     new_connection: bool = False,
     http2: bool = False,
+    batch: int = 0,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -419,6 +450,8 @@ def run_endpoints(
         raise ValueError("concurrency must be >= 0")
     if burst < 0 or burst > MAX_BURST:
         raise ValueError(f"burst must be 0–{MAX_BURST}")
+    if batch < 0 or batch > MAX_BATCH:
+        raise ValueError(f"batch must be 0–{MAX_BATCH}")
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -468,6 +501,7 @@ def run_endpoints(
             seq_id=seq_id,
             connection=connection,
             http=http,
+            batch=batch,
         )
     finally:
         if owns_client:
@@ -500,6 +534,7 @@ def _execute_run(
     seq_id: str,
     connection: str,
     http: str,
+    batch: int,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -619,6 +654,24 @@ def _execute_run(
         )
         for outcome in outcomes
     ]
+    if batch > 0:
+        spec = steps[0]
+        measured = {
+            outcome.endpoint.name: _measure_batch(
+                outcome.endpoint,
+                spec=spec,
+                size=batch,
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                client=client,
+            )
+            for outcome in outcomes
+        }
+        outcomes = [
+            replace(outcome, batch=measured.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -645,6 +698,7 @@ def _execute_run(
         rps=rps,
         connection=connection,
         http=http,
+        batch=batch,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -702,6 +756,73 @@ def _block_number(hit: ProbeResult | None) -> int | None:
     if hit is None or not hit.ok:
         return None
     return parse_block_number(hit.result)
+
+
+def _measure_batch(
+    endpoint: Endpoint,
+    *,
+    spec: CallSpec,
+    size: int,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    client,
+) -> BatchSummary:
+    if _expired(deadline):
+        return BatchSummary(
+            size=size,
+            method=spec.method,
+            supported=False,
+            partial=False,
+            batch_ms=None,
+            serial_ms=None,
+            ratio=None,
+            n_ok=0,
+            n_fail=0,
+            error="max duration exceeded",
+            error_class="duration",
+        )
+    batched = probe_batch(
+        endpoint.url,
+        spec.method,
+        params=list(spec.params),
+        size=size,
+        timeout=timeout,
+        budget=budget,
+        client=client,
+        headers=endpoint.headers,
+    )
+    serial_started = time.monotonic()
+    for _ in range(size):
+        if _expired(deadline):
+            break
+        probe(
+            endpoint.url,
+            spec.method,
+            params=list(spec.params),
+            timeout=timeout,
+            retries=0,
+            budget=budget,
+            client=client,
+            headers=endpoint.headers,
+        )
+    serial_ms = (time.monotonic() - serial_started) * 1000
+    ratio = None
+    if batched.latency_ms and batched.latency_ms > 0:
+        ratio = serial_ms / batched.latency_ms
+    return BatchSummary(
+        size=size,
+        method=spec.method,
+        supported=batched.supported,
+        partial=batched.partial,
+        batch_ms=batched.latency_ms,
+        serial_ms=serial_ms,
+        ratio=ratio,
+        n_ok=batched.n_ok,
+        n_fail=batched.n_fail,
+        error=batched.error,
+        error_class=batched.error_class,
+    )
 
 
 def _probe_wave(

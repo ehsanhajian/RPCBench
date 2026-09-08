@@ -29,6 +29,7 @@
   "concurrency": 0,
   "burst": 0,
   "rps": 0.0,
+  "batch": 0,
   "connection": "keepalive",
   "http": "1.1",
   "mode": "paired",
@@ -162,7 +163,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     },
     {
       "name": "fast",
@@ -232,7 +234,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     },
     {
       "name": "dead",
@@ -309,7 +312,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     }
   ],
   "ranking": [
@@ -355,7 +359,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     },
     {
       "rank": 2,
@@ -399,7 +404,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     },
     {
       "rank": null,
@@ -452,7 +458,8 @@
       "freshness": null,
       "consistency": null,
       "timing": null,
-      "transport": null
+      "transport": null,
+      "batch": null
     }
   ],
   "methods": [],
@@ -591,6 +598,7 @@
       "phases": null,
       "timing": null,
       "transport": null,
+      "batch": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -706,6 +714,7 @@
       "phases": null,
       "timing": null,
       "transport": null,
+      "batch": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -830,6 +839,7 @@
       "phases": null,
       "timing": null,
       "transport": null,
+      "batch": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [

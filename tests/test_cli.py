@@ -52,6 +52,7 @@ def test_cli_defaults() -> None:
     assert ns.timeout is None
     assert ns.max_duration is None
     assert ns.burst == 0
+    assert ns.batch == 0
     assert ns.rps == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
@@ -624,6 +625,25 @@ def test_cli_rejects_burst_above_cap(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "--burst" in err
+
+
+def test_cli_batch_flag_defaults_to_three() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--batch"])
+    assert ns.batch == 3
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--batch", "5"])
+    assert ns.batch == 5
+
+
+def test_cli_rejects_batch_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--batch", "9", "--samples", "1"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--batch" in err
 
 
 def test_cli_rejects_negative_rps(tmp_path: Path, capsys) -> None:
