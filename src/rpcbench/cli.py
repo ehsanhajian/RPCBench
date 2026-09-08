@@ -411,14 +411,21 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)
         max_requests = args.max_requests
-        if args.profile == "mix" and needed > max_requests:
+        extra_read = args.profile == "mix" or args.batch > 0
+        if extra_read and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
                 max_requests = needed
-            else:
+            elif args.profile == "mix":
                 raise SafetyError(
                     f"mix needs {needed} requests "
                     f"({len(workload)} methods × {args.samples + args.warmup} × "
                     f"{len(config.endpoints)} endpoints); pass --max-requests {needed}"
+                )
+            else:
+                raise SafetyError(
+                    f"--batch {args.batch} needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × (1+{args.batch}) extra); "
+                    f"pass --max-requests {needed}"
                 )
         check_budget(max_requests)
     except (ConfigError, MethodError, SafetyError, RankError) as exc:

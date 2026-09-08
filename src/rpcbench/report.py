@@ -522,8 +522,11 @@ def format_run(
                 marks,
             )
         )
-    elif mix:
-        lines.extend(_coverage_section(result, use_color))
+    else:
+        if mix:
+            lines.extend(_coverage_section(result, use_color))
+        if result.batch > 0:
+            lines.extend(_batch_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -619,15 +622,7 @@ def _verbose_sections(
         )
         lines.extend(_transport_lines(result, name_w, use_color))
     if result.batch > 0:
-        lines.extend(
-            [
-                "",
-                "Batch  ("
-                f"{result.batch} calls in one POST vs the same {result.batch} "
-                "sent one-by-one; extra read; not mixed into ranking)",
-            ]
-        )
-        lines.extend(_batch_lines(result, use_color))
+        lines.extend(_batch_section(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1015,6 +1010,16 @@ def _transport_lines(
     )
 
 
+def _batch_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        "Batch  ("
+        f"{result.batch} calls in one POST vs the same {result.batch} "
+        "sent one-by-one; extra read; not mixed into ranking)",
+        *_batch_lines(result, use_color),
+    ]
+
+
 def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
     rows: list[list[str]] = []
     for outcome in result.outcomes:
@@ -1026,7 +1031,7 @@ def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
         rows.append(
             [
                 name,
-                _batch_support_cell(summary),
+                _batch_support_cell(summary, use_color),
                 _cell_ms(summary.batch_ms),
                 _cell_ms(summary.serial_ms),
                 _fmt_ratio(summary.ratio),
@@ -1040,16 +1045,41 @@ def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
     )
 
 
-def _batch_support_cell(summary: Any) -> str:
-    if not summary.supported:
+_BATCH_SKIP = frozenset({"budget", "duration"})
+
+
+def batch_support_label(summary: Any) -> str:
+    """yes / partial / no / skip. skip = extra read did not run."""
+    if summary is None:
+        return "—"
+    if isinstance(summary, dict):
+        error_class = summary.get("error_class")
+        supported = bool(summary.get("supported"))
+        partial = bool(summary.get("partial"))
+    else:
+        error_class = summary.error_class
+        supported = bool(summary.supported)
+        partial = bool(summary.partial)
+    if error_class in _BATCH_SKIP:
+        return "skip"
+    if not supported:
         return "no"
-    if summary.partial:
+    if partial:
         return "partial"
     return "yes"
 
 
+def _batch_support_cell(summary: Any, use_color: bool) -> str:
+    label = batch_support_label(summary)
+    if label == "yes":
+        return _paint(label, _GREEN, enabled=use_color)
+    if label == "no":
+        return _paint(label, _RED, enabled=use_color)
+    return label
+
+
 def _batch_items_cell(summary: Any) -> str:
-    if not summary.supported:
+    if batch_support_label(summary) in {"no", "skip"}:
         return summary.error_class or "—"
     return f"{summary.n_ok}/{summary.size}"
 
@@ -1569,7 +1599,9 @@ def _capability_lines(result: RunResult, ranked: tuple[EndpointOutcome, ...]) ->
         rejected = [
             o
             for o in ranked
-            if o.batch is not None and not o.batch.supported
+            if o.batch is not None
+            and not o.batch.supported
+            and o.batch.error_class not in _BATCH_SKIP
         ]
         method = next(
             (o.batch.method for o in ranked if o.batch is not None),

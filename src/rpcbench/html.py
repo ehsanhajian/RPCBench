@@ -6,7 +6,7 @@ import math
 from html import escape
 from typing import Any
 
-from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, run_to_dict
+from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, batch_support_label, run_to_dict
 from rpcbench.run import RunResult
 from rpcbench.watermark import html_footer
 
@@ -597,17 +597,18 @@ def _batch_table(data: dict[str, Any]) -> str:
         summary = row.get("batch")
         if not summary:
             continue
-        supported = bool(summary.get("supported"))
-        partial = bool(summary.get("partial"))
-        if not supported:
-            support, tone = "no", "bad"
-        elif partial:
-            support, tone = "partial", "stale"
+        support = batch_support_label(summary)
+        if support == "yes":
+            tone = "ok"
+        elif support == "no":
+            tone = "bad"
+        elif support == "partial":
+            tone = "stale"
         else:
-            support, tone = "yes", "ok"
+            tone = "dim"
         items = (
             str(summary.get("error_class") or "—")
-            if not supported
+            if support in {"no", "skip"}
             else f"{summary.get('n_ok')}/{summary.get('size')}"
         )
         ratio = summary.get("ratio")

@@ -157,10 +157,10 @@ def test_batch_vs_serial_metrics_when_enabled() -> None:
     assert summary.n_ok == 3
     compact = format_run(result, color=False)
     assert "batch=3" in compact
-    assert "Batch  (" not in compact
+    assert "Batch  (3 calls in one POST vs the same 3 sent one-by-one" in compact
+    assert "yes" in compact.split("Batch", 1)[1]
     full = format_run(result, verbose=True, color=False)
-    assert "Batch  (3 calls in one POST vs the same 3 sent one-by-one" in full
-    assert "yes" in full.split("Batch", 1)[1].split("Providers", 1)[0]
+    assert full.split("Batch", 1)[1].split("Providers", 1)[0].count("yes") >= 1
     assert "finding" not in full.lower()
     assert "severity" not in full.lower()
     data = run_to_dict(result)
@@ -269,3 +269,38 @@ def test_batch_off_omits_section() -> None:
     assert rows[0]["batch_supported"] == ""
     assert rows[0]["batch_ms"] == ""
     assert rows[0]["serial_ms"] == ""
+
+
+def test_batch_table_is_in_compact_cli() -> None:
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "local", "url": "http://127.0.0.1:1"}]}
+    )
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=32, batch=3, client=_client()
+    )
+    compact = format_run(result, verbose=False, color=False)
+    assert "Batch  (" in compact
+    table = compact.split("Batch", 1)[1]
+    assert "support" in table
+    assert "yes" in table
+    assert "Providers" not in compact
+
+
+def test_batch_budget_miss_is_skip_not_unsupported() -> None:
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "local", "url": "http://127.0.0.1:1"}]}
+    )
+    result = run_endpoints(
+        cfg, samples=1, warmup=0, budget=6, batch=3, client=_client()
+    )
+    summary = result.outcomes[0].batch
+    assert summary is not None
+    assert summary.error_class == "budget"
+    assert summary.supported is False
+    compact = format_run(result, color=False)
+    table = compact.split("Batch", 1)[1]
+    assert "skip" in table
+    assert "budget" in table
+    html = format_html(result)
+    assert ">skip</td>" in html or ">skip<" in html
+    assert "batch_unsupported" not in html
