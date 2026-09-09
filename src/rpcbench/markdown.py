@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from rpcbench.methods import is_app_workload
 from rpcbench.report import (
     DEFAULT_RANK_BY,
     DEFAULT_SIMILAR_BAND,
@@ -33,7 +34,11 @@ def format_md_dict(data: dict[str, Any]) -> str:
     summary = data.get("summary") or {}
     fastest = summary.get("fastest_names") or []
     fastest_txt = ", ".join(str(name) for name in fastest) if fastest else "none"
-    method = data.get("method") if data.get("profile") != "mix" else "mix"
+    method = (
+        data.get("profile")
+        if is_app_workload(data.get("profile"))
+        else data.get("method")
+    )
     band = data.get("similar_band")
     band_txt = f"{100 * band:.0f}%" if isinstance(band, (int, float)) else "—"
     mark = data.get("watermark") or {}

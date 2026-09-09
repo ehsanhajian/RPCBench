@@ -18,6 +18,7 @@ from rpcbench.coverage import (
     is_coverage_miss,
     missed_steps,
 )
+from rpcbench.methods import CallSpec, is_app_workload
 from rpcbench.recommend import Route, recommend as recommend_route
 from rpcbench.reliability import assess as assess_reliability
 from rpcbench.run import (
@@ -48,6 +49,18 @@ DEFAULT_SIMILAR_BAND = 0.10
 P99_MIN_N = 100
 RANK_BY_KEYS = ("p50", "p95", "p99", "mean", "rps")
 RANK_BY_ALIASES = {"throughput": "rps"}
+
+
+def _uses_mix(result: RunResult) -> bool:
+    return is_app_workload(result.profile) or len(result.workload) > 1
+
+
+def _step_label(spec: CallSpec) -> str:
+    if spec.weight > 1:
+        return f"{spec.name}×{spec.weight}"
+    return spec.name
+
+
 _RANK_LABELS = {
     "p50": "p50",
     "p95": "p95",
@@ -338,6 +351,7 @@ def run_to_dict(
                 "name": spec.name,
                 "method": spec.method,
                 "params": list(spec.params),
+                "weight": spec.weight,
             }
             for spec in result.workload
         ],
@@ -466,7 +480,7 @@ def format_run(
     label = _RANK_LABELS[rank_by]
     band_pct = f"{100 * band:.0f}%"
     method_line = _method_header(result, params)
-    compare_what = "mix" if result.profile == "mix" else result.method
+    compare_what = result.profile if is_app_workload(result.profile) else result.method
     lines = [
         "RPCBench",
         "=" * 72,
@@ -509,7 +523,7 @@ def format_run(
     )
     lines.extend(_ranking_lines(placed, name_w, use_color, rank_by))
     lines.extend(_exception_lines(result, ranked))
-    mix = result.profile == "mix" or len(result.workload) > 1
+    mix = _uses_mix(result)
     if verbose:
         lines.extend(
             _verbose_sections(
@@ -558,7 +572,7 @@ def _exception_lines(
         timed = _rate_limit_n(outcome.stats)
         tags = _tag_rate_limit_n(outcome)
         missed = ()
-        if result.profile == "mix" or len(result.workload) > 1:
+        if _uses_mix(result):
             missed = missed_steps(outcome, result)
         if not timed and not tags and not missed:
             continue
@@ -599,7 +613,7 @@ def _verbose_sections(
     lines.extend(_reliability_lines(result, use_color))
     lines.extend(_signal_lines(placed, marks, use_color))
     lines.extend(_coverage_section(result, use_color))
-    if result.profile == "mix" or len(result.workload) > 1:
+    if _uses_mix(result):
         lines.extend(["", "Methods  (per-method; ranking uses the whole mix)"])
         lines.extend(_methods_lines(result, name_w, use_color))
     if any(outcome.timing for outcome in result.outcomes):
@@ -845,9 +859,9 @@ def _signal_lines(
 
 
 def _method_header(result: RunResult, params: str) -> str:
-    if result.profile == "mix" and result.workload:
-        steps = ", ".join(spec.name for spec in result.workload)
-        return f"Method    mix  ·  {steps}"
+    if is_app_workload(result.profile) and result.workload:
+        steps = ", ".join(_step_label(spec) for spec in result.workload)
+        return f"Method    {result.profile}  ·  {steps}"
     return f"Method    {result.method}{params}"
 
 

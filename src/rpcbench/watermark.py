@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from rpcbench import __version__
+from rpcbench.methods import is_app_workload
 
 if TYPE_CHECKING:
     from rpcbench.run import RunResult
@@ -71,8 +72,8 @@ def vantage_label() -> str:
 
 
 def workload_label(result: RunResult) -> str:
-    if result.profile == "mix":
-        return "mix"
+    if is_app_workload(result.profile):
+        return result.profile
     return result.method
 
 

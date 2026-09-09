@@ -8,9 +8,13 @@ Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitt
 
 ## Method mix
 
-Default CLI is still one method (`eth_blockNumber`). **`--profile mix`** is the documented production-like workload. `--samples` and `--warmup` apply **per method**. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`) is per step.
+Default CLI is still one method (`eth_blockNumber`). **`--workload general|wallet|indexer|trading|nft`** is the documented production-like mix (`--workload` with no name is **general**). **`--profile mix`** is the old name for `--workload general`. `--budget short|standard|long` sets how many rounds to take. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`) is per step.
 
-Fixed payloads (same on every provider):
+An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Tracing and debug methods are never part of these five catalogs.
+
+Family catalogs are **EVM** today. Other families error instead of sending `eth_*` at a Solana or Bitcoin URL.
+
+Shared read-only payloads (same on every provider):
 
 | Step | Method | Params |
 | --- | --- | --- |
@@ -21,11 +25,21 @@ Fixed payloads (same on every provider):
 | call | `eth_call` | `[{"to": 0x000…0000, "data": "0x"}, "latest"]` |
 | logs | `eth_getLogs` | `[{fromBlock, toBlock: "latest", address: 0x000…0000}]` |
 
-Logs are one block and one address. No unbounded scans. No writes.
+Logs are one block and one address. No unbounded scans. No writes. Logs appear only in mixes that need them.
+
+| `--workload` | What it models | Steps × weight |
+| --- | --- | --- |
+| **general** | Balanced dApp reads | head 1, chainId 1, block 1, balance 1, call 1, logs 1 |
+| **wallet** | Balances and calls | head 1, chainId 1, block 1, balance 4, call 3 |
+| **indexer** | Blocks and bounded logs | head 1, chainId 1, block 3, call 1, logs 4 |
+| **trading** | Fresh head and calls | head 3, chainId 1, block 2, call 4 |
+| **nft** | Calls and bounded logs | head 1, chainId 1, block 1, balance 1, call 3, logs 3 |
+
+Example: `--workload wallet --budget short` is 3 rounds × 10 weighted calls = 30 timed samples per endpoint (plus extra freshness/hash/tag reads). `--workload indexer --budget short` is 3 × 10 as well, but four of every ten are bounded `eth_getLogs`.
 
 ## Workload coverage
 
-Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--profile mix` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. Missing required steps take `~` in Ranking (same as high error, stale, or disagree). Default catalogs never include admin/personal/miner/engine/txpool.
+Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--workload indexer` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. `--workload wallet` does not send logs, so a node that cannot serve `eth_getLogs` can still look ready for a wallet. Missing required steps take `~` in Ranking (same as high error, stale, or disagree). Default catalogs never include admin/personal/miner/engine/txpool, and never include `trace_*` / `debug_*`.
 
 JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `discover`.
 
@@ -41,7 +55,7 @@ JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `disco
 
 `--samples`, `--warmup`, `--timeout`, `--max-duration`, and `--concurrency` override the table. HTTP cap is `--max-requests` (default 128).
 
-`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--profile mix` already includes bounded logs; there is no tracing mix yet).
+`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--workload indexer` includes bounded logs; `--workload wallet` does not. There is no tracing mix yet).
 
 ## Paired compare
 
@@ -59,7 +73,7 @@ We use this documented band instead of bootstrap confidence intervals. Typical `
 
 ## Head freshness
 
-Each provider’s head is the first timed `eth_blockNumber` in the workload (default and `--profile mix` already include it). If the workload has no `eth_blockNumber` (for example `--preset balance`), one extra paired `eth_blockNumber` wave runs after the timed samples. Extra heads are **not** mixed into latency stats.
+Each provider’s head is the first timed `eth_blockNumber` in the workload (default and the app mixes already include it). If the workload has no `eth_blockNumber` (for example `--preset balance`), one extra paired `eth_blockNumber` wave runs after the timed samples. Extra heads are **not** mixed into latency stats.
 
 **Cohort tip** is the upper median of known heights (`ordered[len // 2]`). Two providers at 90 and 100 → tip 100.
 
@@ -180,15 +194,15 @@ Every JSON report includes a `watermark` object so the numbers can be cited:
 | `git_sha` | Checkout SHA when this is a git install; omitted (`null`) from a PyPI wheel. `-dirty` if the tree has uncommitted diffs |
 | `utc` | Run start, UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
 | `budget` | Named sample size (`short` / `standard` / `long`) |
-| `workload` | `mix` or the JSON-RPC method |
+| `workload` | named mix (`general`, `wallet`, …) or the JSON-RPC method |
 | `seed` | Shared sequence stamp |
 | `family` | RPC family (`evm` today) |
 | `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
-| `samples` / `warmup` | Timed samples and excluded warmup, per method |
+| `samples` / `warmup` | Timed rounds and excluded warmup rounds; each round sends `sum(weights)` calls |
 | `methodology` / `boundary` | This page and [BOUNDARY.md](BOUNDARY.md) |
 
 The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. `--html -o report.html` reuses the same watermark object in the footer — same links, not a scanner card. Ranking (with sample sparklines), a coverage **heatmap**, **Signals**, P95, error rate, and freshness sit above the fold. Charts are inline SVG (no network). Print CSS keeps sections and SVG on one page. The heatmap is this workload’s coverage and latency (ok / skip / miss), not a method-inventory scan.
 
 `--md` is the compact ranking as GitHub-flavored markdown (P95, error rate, freshness, verdict). `--csv` is one row per provider with the same ranking numbers (percentiles, rps, error rate, score, rank, verdict) — not per-sample rows. `rpcbench diff old.json new.json` compares two JSON watermarks: P95 delta, winner change, and new **signals**. CI exits 1 when the previous **primary**’s rank key got worse beyond the similar-band (same band as ranking; override with `--similar-band`). Not a security finding. `--history DIR` stores JSON snapshots locally for that diff.
 
-Reproduce with the same `--budget`, `--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.
+Reproduce with the same `--budget`, `--workload`/`--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.

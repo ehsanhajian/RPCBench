@@ -15,6 +15,7 @@ from rpcbench.config import Endpoint
 from rpcbench.consistency import Consistency
 from rpcbench.freshness import Freshness
 from rpcbench.html import _heatmap_grid, _sample_latencies
+from rpcbench.methods import is_app_workload
 from rpcbench.report import format_run, run_to_dict
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import (
@@ -476,7 +477,11 @@ def render_html_shot(result: RunResult, title: str, *, max_signals: int = 2) -> 
 
     summary = data["summary"]
     fastest = ", ".join(summary.get("fastest_names") or []) or "none"
-    method = data["method"] if data["profile"] != "mix" else "mix"
+    method = (
+        data["profile"]
+        if is_app_workload(data["profile"])
+        else data["method"]
+    )
     why = _clip(str(data["route"]["why"]), 92)
     hero_h = 94
     top = panel(hero_h)

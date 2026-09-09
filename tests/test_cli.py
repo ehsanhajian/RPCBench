@@ -49,6 +49,7 @@ def test_cli_defaults() -> None:
     assert ns.block_time is None
     assert ns.block is None
     assert ns.profile is None
+    assert ns.workload is None
     assert ns.timeout is None
     assert ns.max_duration is None
     assert ns.burst == 0
@@ -1396,6 +1397,164 @@ def test_cli_long_mix_does_not_add_archive_or_ws(
         "eth_getLogs",
         "web3_clientVersion",
     ]
+
+
+def test_cli_rejects_workload_with_method(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--workload",
+            "wallet",
+            "--method",
+            "eth_chainId",
+        ]
+    )
+    assert code == 2
+    assert "workload" in capsys.readouterr().err
+
+
+def test_cli_workload_bare_is_general(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--workload",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Method    general" in out
+    assert "eth_getLogs" in methods
+
+
+def test_cli_wallet_omits_logs_indexer_includes_them(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(json.loads(request.content)["method"])
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--workload",
+            "wallet",
+            "--budget",
+            "short",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Method    wallet" in out
+    assert methods.count("eth_getBalance") == 4
+    assert methods.count("eth_call") == 3
+    assert "eth_getLogs" not in methods
+
+    methods.clear()
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--workload",
+            "indexer",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Method    indexer" in out
+    assert "eth_getLogs" in methods
+    assert methods.count("eth_getLogs") == 4
+    assert methods.count("eth_getBlockByNumber") >= 3
+
+
+def test_cli_unknown_workload(tmp_path: Path, capsys) -> None:
+    import pytest
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--endpoints", str(cfg), "--workload", "trace"])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "workload" in err.lower() or "invalid" in err.lower()
 
 
 def test_cli_rank_by_mean(tmp_path: Path, monkeypatch, capsys) -> None:

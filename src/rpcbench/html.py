@@ -6,6 +6,7 @@ import math
 from html import escape
 from typing import Any
 
+from rpcbench.methods import is_app_workload
 from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, batch_support_label, run_to_dict
 from rpcbench.run import RunResult
 from rpcbench.watermark import html_footer
@@ -78,7 +79,11 @@ def _hero(data: dict[str, Any]) -> str:
     summary = data["summary"]
     fastest = summary.get("fastest_names") or []
     mark = data["watermark"]
-    method = data["method"] if data["profile"] != "mix" else "mix"
+    method = (
+        data["profile"]
+        if is_app_workload(data.get("profile"))
+        else data["method"]
+    )
     return (
         '<header class="hero">'
         "<h1>RPCBench</h1>"
