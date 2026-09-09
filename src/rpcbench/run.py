@@ -373,18 +373,20 @@ def summarize_transport(samples: tuple[ProbeResult, ...]) -> TransportSummary | 
 def expand_steps(
     workload: tuple[CallSpec, ...], warmup: int, samples: int
 ) -> list[tuple[str, int, CallSpec]]:
-    """Warmup rounds of the mix, then timed rounds. Index is per-kind."""
+    """Warmup rounds of the weighted mix, then timed rounds. Index is per-kind."""
     steps: list[tuple[str, int, CallSpec]] = []
     warm_i = 0
     for _ in range(warmup):
         for spec in workload:
-            steps.append(("warmup", warm_i, spec))
-            warm_i += 1
+            for _copy in range(max(1, spec.weight)):
+                steps.append(("warmup", warm_i, spec))
+                warm_i += 1
     sample_i = 0
     for _ in range(samples):
         for spec in workload:
-            steps.append(("sample", sample_i, spec))
-            sample_i += 1
+            for _copy in range(max(1, spec.weight)):
+                steps.append(("sample", sample_i, spec))
+                sample_i += 1
     return steps
 
 
@@ -409,7 +411,12 @@ def _by_method(
 
 def _workload_blob(workload: tuple[CallSpec, ...]) -> list[dict[str, object]]:
     return [
-        {"name": spec.name, "method": spec.method, "params": list(spec.params)}
+        {
+            "name": spec.name,
+            "method": spec.method,
+            "params": list(spec.params),
+            "weight": spec.weight,
+        }
         for spec in workload
     ]
 

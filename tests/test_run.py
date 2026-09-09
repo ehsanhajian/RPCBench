@@ -9,7 +9,7 @@ import pytest
 from rpcbench.config import parse_endpoints
 from rpcbench.rpc import ProbeResult, RequestBudget, probe
 from rpcbench.report import format_run
-from rpcbench.run import make_sequence_id, percentile, run_endpoints, summarize
+from rpcbench.run import expand_steps, make_sequence_id, percentile, run_endpoints, summarize
 
 
 def test_probe_success() -> None:
@@ -754,6 +754,83 @@ def test_mix_runs_each_method_and_breaks_down() -> None:
     assert "Coverage  (active workload only" in full
     assert "eth_getLogs" in full
     assert "eth_call" in full
+
+
+def test_expand_steps_repeats_weighted_methods() -> None:
+    from rpcbench.methods import family_workload
+
+    wallet = family_workload("evm", "wallet")
+    steps = expand_steps(wallet, warmup=0, samples=1)
+    names = [spec.name for _kind, _i, spec in steps]
+    counts = {name: names.count(name) for name in set(names)}
+    assert counts["balance"] == 4
+    assert counts["call"] == 3
+    assert counts["head"] == 1
+    assert "logs" not in counts
+
+
+def test_wallet_coverage_ignores_getLogs_indexer_requires_it() -> None:
+    from rpcbench.coverage import is_coverage_miss
+    from rpcbench.methods import family_workload
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = json.loads(request.content)["method"]
+        seen.append(method)
+        if method == "eth_getLogs":
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32601, "message": "method not found"},
+                },
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    cfg = parse_endpoints(
+        {"endpoints": [{"name": "a", "url": "http://127.0.0.1:8545"}]}
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    wallet = run_endpoints(
+        cfg,
+        method="wallet",
+        samples=1,
+        warmup=0,
+        budget=32,
+        client=client,
+        workload=family_workload("evm", "wallet"),
+        profile="wallet",
+    )
+    assert "eth_getLogs" not in seen
+    assert wallet.profile == "wallet"
+    assert not is_coverage_miss(wallet.outcomes[0])
+    text = format_run(wallet, color=False)
+    assert "Method    wallet" in text
+    assert "balance×4" in text
+    assert "call×3" in text
+    assert "Coverage  (active workload only" in text
+
+    seen.clear()
+    indexer = run_endpoints(
+        cfg,
+        method="indexer",
+        samples=1,
+        warmup=0,
+        budget=32,
+        client=client,
+        workload=family_workload("evm", "indexer"),
+        profile="indexer",
+    )
+    assert "eth_getLogs" in seen
+    assert is_coverage_miss(indexer.outcomes[0])
+    full = format_run(indexer, color=False)
+    assert "Method    indexer" in full
+    assert "logs×4" in full
+    assert "miss=logs" in full
 
 
 def test_freshness_uses_first_blockNumber_sample() -> None:

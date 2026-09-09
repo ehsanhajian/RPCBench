@@ -329,6 +329,7 @@ def test_json_mix_includes_workload_and_per_method() -> None:
     assert data["profile"] == "mix"
     assert data["watermark"]["workload"] == "mix"
     assert [row["name"] for row in data["workload"]] == [s.name for s in MIX_PROFILE]
+    assert [row["weight"] for row in data["workload"]] == [s.weight for s in MIX_PROFILE]
     assert [row["step"] for row in data["methods"]] == [s.name for s in MIX_PROFILE]
     assert data["methods"][0]["method"] == "eth_blockNumber"
     assert data["methods"][-1]["method"] == "eth_getLogs"

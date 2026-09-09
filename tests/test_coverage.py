@@ -6,7 +6,7 @@ import httpx
 
 from rpcbench.config import Endpoint, parse_endpoints
 from rpcbench.coverage import as_dict, cell_for, coverage_steps, is_not_offered
-from rpcbench.methods import MIX_PROFILE, PRESETS, _WRITE_PREFIXES
+from rpcbench.methods import MIX_PROFILE, PRESETS, WORKLOADS, _WRITE_PREFIXES
 from rpcbench.report import format_run, place_outcomes, run_to_dict
 from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, run_endpoints, summarize
@@ -60,12 +60,17 @@ def _fail(
 def test_default_catalogs_have_no_privileged_namespace() -> None:
     methods = [spec.method for spec in MIX_PROFILE]
     methods.extend(name for name, _params in PRESETS.values())
+    for family in WORKLOADS.values():
+        for steps in family.values():
+            methods.extend(spec.method for spec in steps)
     blob = " ".join(methods).lower()
     for marker in _PRIVILEGED:
         assert marker.lower() not in blob
     for method in methods:
         lower = method.lower()
         assert not any(lower.startswith(p) for p in _WRITE_PREFIXES)
+        assert not lower.startswith("trace_")
+        assert not lower.startswith("debug_")
 
 
 def test_coverage_steps_are_the_active_mix_only() -> None:

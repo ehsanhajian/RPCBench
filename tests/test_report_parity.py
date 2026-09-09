@@ -147,3 +147,52 @@ def test_batch_budget_skip_matches_across_formats() -> None:
     assert csv_row["batch_supported"] == "skip"
     assert csv_row["batch_ms"] == ""
     assert csv_row["batch_ratio"] == ""
+
+
+def test_workload_name_matches_across_cli_html_json_csv_md() -> None:
+    from rpcbench.methods import family_workload
+
+    samples = (_hit(), _hit())
+    steps = family_workload("evm", "wallet")
+    result = RunResult(
+        method="wallet",
+        params=(),
+        samples=2,
+        warmup=0,
+        timeout=10.0,
+        budget=32,
+        outcomes=(
+            EndpointOutcome(
+                endpoint=Endpoint(name="local", url="http://127.0.0.1/local"),
+                warmup=(),
+                samples=samples,
+                stats=summarize(samples),
+                by_method=tuple(
+                    (spec.name, summarize(samples)) for spec in steps
+                ),
+            ),
+        ),
+        budget_remaining=20,
+        profile="wallet",
+        workload=steps,
+    )
+    data = run_to_dict(result)
+    assert data["profile"] == "wallet"
+    assert data["watermark"]["workload"] == "wallet"
+    assert data["workload"][0]["weight"] == 1
+    assert any(row["name"] == "balance" and row["weight"] == 4 for row in data["workload"])
+    assert all(row["name"] != "logs" for row in data["workload"])
+
+    cli = format_run(result, color=False)
+    html = format_html(result)
+    md = format_md(result)
+    csv_row = next(csv.DictReader(io.StringIO(format_csv(result))))
+    assert "Method    wallet" in cli
+    assert "balance×4" in cli
+    assert "wallet" in html
+    assert "wallet" in md
+    assert csv_row["workload"] == "wallet"
+    assert "finding" not in cli.lower()
+    assert "finding" not in html.lower()
+    assert "finding" not in md.lower()
+

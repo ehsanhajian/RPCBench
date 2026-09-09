@@ -6,6 +6,7 @@ import csv
 import io
 from typing import Any
 
+from rpcbench.methods import is_app_workload
 from rpcbench.report import (
     DEFAULT_RANK_BY,
     DEFAULT_SIMILAR_BAND,
@@ -65,8 +66,8 @@ def format_csv_dict(data: dict[str, Any]) -> str:
     summary = data.get("summary") or {}
     primary = summary.get("primary")
     workload = mark.get("workload") or data.get("method") or ""
-    if data.get("profile") == "mix":
-        workload = "mix"
+    if is_app_workload(data.get("profile")):
+        workload = str(data.get("profile") or workload)
     buf = io.StringIO()
     writer = csv.DictWriter(
         buf,

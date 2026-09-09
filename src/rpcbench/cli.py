@@ -22,7 +22,7 @@ from rpcbench.diff import (
 from rpcbench.csv import format_csv
 from rpcbench.html import format_html
 from rpcbench.markdown import format_md
-from rpcbench.methods import MethodError, resolve_workload
+from rpcbench.methods import MethodError, is_app_workload, request_units, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import (
     DEFAULT_BATCH,
@@ -107,7 +107,23 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--profile",
         default=None,
         metavar="NAME",
-        help="Workload profile: mix (head, chainId, block, balance, call, bounded logs)",
+        help=(
+            "App mix alias: mix (= general), general, wallet, indexer, trading, nft. "
+            "Same as --workload. Do not combine with --method."
+        ),
+    )
+    run.add_argument(
+        "--workload",
+        nargs="?",
+        const="general",
+        default=None,
+        choices=("general", "wallet", "indexer", "trading", "nft"),
+        metavar="NAME",
+        help=(
+            "What you are building: general (default when the flag is present), "
+            "wallet, indexer, trading, or nft. Weighted read-only mix; compose "
+            "with --budget. Alias: --profile mix = general."
+        ),
     )
     run.add_argument(
         "--params",
@@ -135,7 +151,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--samples",
         type=int,
         default=None,
-        help="Timed samples per method after warmup (default: from --budget)",
+        help="Timed mix rounds after warmup (default: from --budget)",
     )
     run.add_argument(
         "--warmup",
@@ -394,14 +410,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
         config = load_targets(args.endpoints)
         method, workload = resolve_workload(
             profile=args.profile,
+            workload=args.workload,
             method=args.method,
             preset=args.preset,
             params_json=args.params,
             allow_writes=args.allow_writes,
         )
+        units = request_units(workload)
         needed = (
             len(config.endpoints)
-            * len(workload)
+            * units
             * (args.samples + args.warmup)
         )
         if not any(spec.method == "eth_blockNumber" for spec in workload):
@@ -411,14 +429,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)
         max_requests = args.max_requests
-        extra_read = args.profile == "mix" or args.batch > 0
+        extra_read = is_app_workload(method) or args.batch > 0
         if extra_read and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
                 max_requests = needed
-            elif args.profile == "mix":
+            elif is_app_workload(method):
                 raise SafetyError(
-                    f"mix needs {needed} requests "
-                    f"({len(workload)} methods × {args.samples + args.warmup} × "
+                    f"{method} needs {needed} requests "
+                    f"({units} methods × {args.samples + args.warmup} × "
                     f"{len(config.endpoints)} endpoints); pass --max-requests {needed}"
                 )
             else:
@@ -475,7 +493,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         budget=max_requests,
         workload=workload,
-        profile="mix" if method == "mix" else "single",
+        profile=method if is_app_workload(method) else "single",
         sample_budget=args.sample_budget,
         stale_blocks=args.stale_blocks,
         block_time_s=args.block_time,
