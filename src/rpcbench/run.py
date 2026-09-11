@@ -24,6 +24,16 @@ from rpcbench.freshness import (
     block_time_for_chain,
     parse_block_height,
 )
+from rpcbench.logs import (
+    MAX_LOGS_RANGE,
+    LogsRangeHit,
+    family_skip_reason,
+    hit_from_probe,
+    logs_filter,
+    logs_window,
+    ranges_for,
+    skipped_range,
+)
 from rpcbench.methods import CallSpec
 from rpcbench.rpc import (
     HTTP_1,
@@ -151,6 +161,7 @@ class EndpointOutcome:
     timing: TimingSummary | None = None
     transport: TransportSummary | None = None
     batch: BatchSummary | None = None
+    logs_range: tuple[LogsRangeHit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -189,6 +200,7 @@ class RunResult:
     connection: str = CONN_KEEPALIVE
     http: str = HTTP_1
     batch: int = 0
+    logs_range: int = 0
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -446,6 +458,7 @@ def run_endpoints(
     new_connection: bool = False,
     http2: bool = False,
     batch: int = 0,
+    logs_range: int = 0,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -459,6 +472,8 @@ def run_endpoints(
         raise ValueError(f"burst must be 0–{MAX_BURST}")
     if batch < 0 or batch > MAX_BATCH:
         raise ValueError(f"batch must be 0–{MAX_BATCH}")
+    if logs_range < 0 or logs_range > MAX_LOGS_RANGE:
+        raise ValueError(f"logs-range must be 0–{MAX_LOGS_RANGE}")
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -509,6 +524,7 @@ def run_endpoints(
             connection=connection,
             http=http,
             batch=batch,
+            logs_range=logs_range,
         )
     finally:
         if owns_client:
@@ -542,6 +558,7 @@ def _execute_run(
     connection: str,
     http: str,
     batch: int,
+    logs_range: int,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -661,6 +678,25 @@ def _execute_run(
         )
         for outcome in outcomes
     ]
+    if logs_range > 0:
+        measured_logs = _measure_logs_ranges(
+            config,
+            pin=pin,
+            max_blocks=logs_range,
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=wave_concurrency,
+            client=client,
+            family=FAMILY_EVM,
+        )
+        outcomes = [
+            replace(
+                outcome,
+                logs_range=measured_logs.get(outcome.endpoint.name, ()),
+            )
+            for outcome in outcomes
+        ]
     if batch > 0:
         spec = steps[0]
         measured = {
@@ -706,6 +742,7 @@ def _execute_run(
         connection=connection,
         http=http,
         batch=batch,
+        logs_range=logs_range,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -763,6 +800,63 @@ def _block_number(hit: ProbeResult | None) -> int | None:
     if hit is None or not hit.ok:
         return None
     return parse_block_number(hit.result)
+
+
+def _measure_logs_ranges(
+    config: BenchConfig,
+    *,
+    pin: int | None,
+    max_blocks: int,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    concurrency: int,
+    client,
+    family: str,
+) -> dict[str, tuple[LogsRangeHit, ...]]:
+    endpoints = list(config.endpoints)
+    by_name: dict[str, list[LogsRangeHit]] = {ep.name: [] for ep in endpoints}
+    reason = family_skip_reason(family)
+    starved: str | None = None
+    for blocks in ranges_for(max_blocks):
+        if reason:
+            hit = skipped_range(blocks, reason)
+            for name in by_name:
+                by_name[name].append(hit)
+            continue
+        if starved:
+            hit = skipped_range(blocks, starved)
+            for name in by_name:
+                by_name[name].append(hit)
+            continue
+        span = logs_window(pin, blocks)
+        if pin is None:
+            hit = skipped_range(blocks, "pin")
+            for name in by_name:
+                by_name[name].append(hit)
+            continue
+        if span is None:
+            hit = skipped_range(blocks, "head")
+            for name in by_name:
+                by_name[name].append(hit)
+            continue
+        start, end = span
+        wave = _probe_wave(
+            config,
+            method="eth_getLogs",
+            params=[logs_filter(start, end)],
+            timeout=timeout,
+            budget=budget,
+            deadline=deadline,
+            concurrency=concurrency,
+            client=client,
+        )
+        for ep in endpoints:
+            hit = hit_from_probe(blocks, start, end, wave[ep.name])
+            by_name[ep.name].append(hit)
+            if hit.skip in {"budget", "duration"}:
+                starved = hit.skip
+    return {name: tuple(rows) for name, rows in by_name.items()}
 
 
 def _measure_batch(

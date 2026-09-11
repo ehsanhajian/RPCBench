@@ -113,6 +113,16 @@ A JSON **array** means the provider accepted batch. A single JSON-RPC **object**
 
 Adds **1+N HTTP requests per endpoint**.
 
+## getLogs range scaling
+
+**`--logs-range N`** (default 0 = off, omit N for 1000, allowed 1 / 10 / 100 / 1000) is an extra read after the pinned head is known. Mix catalogs still send `eth_getLogs` as **one block** (`latest→latest`). The extra read uses a **fixed** filter on every provider: `address` is the zero address, no `topics`, `toBlock` is the cohort pin, `fromBlock` is `pin − N + 1`.
+
+Ranges **1, 10, 100, and N** are sent as paired waves. If the pin is below `N − 1` (the chain is too short), that window is **skipped** with reason `head` instead of clamping to genesis (a clamped window would not be an N-block scan). `budget` / `duration` skips are the same as other extra reads. Non-EVM families skip with `family`.
+
+Each cell records latency, JSON-RPC/HTTP error class, response bytes, log count, and **truncation** (a result list of ≥10000 items, or an error that clearly says the log query was too large). A provider that only fails at 1000 blocks is visible in this table. These samples are **not** mixed into ranking, reliability, or Fastest.
+
+Adds **up to 4 HTTP requests per endpoint**.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.

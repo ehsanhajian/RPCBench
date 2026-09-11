@@ -21,6 +21,7 @@ from rpcbench.diff import (
 )
 from rpcbench.csv import format_csv
 from rpcbench.html import format_html
+from rpcbench.logs import DEFAULT_LOGS_RANGE, LOGS_RANGES, ranges_for
 from rpcbench.markdown import format_md
 from rpcbench.methods import MethodError, is_app_workload, request_units, resolve_workload
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
@@ -213,6 +214,19 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
             f"Compare a JSON-RPC batch of N calls vs the same N sent one-by-one "
             f"(0=off, omit N for {DEFAULT_BATCH}, max {MAX_BATCH}). "
             "Adds 1+N requests per endpoint; not mixed into ranking."
+        ),
+    )
+    run.add_argument(
+        "--logs-range",
+        type=int,
+        nargs="?",
+        const=DEFAULT_LOGS_RANGE,
+        default=0,
+        metavar="N",
+        help=(
+            "Extra pinned eth_getLogs at 1, 10, 100, and up to N blocks "
+            f"(0=off, omit N for {DEFAULT_LOGS_RANGE}, allowed {', '.join(str(n) for n in LOGS_RANGES)}). "
+            "Mix logs stay one block. Not mixed into ranking."
         ),
     )
     run.add_argument(
@@ -428,8 +442,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)
+        if args.logs_range > 0:
+            needed += len(config.endpoints) * len(ranges_for(args.logs_range))
         max_requests = args.max_requests
-        extra_read = is_app_workload(method) or args.batch > 0
+        extra_read = (
+            is_app_workload(method) or args.batch > 0 or args.logs_range > 0
+        )
         if extra_read and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
                 max_requests = needed
@@ -438,6 +456,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     f"{method} needs {needed} requests "
                     f"({units} methods × {args.samples + args.warmup} × "
                     f"{len(config.endpoints)} endpoints); pass --max-requests {needed}"
+                )
+            elif args.logs_range > 0:
+                n_ranges = len(ranges_for(args.logs_range))
+                raise SafetyError(
+                    f"--logs-range {args.logs_range} needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × {n_ranges} ranges); "
+                    f"pass --max-requests {needed}"
                 )
             else:
                 raise SafetyError(
@@ -470,6 +495,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
             f"--concurrency >= 0, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
             "--rps >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
+            file=sys.stderr,
+        )
+        return 2
+    if args.logs_range not in (0, *LOGS_RANGES):
+        allowed = ", ".join(str(n) for n in LOGS_RANGES)
+        print(
+            f"rpcbench: --logs-range must be 0 (off) or {allowed}",
             file=sys.stderr,
         )
         return 2
@@ -507,6 +539,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         new_connection=args.new_connection,
         http2=args.http2,
         batch=args.batch,
+        logs_range=args.logs_range,
     )
     json_blob = None
     md_blob = None
