@@ -18,6 +18,7 @@ from rpcbench.coverage import (
     is_coverage_miss,
     missed_steps,
 )
+from rpcbench.logs import LOGS_RANGES, LogsRangeHit, range_status
 from rpcbench.methods import CallSpec, is_app_workload
 from rpcbench.recommend import Route, recommend as recommend_route
 from rpcbench.reliability import assess as assess_reliability
@@ -365,6 +366,7 @@ def run_to_dict(
         "burst": result.burst,
         "rps": result.rps,
         "batch": result.batch,
+        "logs_range": result.logs_range,
         "connection": result.connection,
         "http": result.http,
         "mode": result.mode,
@@ -495,6 +497,7 @@ def format_run(
         f"concurrency={_concurrency_label(result.concurrency)}"
         f"{_burst_mode_suffix(result)}"
         f"{_batch_mode_suffix(result)}"
+        f"{_logs_range_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result),
         "",
@@ -541,6 +544,8 @@ def format_run(
             lines.extend(_coverage_section(result, use_color))
         if result.batch > 0:
             lines.extend(_batch_section(result, use_color))
+        if result.logs_range > 0:
+            lines.extend(_logs_range_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -637,6 +642,8 @@ def _verbose_sections(
         lines.extend(_transport_lines(result, name_w, use_color))
     if result.batch > 0:
         lines.extend(_batch_section(result, use_color))
+    if result.logs_range > 0:
+        lines.extend(_logs_range_section(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1059,6 +1066,84 @@ def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
     )
 
 
+def _logs_range_section(result: RunResult, use_color: bool) -> list[str]:
+    spans = ", ".join(str(n) for n in LOGS_RANGES if n <= result.logs_range)
+    return [
+        "",
+        "Logs range  ("
+        f"pinned eth_getLogs at {spans} blocks; extra read; "
+        "not mixed into ranking)",
+        *_logs_range_lines(result, use_color),
+    ]
+
+
+def _logs_range_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        hits = outcome.logs_range
+        if not hits:
+            rows.append([name, "—", "—", "—", "—", "—", "—"])
+            continue
+        for i, hit in enumerate(hits):
+            rows.append(
+                [
+                    name if i == 0 else "",
+                    str(hit.blocks),
+                    _logs_range_ms_cell(hit, use_color),
+                    _fmt_bytes(float(hit.bytes_in) if hit.bytes_in is not None else None),
+                    "—" if hit.n_logs is None else str(hit.n_logs),
+                    "yes" if hit.truncated else ("—" if hit.skip else "no"),
+                    _logs_range_note(hit),
+                ]
+            )
+    return _grid(
+        ["name", "blocks", "ms", "bytes", "n", "trunc", "note"],
+        rows,
+        right=(False, True, True, True, True, False, False),
+    )
+
+
+def _logs_range_ms_cell(hit: LogsRangeHit, use_color: bool) -> str:
+    if hit.skip:
+        return _paint(f"skip/{hit.skip}", _RED, enabled=use_color)
+    if hit.ok and hit.latency_ms is not None:
+        return _paint(_cell_ms(hit.latency_ms).strip(), _GREEN, enabled=use_color)
+    label = hit.error_class or "fail"
+    return _paint(label, _RED, enabled=use_color)
+
+
+def _logs_range_note(hit: LogsRangeHit) -> str:
+    if hit.skip:
+        return hit.skip
+    if hit.truncated:
+        return "trunc"
+    if hit.ok:
+        return ""
+    return hit.error_class or "fail"
+
+
+def _logs_range_hit_json(hit: LogsRangeHit) -> dict[str, Any]:
+    return {
+        "blocks": hit.blocks,
+        "from_block": hit.from_block,
+        "to_block": hit.to_block,
+        "ok": hit.ok,
+        "latency_ms": hit.latency_ms,
+        "error": hit.error,
+        "error_class": hit.error_class,
+        "bytes_in": hit.bytes_in,
+        "n_logs": hit.n_logs,
+        "truncated": hit.truncated,
+        "skip": hit.skip,
+        "status": range_status(hit),
+    }
+
+
+def _logs_range_json(outcome: EndpointOutcome) -> list[dict[str, Any]]:
+    return [_logs_range_hit_json(hit) for hit in outcome.logs_range]
+
+
 _BATCH_SKIP = frozenset({"budget", "duration"})
 
 
@@ -1390,6 +1475,11 @@ def _comparison_entry(
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        **(
+            {"logs_range": _logs_range_json(outcome)}
+            if outcome.logs_range
+            else {}
+        ),
     }
 
 
@@ -1669,6 +1759,11 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        **(
+            {"logs_range": _logs_range_json(outcome)}
+            if outcome.logs_range
+            else {}
+        ),
     }
 
 
@@ -1716,6 +1811,11 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        **(
+            {"logs_range": _logs_range_json(outcome)}
+            if outcome.logs_range
+            else {}
+        ),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -1850,6 +1950,12 @@ def _batch_mode_suffix(result: RunResult) -> str:
     if result.batch <= 0:
         return ""
     return f"  ·  batch={result.batch}"
+
+
+def _logs_range_mode_suffix(result: RunResult) -> str:
+    if result.logs_range <= 0:
+        return ""
+    return f"  ·  logs-range={result.logs_range}"
 
 
 def _batch_summary_json(summary: Any) -> dict[str, Any] | None:

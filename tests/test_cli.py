@@ -54,6 +54,7 @@ def test_cli_defaults() -> None:
     assert ns.max_duration is None
     assert ns.burst == 0
     assert ns.batch == 0
+    assert ns.logs_range == 0
     assert ns.rps == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
@@ -1273,6 +1274,91 @@ def test_cli_batch_budget_too_low(tmp_path: Path, capsys) -> None:
     err = capsys.readouterr().err
     assert "--batch 8 needs" in err
     assert "--max-requests" in err
+
+
+def test_cli_rejects_bad_logs_range(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(["run", "--endpoints", str(cfg), "--logs-range", "50"])
+    assert code == 2
+    assert "logs-range" in capsys.readouterr().err
+
+
+def test_cli_logs_range(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    spans: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        method = payload["method"]
+        if method == "eth_blockNumber":
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": hex(2000)}
+            )
+        if method == "eth_getLogs":
+            filt = payload["params"][0]
+            start = int(filt["fromBlock"], 16)
+            end = int(filt["toBlock"], 16)
+            spans.append(end - start + 1)
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": []}
+            )
+        if method == "eth_getBlockByNumber":
+            pin = payload["params"][0]
+            if isinstance(pin, str) and pin.startswith("0x"):
+                height = pin
+            else:
+                height = hex(2000)
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"number": height, "hash": "0xabc"},
+                },
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--logs-range",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Logs range" in out
+    assert spans == [1, 10, 100, 1000]
 
 
 def test_cli_profile_mix(tmp_path: Path, monkeypatch, capsys) -> None:

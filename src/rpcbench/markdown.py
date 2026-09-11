@@ -171,6 +171,24 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    logs = _logs_range_rows(data)
+    if logs:
+        spans = data.get("logs_range")
+        lines.extend(
+            [
+                "## Logs range",
+                "",
+                f"Pinned `eth_getLogs` at 1 / 10 / 100 / {spans} blocks; "
+                "not mixed into ranking",
+                "",
+                *_md_table(
+                    ["name", "blocks", "ms", "bytes", "n", "trunc", "status"],
+                    logs,
+                    right=(False, True, True, True, True, False, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -217,6 +235,30 @@ def _batch_rows(data: dict[str, Any]) -> list[list[str]]:
                 items,
             ]
         )
+    return rows
+
+
+def _logs_range_rows(data: dict[str, Any]) -> list[list[str]]:
+    if int(data.get("logs_range") or 0) <= 0:
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        hits = row.get("logs_range") or []
+        name = str(row.get("name") or "—")
+        for i, hit in enumerate(hits):
+            trunc = "yes" if hit.get("truncated") else ("—" if hit.get("skip") else "no")
+            ms = _ms(hit.get("latency_ms")) if hit.get("ok") else "—"
+            rows.append(
+                [
+                    name if i == 0 else "",
+                    str(hit.get("blocks") or "—"),
+                    ms,
+                    _bytes(hit.get("bytes_in")),
+                    "—" if hit.get("n_logs") is None else str(hit.get("n_logs")),
+                    trunc,
+                    str(hit.get("status") or "—"),
+                ]
+            )
     return rows
 
 

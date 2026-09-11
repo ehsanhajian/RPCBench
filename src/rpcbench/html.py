@@ -55,6 +55,7 @@ def format_html(
         _methods_table(data["methods"]),
         _transport_table(data),
         _batch_table(data),
+        _logs_range_table(data),
         _size_scatter(data),
         _capabilities(data["capabilities"], ranking),
         _errors(ranking),
@@ -641,6 +642,56 @@ def _batch_table(data: dict[str, Any]) -> str:
         "<th>name</th><th>support</th>"
         '<th class="num">batch</th><th class="num">serial</th>'
         '<th class="num">ratio</th><th>items</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _logs_range_table(data: dict[str, Any]) -> str:
+    if int(data.get("logs_range") or 0) <= 0:
+        return ""
+    rows = []
+    for row in data.get("ranking") or []:
+        name = str(row.get("name") or "—")
+        hits = row.get("logs_range") or []
+        if not hits:
+            continue
+        for i, hit in enumerate(hits):
+            status = str(hit.get("status") or "—")
+            if hit.get("ok"):
+                tone = "ok"
+            elif hit.get("skip"):
+                tone = "dim"
+            else:
+                tone = "bad"
+            trunc = "yes" if hit.get("truncated") else ("—" if hit.get("skip") else "no")
+            rows.append(
+                "<tr>"
+                f'<td class="{tone}">{escape(name if i == 0 else "")}</td>'
+                f'<td class="num">{escape(str(hit.get("blocks") or "—"))}</td>'
+                f'<td class="num {tone}">{escape(_ms(hit.get("latency_ms")) if hit.get("ok") else status)}</td>'
+                f'<td class="num">{escape(_bytes(hit.get("bytes_in")))}</td>'
+                f'<td class="num">{escape("—" if hit.get("n_logs") is None else str(hit.get("n_logs")))}</td>'
+                f"<td>{escape(trunc)}</td>"
+                f'<td class="{tone}">{escape(status)}</td>'
+                "</tr>"
+            )
+    if not rows:
+        return ""
+    spans = data.get("logs_range")
+    return (
+        '<section aria-label="logs range">'
+        "<h2>Logs range</h2>"
+        f'<p class="meta">pinned eth_getLogs at 1 / 10 / 100 / {escape(str(spans))} '
+        "blocks; extra read; not mixed into ranking</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th>"
+        '<th class="num">blocks</th><th class="num">ms</th>'
+        '<th class="num">bytes</th><th class="num">n</th>'
+        "<th>trunc</th><th>status</th>"
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"

@@ -6,6 +6,7 @@ import csv
 import io
 from typing import Any
 
+from rpcbench.logs import LOGS_RANGES
 from rpcbench.methods import is_app_workload
 from rpcbench.report import (
     DEFAULT_RANK_BY,
@@ -46,6 +47,26 @@ COLUMNS = (
     "batch_ms",
     "serial_ms",
     "batch_ratio",
+    "logs_1_ms",
+    "logs_1_bytes",
+    "logs_1_n",
+    "logs_1_status",
+    "logs_1_trunc",
+    "logs_10_ms",
+    "logs_10_bytes",
+    "logs_10_n",
+    "logs_10_status",
+    "logs_10_trunc",
+    "logs_100_ms",
+    "logs_100_bytes",
+    "logs_100_n",
+    "logs_100_status",
+    "logs_100_trunc",
+    "logs_1000_ms",
+    "logs_1000_bytes",
+    "logs_1000_n",
+    "logs_1000_status",
+    "logs_1000_trunc",
 )
 
 
@@ -109,6 +130,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "batch_ms": _num((row.get("batch") or {}).get("batch_ms")),
                 "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
+                **_logs_range_cols(row.get("logs_range")),
             }
         )
     return buf.getvalue()
@@ -145,6 +167,27 @@ def _batch_supported(raw: dict[str, Any] | None) -> str:
     if label in {"partial", "skip"}:
         return label
     return "false"
+
+
+def _logs_range_cols(rows: Any) -> dict[str, str]:
+    by_blocks = {}
+    if isinstance(rows, list):
+        for hit in rows:
+            if isinstance(hit, dict) and hit.get("blocks") is not None:
+                by_blocks[int(hit["blocks"])] = hit
+    cols: dict[str, str] = {}
+    for span in LOGS_RANGES:
+        hit = by_blocks.get(span) or {}
+        cols[f"logs_{span}_ms"] = _num(hit.get("latency_ms"))
+        cols[f"logs_{span}_bytes"] = _num(hit.get("bytes_in"))
+        cols[f"logs_{span}_n"] = _num(hit.get("n_logs"))
+        cols[f"logs_{span}_status"] = str(hit.get("status") or "")
+        trunc = hit.get("truncated")
+        if hit:
+            cols[f"logs_{span}_trunc"] = _bool(trunc)
+        else:
+            cols[f"logs_{span}_trunc"] = ""
+    return cols
 
 
 def _bool(value: Any) -> str:

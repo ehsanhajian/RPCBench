@@ -30,6 +30,7 @@
   "burst": 0,
   "rps": 0.0,
   "batch": 0,
+  "logs_range": 0,
   "connection": "keepalive",
   "http": "1.1",
   "mode": "paired",
