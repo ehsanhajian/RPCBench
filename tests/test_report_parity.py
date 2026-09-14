@@ -196,3 +196,70 @@ def test_workload_name_matches_across_cli_html_json_csv_md() -> None:
     assert "finding" not in html.lower()
     assert "finding" not in md.lower()
 
+
+def test_payload_matches_across_cli_html_json_csv_md() -> None:
+    from rpcbench.methods import CallSpec
+    from rpcbench.profile import PayloadMeta
+
+    samples = (_hit(), _hit())
+    steps = (
+        CallSpec(
+            "block",
+            "eth_getBlockByNumber",
+            ("0x3e0", False),
+            source="recent_block",
+        ),
+    )
+    result = RunResult(
+        method="dex",
+        params=(),
+        samples=2,
+        warmup=0,
+        timeout=10.0,
+        budget=32,
+        outcomes=(
+            EndpointOutcome(
+                endpoint=Endpoint(name="local", url="http://127.0.0.1/local"),
+                warmup=(),
+                samples=samples,
+                stats=summarize(samples),
+            ),
+        ),
+        budget_remaining=20,
+        profile="dex",
+        workload=steps,
+        profile_notes="Uniswap-style reads",
+        payload=PayloadMeta(source="chain", head=1000, chain_id=1, fallback=False),
+        seed=7,
+    )
+    data = run_to_dict(result)
+    assert data["profile"] == "dex"
+    assert data["profile_notes"] == "Uniswap-style reads"
+    assert data["payload"]["source"] == "chain"
+    assert data["payload"]["head"] == 1000
+    assert data["payload"]["chain_id"] == 1
+    assert data["watermark"]["workload"] == "dex"
+
+    cli = format_run(result, color=False)
+    html = format_html(result)
+    md = format_md(result)
+    csv_row = next(csv.DictReader(io.StringIO(format_csv(result))))
+    assert "Method    dex" in cli
+    assert "Uniswap-style reads" in cli
+    assert "Payload   chain" in cli
+    assert "head=1000" in cli
+    assert "chainId=1" in cli
+    assert "dex" in html
+    assert "head=1000" in html
+    assert "chain" in html
+    assert "Uniswap-style reads" in html
+    assert "dex" in md
+    assert "head=1000" in md
+    assert csv_row["workload"] == "dex"
+    assert csv_row["payload_source"] == "chain"
+    assert csv_row["payload_head"] == "1000"
+    assert csv_row["payload_chain_id"] == "1"
+    assert "finding" not in cli.lower()
+    assert "finding" not in html.lower()
+    assert "finding" not in md.lower()
+

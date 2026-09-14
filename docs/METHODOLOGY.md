@@ -37,6 +37,45 @@ Logs are one block and one address. No unbounded scans. No writes. Logs appear o
 
 Example: `--workload wallet --budget short` is 3 rounds × 10 weighted calls = 30 timed samples per endpoint (plus extra freshness/hash/tag reads). `--workload indexer --budget short` is 3 × 10 as well, but four of every ten are bounded `eth_getLogs`.
 
+## Custom YAML profiles
+
+`--profile FILE.yaml` loads a mix without a code change. Named catalogs stay `--workload general|wallet|…` / `--profile mix`. Do not combine a file with `--method`, `--preset`, or `--params`.
+
+```yaml
+name: dex
+notes: Uniswap-style reads
+timeout: 8          # used when --timeout is omitted
+# contract: "0x…"   # optional default for source: known_contract
+methods:
+  - method: eth_blockNumber
+    weight: 1
+  - method: eth_getBlockByNumber
+    source: recent_block
+    weight: 2
+  - method: eth_getBalance
+    source: seeded_address
+    weight: 3
+  - method: eth_call
+    source: known_contract
+  - method: eth_getLogs
+    source: latest_head
+```
+
+`source` fills params from a shared snapshot taken **before** timed samples (not mixed into ranking):
+
+| Source | What it fills | Fallback if the chain cannot supply data |
+| --- | --- | --- |
+| `latest_head` | Pin block tag to the cohort `eth_blockNumber` | `"latest"` |
+| `recent_block` | A block in `[head − 256, head]` from `--seed` | `"latest"` |
+| `known_contract` | WETH (or wrapped native) for chainId 1 / 10 / 8453 / 137, or YAML `contract:` | zero address |
+| `seeded_address` | `0x` + SHA-256(`rpcbench:{seed}:{step}`)[:20] | (always determined; no chain read) |
+
+The same `--seed` + profile + fetched head produces the same method/param sequence on every provider and on a re-run of that snapshot. A live head that moved between runs changes absolute block numbers; the offset and seeded address stay fixed. Static `params:` are allowed instead of `source`, not both on one step.
+
+Logs from these sources stay **one block**. Unbounded scans are out of scope (`--logs-range` is the extra range table). `trace_*` / `debug_*` / admin / txpool are rejected. Writes still need `--allow-writes`.
+
+JSON `payload` records `source` (`chain` / `seed` / `yaml` / `fixture`), `head`, `chain_id`, and `fallback`. Compact CLI, HTML, CSV, and markdown print the same facts.
+
 ## Workload coverage
 
 Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--workload indexer` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. `--workload wallet` does not send logs, so a node that cannot serve `eth_getLogs` can still look ready for a wallet. Missing required steps take `~` in Ranking (same as high error, stale, or disagree). Default catalogs never include admin/personal/miner/engine/txpool, and never include `trace_*` / `debug_*`.
@@ -204,7 +243,7 @@ Every JSON report includes a `watermark` object so the numbers can be cited:
 | `git_sha` | Checkout SHA when this is a git install; omitted (`null`) from a PyPI wheel. `-dirty` if the tree has uncommitted diffs |
 | `utc` | Run start, UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
 | `budget` | Named sample size (`short` / `standard` / `long`) |
-| `workload` | named mix (`general`, `wallet`, …) or the JSON-RPC method |
+| `workload` | named mix (`general`, `wallet`, …), a YAML profile name, or the JSON-RPC method |
 | `seed` | Shared sequence stamp |
 | `family` | RPC family (`evm` today) |
 | `vantage` | `RPCBENCH_VANTAGE`, or the hostname |

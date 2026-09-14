@@ -90,6 +90,7 @@ def _hero(data: dict[str, Any]) -> str:
         "<h1>RPCBench</h1>"
         f"<p class=\"meta\">{escape(str(method))} · size {escape(str(data['sample_budget']))} · "
         f"rank {escape(str(data['rank_by']))} · similar {100 * data['similar_band']:.0f}% · "
+        f"{_payload_meta(data)}"
         f"sha={escape(str(mark['git_sha'] or '—'))}</p>"
         '<p class="winner">'
         f'<span class="label">Fastest</span> {_name_list(fastest, "ok")} · '
@@ -99,6 +100,24 @@ def _hero(data: dict[str, Any]) -> str:
         f'<p class="why">{escape(data["route"]["why"])}</p>'
         "</header>"
     )
+
+
+def _payload_meta(data: dict[str, Any]) -> str:
+    payload = data.get("payload")
+    if not payload:
+        notes = data.get("profile_notes")
+        return f"{escape(str(notes))} · " if notes else ""
+    bits = [str(payload.get("source") or "")]
+    if payload.get("head") is not None:
+        bits.append(f"head={payload['head']}")
+    if payload.get("chain_id") is not None:
+        bits.append(f"chainId={payload['chain_id']}")
+    if payload.get("fallback"):
+        bits.append("fixture fallback")
+    notes = data.get("profile_notes")
+    if notes:
+        bits.append(str(notes))
+    return escape(" · ".join(bit for bit in bits if bit)) + " · "
 
 
 def _ranking_table(

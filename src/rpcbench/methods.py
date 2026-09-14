@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+from typing import Any, Iterator
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 FAMILY_EVM = "evm"
@@ -29,6 +30,22 @@ class CallSpec:
     method: str
     params: tuple[Any, ...]
     weight: int = 1
+    source: str | None = None
+    contract: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkloadPlan:
+    """Resolved mix or single method. Unpackable as (label, steps)."""
+
+    label: str
+    steps: tuple[CallSpec, ...]
+    notes: str | None = None
+    timeout: float | None = None
+
+    def __iter__(self) -> Iterator[object]:
+        yield self.label
+        yield self.steps
 
 
 # Bounded logs: one block, one address. No scan. Used only where the mix needs it.
@@ -142,12 +159,39 @@ class MethodError(ValueError):
     pass
 
 
+_RPC_NAMESPACES = {
+    "eth",
+    "net",
+    "web3",
+    "debug",
+    "trace",
+    "txpool",
+    "engine",
+    "admin",
+    "personal",
+    "miner",
+    "wallet",
+    "clique",
+    "rpc",
+}
+
+
 def is_app_workload(profile: str | None) -> bool:
-    """True for named mixes, including the --profile mix alias."""
+    """True for catalog mixes, the mix alias, and custom YAML profile names."""
     if not profile:
         return False
     key = profile.strip().lower()
-    return key in APP_WORKLOADS or key in PROFILE_ALIASES
+    if key == "single":
+        return False
+    if key in APP_WORKLOADS or key in PROFILE_ALIASES:
+        return True
+    return not _looks_like_rpc_method(key)
+
+
+def _looks_like_rpc_method(name: str) -> bool:
+    if "_" not in name:
+        return False
+    return name.split("_", 1)[0].lower() in _RPC_NAMESPACES
 
 
 def canonical_workload(name: str) -> str | None:
@@ -204,8 +248,21 @@ def resolve_workload(
     allow_writes: bool = False,
     workload: str | None = None,
     family: str = FAMILY_EVM,
-) -> tuple[str, tuple[CallSpec, ...]]:
-    """Return (label, steps). Label is the mix name or the single JSON-RPC method."""
+) -> WorkloadPlan:
+    """Return a plan. Unpackable as (label, steps)."""
+    path = _custom_profile_path(profile=profile, workload=workload)
+    if path is not None:
+        if method or preset:
+            raise MethodError(
+                "use --workload or --profile without --method or --preset"
+            )
+        if params_json:
+            raise MethodError("mix payloads are fixed; do not pass --params")
+        if profile and workload:
+            raise MethodError("use --workload or --profile, not both")
+        from rpcbench.profile import load_profile
+
+        return load_profile(path, allow_writes=allow_writes)
     chosen = _pick_mix_label(profile=profile, workload=workload)
     if chosen is not None:
         if method or preset:
@@ -219,7 +276,7 @@ def resolve_workload(
             if not allow_writes:
                 _reject_writes(spec.method)
             _reject_mix_probe(spec.method)
-        return chosen, steps
+        return WorkloadPlan(label=chosen, steps=steps)
     name, params = resolve_method(
         method=method,
         preset=preset,
@@ -235,7 +292,7 @@ def resolve_workload(
             step = matched
     elif name == "eth_blockNumber" and not params:
         step = "head"
-    return name, (CallSpec(step, name, tuple(params)),)
+    return WorkloadPlan(label=name, steps=(CallSpec(step, name, tuple(params)),))
 
 
 def family_workload(family: str, name: str) -> tuple[CallSpec, ...]:
@@ -262,6 +319,14 @@ def parse_params(raw: str) -> list[Any]:
     return data
 
 
+def _custom_profile_path(*, profile: str | None, workload: str | None) -> Path | None:
+    from rpcbench.profile import as_profile_path
+
+    left = as_profile_path(profile)
+    right = as_profile_path(workload)
+    return left or right
+
+
 def _pick_mix_label(*, profile: str | None, workload: str | None) -> str | None:
     if not profile and not workload:
         return None
@@ -270,7 +335,9 @@ def _pick_mix_label(*, profile: str | None, workload: str | None) -> str | None:
         right = canonical_workload(workload)
         if left is None:
             known = ", ".join(("mix",) + APP_WORKLOADS)
-            raise MethodError(f"unknown --profile {profile!r} (try {known})")
+            raise MethodError(
+                f"unknown --profile {profile!r} (try {known} or a YAML file)"
+            )
         if right is None:
             known = ", ".join(("mix",) + APP_WORKLOADS)
             raise MethodError(f"unknown --workload {workload!r} (try {known})")
@@ -282,7 +349,8 @@ def _pick_mix_label(*, profile: str | None, workload: str | None) -> str | None:
     key = raw.lower()
     if canonical_workload(key) is None:
         known = ", ".join(("mix",) + APP_WORKLOADS)
-        raise MethodError(f"unknown {flag} {raw!r} (try {known})")
+        hint = f"{known} or a YAML file" if flag == "--profile" else known
+        raise MethodError(f"unknown {flag} {raw!r} (try {hint})")
     return key
 
 

@@ -1732,3 +1732,91 @@ def test_cli_sequential(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "seed=9" in out
 
 
+def test_cli_custom_yaml_profile(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    import httpx
+
+    from rpcbench import run as run_mod
+
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: ok\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    mix = tmp_path / "dex.yaml"
+    mix.write_text(
+        "name: dex\n"
+        "notes: Uniswap-style reads\n"
+        "methods:\n"
+        "  - method: eth_getBlockByNumber\n"
+        "    source: recent_block\n",
+        encoding="utf-8",
+    )
+    params: list[object] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        if payload["method"] == "eth_blockNumber":
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": "0x3e8"}
+            )
+        if payload["method"] == "eth_getBlockByNumber":
+            block = (payload.get("params") or ["latest"])[0]
+            if block not in {"latest", "safe", "finalized"}:
+                params.append(block)
+            return httpx.Response(
+                200,
+                json={"jsonrpc": "2.0", "id": 1, "result": {"hash": "0x1"}},
+            )
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": 1, "result": "0x1"}
+        )
+
+    real = run_mod.run_endpoints
+
+    def wrapped(config, **kwargs):
+        kwargs["client"] = httpx.Client(transport=httpx.MockTransport(handler))
+        return real(config, **kwargs)
+
+    import rpcbench.cli as cli
+
+    monkeypatch.setattr(cli, "run_endpoints", wrapped)
+    code = main(
+        [
+            "run",
+            "--endpoints",
+            str(cfg),
+            "--profile",
+            str(mix),
+            "--seed",
+            "7",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Method    dex" in out
+    assert "Uniswap-style reads" in out
+    assert "Payload   chain" in out
+    assert "head=1000" in out
+    assert params
+    assert params[0] != "0xdeadbeef"
+
+
+def test_cli_rejects_missing_profile_file(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--profile", str(tmp_path / "nope.yaml")]
+    )
+    assert code == 2
+    assert "not found" in capsys.readouterr().err
+
+

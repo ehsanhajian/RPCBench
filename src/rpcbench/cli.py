@@ -24,6 +24,7 @@ from rpcbench.html import format_html
 from rpcbench.logs import DEFAULT_LOGS_RANGE, LOGS_RANGES, ranges_for
 from rpcbench.markdown import format_md
 from rpcbench.methods import MethodError, is_app_workload, request_units, resolve_workload
+from rpcbench.profile import has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import (
     DEFAULT_BATCH,
@@ -109,8 +110,9 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         default=None,
         metavar="NAME",
         help=(
-            "App mix alias: mix (= general), general, wallet, indexer, trading, nft. "
-            "Same as --workload. Do not combine with --method."
+            "App mix: mix (= general), general, wallet, indexer, trading, nft, "
+            "or a YAML file. Same as --workload for named mixes. "
+            "Do not combine with --method."
         ),
     )
     run.add_argument(
@@ -259,7 +261,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         "--seed",
         type=int,
         default=0,
-        help="Seed for the shared request sequence (default: 0)",
+        help="Seed for the shared request sequence and YAML payload sources (default: 0)",
     )
     run.add_argument(
         "--rank-by",
@@ -420,9 +422,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
         return 2
     try:
-        apply_sample_budget(args)
-        config = load_targets(args.endpoints)
-        method, workload = resolve_workload(
+        plan = resolve_workload(
             profile=args.profile,
             workload=args.workload,
             method=args.method,
@@ -430,6 +430,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             params_json=args.params,
             allow_writes=args.allow_writes,
         )
+        if plan.timeout is not None and args.timeout is None:
+            args.timeout = plan.timeout
+        apply_sample_budget(args)
+        config = load_targets(args.endpoints)
+        method, workload = plan.label, plan.steps
         units = request_units(workload)
         needed = (
             len(config.endpoints)
@@ -440,13 +445,17 @@ def _cmd_run(args: argparse.Namespace) -> int:
             needed += len(config.endpoints)
         needed += len(config.endpoints)
         needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
+        needed += len(config.endpoints) * hint_request_count(workload)
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)
         if args.logs_range > 0:
             needed += len(config.endpoints) * len(ranges_for(args.logs_range))
         max_requests = args.max_requests
         extra_read = (
-            is_app_workload(method) or args.batch > 0 or args.logs_range > 0
+            is_app_workload(method)
+            or args.batch > 0
+            or args.logs_range > 0
+            or has_dynamic_source(workload)
         )
         if extra_read and needed > max_requests:
             if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
@@ -540,6 +549,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         http2=args.http2,
         batch=args.batch,
         logs_range=args.logs_range,
+        profile_notes=plan.notes,
     )
     json_blob = None
     md_blob = None

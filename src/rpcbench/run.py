@@ -22,6 +22,7 @@ from rpcbench.freshness import (
     Freshness,
     assess_freshness,
     block_time_for_chain,
+    cohort_height,
     parse_block_height,
 )
 from rpcbench.logs import (
@@ -35,6 +36,13 @@ from rpcbench.logs import (
     skipped_range,
 )
 from rpcbench.methods import CallSpec
+from rpcbench.profile import (
+    PayloadMeta,
+    bind_workload,
+    has_dynamic_source,
+    hint_needs,
+    payload_kind,
+)
 from rpcbench.rpc import (
     HTTP_1,
     HTTP_2,
@@ -205,6 +213,8 @@ class RunResult:
     git_sha: str | None = None
     started_at: str | None = None
     vantage: str | None = None
+    profile_notes: str | None = None
+    payload: PayloadMeta | None = None
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -422,15 +432,18 @@ def _by_method(
 
 
 def _workload_blob(workload: tuple[CallSpec, ...]) -> list[dict[str, object]]:
-    return [
-        {
+    rows: list[dict[str, object]] = []
+    for spec in workload:
+        row: dict[str, object] = {
             "name": spec.name,
             "method": spec.method,
             "params": list(spec.params),
             "weight": spec.weight,
         }
-        for spec in workload
-    ]
+        if spec.source:
+            row["source"] = spec.source
+        rows.append(row)
+    return rows
 
 
 def run_endpoints(
@@ -459,6 +472,7 @@ def run_endpoints(
     http2: bool = False,
     batch: int = 0,
     logs_range: int = 0,
+    profile_notes: str | None = None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -482,14 +496,6 @@ def run_endpoints(
     steps = workload or (CallSpec("head", method, tuple(rpc_params)),)
     purse = RequestBudget(budget)
     deadline = None if max_duration <= 0 else time.monotonic() + max_duration
-    seq_id = make_sequence_id(
-        seed=seed,
-        method=method,
-        params=rpc_params,
-        warmup=warmup,
-        samples=samples,
-        workload=_workload_blob(steps) if len(steps) > 1 else None,
-    )
     connection = CONN_NEW if new_connection else CONN_KEEPALIVE
     http = HTTP_2 if http2 else HTTP_1
     owns_client = client is None
@@ -498,6 +504,30 @@ def run_endpoints(
             timeout=timeout, new_connection=new_connection, http2=http2
         )
     try:
+        payload = None
+        if has_dynamic_source(steps):
+            steps, payload = _bind_from_chain(
+                config,
+                steps,
+                seed=seed,
+                timeout=timeout,
+                purse=purse,
+                deadline=deadline,
+                concurrency=1 if mode == MODE_SEQUENTIAL else concurrency,
+                client=client,
+            )
+            if len(steps) == 1:
+                rpc_params = list(steps[0].params)
+        seq_id = make_sequence_id(
+            seed=seed,
+            method=method,
+            params=rpc_params,
+            warmup=warmup,
+            samples=samples,
+            workload=_workload_blob(steps)
+            if len(steps) > 1 or has_dynamic_source(steps)
+            else None,
+        )
         return _execute_run(
             config,
             method=method,
@@ -525,10 +555,78 @@ def run_endpoints(
             http=http,
             batch=batch,
             logs_range=logs_range,
+            profile_notes=profile_notes,
+            payload=payload,
         )
     finally:
         if owns_client:
             client.close()
+
+
+def _bind_from_chain(
+    config: BenchConfig,
+    steps: tuple[CallSpec, ...],
+    *,
+    seed: int,
+    timeout: float,
+    purse: RequestBudget,
+    deadline: float | None,
+    concurrency: int,
+    client,
+) -> tuple[tuple[CallSpec, ...], PayloadMeta]:
+    """Paired extra reads to fill YAML sources. Not mixed into ranking."""
+    need_head, need_chain = hint_needs(steps)
+    head = None
+    chain_id = None
+    if need_head:
+        hits = _probe_wave(
+            config,
+            method="eth_blockNumber",
+            params=[],
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=concurrency,
+            client=client,
+        )
+        heights = [
+            parsed
+            for hit in hits.values()
+            if hit.ok
+            for parsed in (parse_block_height(hit.result),)
+            if parsed is not None
+        ]
+        head = cohort_height(heights)
+    if need_chain:
+        hits = _probe_wave(
+            config,
+            method="eth_chainId",
+            params=[],
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=concurrency,
+            client=client,
+        )
+        for hit in hits.values():
+            if not hit.ok:
+                continue
+            parsed = parse_block_height(hit.result)
+            if parsed is not None:
+                chain_id = parsed
+                break
+    bound, used_fixture = bind_workload(
+        steps, seed=seed, head=head, chain_id=chain_id
+    )
+    kind = payload_kind(
+        steps, head=head, chain_id=chain_id, fallback=used_fixture
+    )
+    return bound, PayloadMeta(
+        source=kind,
+        head=head,
+        chain_id=chain_id,
+        fallback=used_fixture or kind == "fixture",
+    )
 
 
 def _execute_run(
@@ -559,6 +657,8 @@ def _execute_run(
     http: str,
     batch: int,
     logs_range: int,
+    profile_notes: str | None,
+    payload: PayloadMeta | None,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -747,6 +847,8 @@ def _execute_run(
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
         vantage=vantage_label(),
+        profile_notes=profile_notes,
+        payload=payload,
     )
 
 

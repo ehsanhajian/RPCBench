@@ -63,6 +63,7 @@ def format_md_dict(data: dict[str, Any]) -> str:
         "",
         f"{_esc(method)} · size {_esc(data.get('sample_budget'))} · "
         f"rank {_esc(data.get('rank_by'))} · similar {band_txt} · "
+        f"{_payload_meta(data)}"
         f"sha={_esc(sha)}",
         "",
         f"**Fastest** {_esc(fastest_txt)} · "
@@ -342,3 +343,22 @@ def _pct(value: float | None) -> str:
 def _esc(value: Any) -> str:
     text = "—" if value is None else str(value)
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _payload_meta(data: dict[str, Any]) -> str:
+    payload = data.get("payload")
+    if not payload:
+        notes = data.get("profile_notes")
+        return f"{_esc(notes)} · " if notes else ""
+    bits = [str(payload.get("source") or "")]
+    if payload.get("head") is not None:
+        bits.append(f"head={payload['head']}")
+    if payload.get("chain_id") is not None:
+        bits.append(f"chainId={payload['chain_id']}")
+    if payload.get("fallback"):
+        bits.append("fixture fallback")
+    notes = data.get("profile_notes")
+    if notes:
+        bits.append(str(notes))
+    text = " · ".join(bit for bit in bits if bit)
+    return f"{_esc(text)} · " if text else ""

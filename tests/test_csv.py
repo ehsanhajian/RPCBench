@@ -100,11 +100,11 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "utc",
         "vantage",
         "workload",
+        "payload_source",
+        "payload_head",
+        "payload_chain_id",
         "rank_by",
         "rank",
-        "name",
-        "ok",
-        "responded",
     ]
     assert COLUMNS[-5:] == (
         "logs_1000_ms",
