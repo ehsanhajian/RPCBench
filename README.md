@@ -127,6 +127,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many mix rounds to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
 - **`--workload general|wallet|indexer|trading|nft`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call`. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **`--profile FILE.yaml`** is a custom mix you write (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed` so every provider gets the same sequence. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. Full YAML example, sources, seed, and fallback: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
 - **Batch** is opt-in (`--batch N`, omit N for 3, max 8). After timed samples, RPCBench sends one JSON-RPC array of N copies of the primary method, then the same N calls one-by-one, and reports wall-clock and the serial/batch ratio. A single-object error means the provider does not support batch (capability, not a crash). Partial item errors are marked `partial`. Adds 1+N requests per endpoint. Default is off (`--batch 0`). Not HTTP/2 multiplexing.
 - **Logs range** is opt-in (`--logs-range N`, omit N for 1000). After the pin, the same zero-address `eth_getLogs` is sent at 1, 10, 100, and up to N blocks. Mix logs stay `latest→latest`. Too-short chains skip with `head`. Truncation and 1000-only failures show in the Logs range table. Adds up to 4 requests per endpoint. Default is off (`--logs-range 0`).
@@ -195,7 +196,7 @@ rpcbench diff old.json new.json
 rpcbench diff --history reports/
 ```
 
-`--profile FILE.yaml` is a custom weighted mix (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed`. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. See [METHODOLOGY.md](docs/METHODOLOGY.md).
+`--profile FILE.yaml` is a custom weighted mix (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed`. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. YAML schema, sources table, and an example file: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
 
@@ -229,7 +230,7 @@ rpcbench diff --history reports/
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
 | `--workload` | | `general` (omit name), `wallet`, `indexer`, `trading`, `nft`. Weighted mix; compose with `--budget`. Do not combine with `--method` or `--preset` |
-| `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general` |
+| `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch and Logs range are already in the compact report when those flags are set |
