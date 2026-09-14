@@ -339,7 +339,7 @@ def run_to_dict(
         name = row.outcome.endpoint.name
         ranking.append(_ranking_entry(row, rank_by, marks[name]))
         providers.append(_provider_entry(row, result.method, marks[name]))
-    return {
+    blob: dict[str, Any] = {
         "tool": "rpcbench",
         "version": __version__,
         "schema": SCHEMA_VERSION,
@@ -347,15 +347,7 @@ def run_to_dict(
         "method": result.method,
         "params": list(result.params),
         "profile": result.profile,
-        "workload": [
-            {
-                "name": spec.name,
-                "method": spec.method,
-                "params": list(spec.params),
-                "weight": spec.weight,
-            }
-            for spec in result.workload
-        ],
+        "workload": [_workload_step_json(spec) for spec in result.workload],
         "samples": result.samples,
         "warmup": result.warmup,
         "sample_budget": result.sample_budget,
@@ -443,6 +435,12 @@ def run_to_dict(
             for pair in result.pairs
         ],
     }
+    if result.profile_notes:
+        blob["profile_notes"] = result.profile_notes
+    payload = _payload_json(result)
+    if payload is not None:
+        blob["payload"] = payload
+    return blob
 
 
 def format_json(
@@ -482,11 +480,13 @@ def format_run(
     label = _RANK_LABELS[rank_by]
     band_pct = f"{100 * band:.0f}%"
     method_line = _method_header(result, params)
+    payload_line = _payload_line(result)
     compare_what = result.profile if is_app_workload(result.profile) else result.method
     lines = [
         "RPCBench",
         "=" * 72,
         method_line,
+        *([payload_line] if payload_line else []),
         f"Samples   {result.samples} after {result.warmup} warmup  ·  "
         f"size {result.sample_budget}  ·  "
         f"Timeout {result.timeout:g}s  ·  "
@@ -868,8 +868,51 @@ def _signal_lines(
 def _method_header(result: RunResult, params: str) -> str:
     if is_app_workload(result.profile) and result.workload:
         steps = ", ".join(_step_label(spec) for spec in result.workload)
-        return f"Method    {result.profile}  ·  {steps}"
+        line = f"Method    {result.profile}  ·  {steps}"
+        if result.profile_notes:
+            line += f"  ·  {result.profile_notes}"
+        return line
     return f"Method    {result.method}{params}"
+
+
+def _workload_step_json(spec: CallSpec) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "name": spec.name,
+        "method": spec.method,
+        "params": list(spec.params),
+        "weight": spec.weight,
+    }
+    if spec.source:
+        row["source"] = spec.source
+    return row
+
+
+def _payload_json(result: RunResult) -> dict[str, Any] | None:
+    meta = result.payload
+    if meta is None:
+        return None
+    return {
+        "source": meta.source,
+        "head": meta.head,
+        "head_hex": hex(meta.head) if meta.head is not None else None,
+        "chain_id": meta.chain_id,
+        "fallback": meta.fallback,
+        "window": meta.window,
+    }
+
+
+def _payload_line(result: RunResult) -> str | None:
+    meta = result.payload
+    if meta is None:
+        return None
+    bits = [meta.source]
+    if meta.head is not None:
+        bits.append(f"head={meta.head}")
+    if meta.chain_id is not None:
+        bits.append(f"chainId={meta.chain_id}")
+    if meta.fallback:
+        bits.append("fixture fallback")
+    return "Payload   " + "  ·  ".join(bits)
 
 
 def _coverage_section(result: RunResult, use_color: bool) -> list[str]:

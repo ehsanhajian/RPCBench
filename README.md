@@ -29,6 +29,7 @@ rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
 rpcbench compare --endpoints endpoints.yaml --workload --budget short
 rpcbench compare --endpoints endpoints.yaml --workload wallet --budget short
 rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
+rpcbench compare --endpoints endpoints.yaml --profile my-mix.yaml --seed 7 --budget short
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -181,6 +182,7 @@ rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
 rpcbench run --endpoints endpoints.yaml --batch
 rpcbench run --endpoints endpoints.yaml --logs-range
 rpcbench run --endpoints endpoints.yaml --workload indexer --logs-range --budget short
+rpcbench run --endpoints endpoints.yaml --profile my-mix.yaml --seed 7
 rpcbench run --endpoints endpoints.yaml --sequential
 rpcbench run --endpoints endpoints.yaml --new-connection
 rpcbench run --endpoints endpoints.yaml --verbose
@@ -192,6 +194,8 @@ rpcbench run --endpoints endpoints.yaml --history reports/
 rpcbench diff old.json new.json
 rpcbench diff --history reports/
 ```
+
+`--profile FILE.yaml` is a custom weighted mix (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed`. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. See [METHODOLOGY.md](docs/METHODOLOGY.md).
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
 
@@ -217,7 +221,7 @@ rpcbench diff --history reports/
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |
-| `--seed` | 0 | Shared sequence stamp |
+| `--seed` | 0 | Shared sequence stamp. YAML `source` picks (recent block, seeded address) use this |
 | `--rank-by` | `p95` | `p50`, `p95`, `p99`, `mean`, or `rps` |
 | `--similar-band` | `0.10` | Relative band on the rank key (10%). High error above this is `~`, not a place |
 | `--stale-blocks` | `2` | Head lag (blocks vs cohort median) above this is stale. Set per chain |
@@ -225,7 +229,7 @@ rpcbench diff --history reports/
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
 | `--workload` | | `general` (omit name), `wallet`, `indexer`, `trading`, `nft`. Weighted mix; compose with `--budget`. Do not combine with `--method` or `--preset` |
-| `--profile` | | Alias for `--workload`. `mix` = `general` |
+| `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general` |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch and Logs range are already in the compact report when those flags are set |
