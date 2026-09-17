@@ -87,7 +87,7 @@ def assess(
         signals.append(_STALE)
     elif _lag_blocks(outcome):
         signals.append(_STALE_RISK)
-    if is_coverage_miss(outcome):
+    if is_coverage_miss(outcome, result):
         steps = missed_steps(outcome, result) if result is not None else ()
         extra = f" ({', '.join(steps)})" if steps else ""
         signals.append(
@@ -119,11 +119,11 @@ def assess(
     if (
         stats.n_ok == 0
         or _is_stale(outcome)
-        or is_coverage_miss(outcome)
+        or is_coverage_miss(outcome, result)
         or _is_disagree(outcome)
     ):
         decision = NOT_READY
-        kind = _not_ready_kind(outcome, classes)
+        kind = _not_ready_kind(outcome, classes, result)
     elif any(row.id in _RISKY_IDS for row in signals):
         decision = RISKY
         kind = next(row.id for row in signals if row.id in _RISKY_IDS)
@@ -170,7 +170,11 @@ def _is_disagree(outcome: EndpointOutcome) -> bool:
     return cons is not None and cons.verdict == "disagree"
 
 
-def _not_ready_kind(outcome: EndpointOutcome, classes: dict[str, int]) -> str:
+def _not_ready_kind(
+    outcome: EndpointOutcome,
+    classes: dict[str, int],
+    result: RunResult | None = None,
+) -> str:
     if outcome.stats.n_ok == 0:
         if classes.get("timeout"):
             return KIND_TIMEOUT
@@ -179,7 +183,7 @@ def _not_ready_kind(outcome: EndpointOutcome, classes: dict[str, int]) -> str:
         return KIND_FAILED
     if _is_stale(outcome):
         return KIND_STALE
-    if is_coverage_miss(outcome):
+    if is_coverage_miss(outcome, result):
         return KIND_COVERAGE
     return KIND_DISAGREE
 

@@ -765,6 +765,7 @@ def test_expand_steps_repeats_weighted_methods() -> None:
     counts = {name: names.count(name) for name in set(names)}
     assert counts["balance"] == 4
     assert counts["call"] == 3
+    assert counts["gas"] == 2
     assert counts["head"] == 1
     assert "logs" not in counts
 
@@ -812,6 +813,7 @@ def test_wallet_coverage_ignores_getLogs_indexer_requires_it() -> None:
     assert "Method    wallet" in text
     assert "balance×4" in text
     assert "call×3" in text
+    assert "gas×2" in text
     assert "Coverage  (active workload only" in text
 
     seen.clear()

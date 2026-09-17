@@ -32,6 +32,7 @@ class CallSpec:
     weight: int = 1
     source: str | None = None
     contract: str | None = None
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,24 @@ _LOGS_FILTER = {
     "address": ZERO_ADDRESS,
 }
 
+# Read-only simulation fixture. Empty calldata, zero address, no value.
+# Never a signed tx. estimateGas / simulateV1 / eth_call share this object.
+CALL_TX: dict[str, str] = {"to": ZERO_ADDRESS, "data": "0x"}
+
+
+def simulate_params(
+    *, to: str = ZERO_ADDRESS, block: str = "latest"
+) -> tuple[dict[str, object], str]:
+    """One-call eth_simulateV1 payload. validation=false so it is not a send."""
+    return (
+        {
+            "blockStateCalls": [{"calls": [{"to": to, "data": "0x"}]}],
+            "traceTransfers": False,
+            "validation": False,
+        },
+        block,
+    )
+
 
 def _head(weight: int = 1) -> CallSpec:
     return CallSpec("head", "eth_blockNumber", (), weight)
@@ -76,8 +95,22 @@ def _call(weight: int = 1) -> CallSpec:
     return CallSpec(
         "call",
         "eth_call",
-        ({"to": ZERO_ADDRESS, "data": "0x"}, "latest"),
+        (dict(CALL_TX), "latest"),
         weight,
+    )
+
+
+def _gas(weight: int = 1) -> CallSpec:
+    return CallSpec("gas", "eth_estimateGas", (dict(CALL_TX),), weight)
+
+
+def _simulate(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "simulate",
+        "eth_simulateV1",
+        simulate_params(),
+        weight,
+        optional=True,
     )
 
 
@@ -101,6 +134,7 @@ _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
         _block(),
         _balance(4),
         _call(3),
+        _gas(2),
     ),
     "indexer": (
         _head(),
@@ -114,6 +148,7 @@ _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
         _chain_id(),
         _block(2),
         _call(4),
+        _gas(2),
     ),
     "nft": (
         _head(),
@@ -207,6 +242,19 @@ def canonical_workload(name: str) -> str | None:
 def request_units(workload: tuple[CallSpec, ...]) -> int:
     """HTTP calls per endpoint per sample/warmup round (sum of weights)."""
     return sum(max(1, spec.weight) for spec in workload)
+
+
+def apply_simulate(steps: tuple[CallSpec, ...]) -> tuple[CallSpec, ...]:
+    """Append missing read-only simulation steps. simulateV1 is optional."""
+    methods = {spec.method for spec in steps}
+    extra: list[CallSpec] = []
+    if "eth_call" not in methods:
+        extra.append(_call())
+    if "eth_estimateGas" not in methods:
+        extra.append(_gas())
+    if "eth_simulateV1" not in methods:
+        extra.append(_simulate())
+    return steps + tuple(extra)
 
 
 def resolve_method(

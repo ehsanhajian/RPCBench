@@ -190,6 +190,23 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    sim = _simulate_rows(data)
+    if sim:
+        lines.extend(
+            [
+                "## Simulation",
+                "",
+                "Read-only `eth_estimateGas` / `eth_simulateV1` (fixture tx, no send). "
+                "Missing simulateV1 is skip, not a crash.",
+                "",
+                *_md_table(
+                    ["name", "step", "method", "p95", "status"],
+                    sim,
+                    right=(False, False, False, True, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -260,6 +277,38 @@ def _logs_range_rows(data: dict[str, Any]) -> list[list[str]]:
                     str(hit.get("status") or "—"),
                 ]
             )
+    return rows
+
+
+def _simulate_rows(data: dict[str, Any]) -> list[list[str]]:
+    steps = {
+        str(row.get("name") or "")
+        for row in (data.get("workload") or [])
+        if row.get("method") in {"eth_estimateGas", "eth_simulateV1"}
+    }
+    if not steps:
+        return []
+    coverage = data.get("coverage") or {}
+    cells_by_name: dict[str, dict[str, Any]] = {}
+    for provider in coverage.get("providers") or []:
+        cells_by_name[str(provider.get("name") or "")] = provider.get("cells") or {}
+    rows: list[list[str]] = []
+    for row in data.get("methods") or []:
+        step = str(row.get("step") or "")
+        if step not in steps:
+            continue
+        name = str(row.get("name") or "—")
+        cell = (cells_by_name.get(name) or {}).get(step) or {}
+        status = str(cell.get("status") or "—")
+        rows.append(
+            [
+                name,
+                step,
+                str(row.get("method") or "—"),
+                _ms(row.get("p95_ms")),
+                status,
+            ]
+        )
     return rows
 
 

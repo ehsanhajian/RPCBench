@@ -55,6 +55,7 @@ def test_cli_defaults() -> None:
     assert ns.burst == 0
     assert ns.batch == 0
     assert ns.logs_range == 0
+    assert ns.simulate is False
     assert ns.rps == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
@@ -1604,7 +1605,9 @@ def test_cli_wallet_omits_logs_indexer_includes_them(
     assert "Method    wallet" in out
     assert methods.count("eth_getBalance") == 4
     assert methods.count("eth_call") == 3
+    assert methods.count("eth_estimateGas") == 2
     assert "eth_getLogs" not in methods
+    assert "eth_simulateV1" not in methods
 
     methods.clear()
     code = main(

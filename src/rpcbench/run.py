@@ -35,6 +35,7 @@ from rpcbench.logs import (
     ranges_for,
     skipped_range,
 )
+from rpcbench.coverage import is_not_offered
 from rpcbench.methods import CallSpec
 from rpcbench.profile import (
     PayloadMeta,
@@ -209,6 +210,7 @@ class RunResult:
     http: str = HTTP_1
     batch: int = 0
     logs_range: int = 0
+    simulate: bool = False
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -442,6 +444,8 @@ def _workload_blob(workload: tuple[CallSpec, ...]) -> list[dict[str, object]]:
         }
         if spec.source:
             row["source"] = spec.source
+        if spec.optional:
+            row["optional"] = True
         rows.append(row)
     return rows
 
@@ -473,6 +477,7 @@ def run_endpoints(
     batch: int = 0,
     logs_range: int = 0,
     profile_notes: str | None = None,
+    simulate: bool = False,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -557,6 +562,7 @@ def run_endpoints(
             logs_range=logs_range,
             profile_notes=profile_notes,
             payload=payload,
+            simulate=simulate,
         )
     finally:
         if owns_client:
@@ -659,6 +665,7 @@ def _execute_run(
     logs_range: int,
     profile_notes: str | None,
     payload: PayloadMeta | None,
+    simulate: bool,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -843,6 +850,7 @@ def _execute_run(
         http=http,
         batch=batch,
         logs_range=logs_range,
+        simulate=simulate,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -1153,6 +1161,22 @@ def _hit(
     )
 
 
+def _ranking_samples(
+    measured: tuple[ProbeResult, ...], workload: tuple[CallSpec, ...]
+) -> tuple[ProbeResult, ...]:
+    """Drop optional not-offered hits so unimplemented simulateV1 is not a fail."""
+    optional = {spec.method for spec in workload if spec.optional}
+    if not optional:
+        return measured
+    kept = []
+    for hit in measured:
+        method = hit.method or ""
+        if method in optional and not hit.ok and is_not_offered(hit.error):
+            continue
+        kept.append(hit)
+    return tuple(kept)
+
+
 def _finish_outcome(
     endpoint: Endpoint,
     warmup_hits: tuple[ProbeResult, ...],
@@ -1160,17 +1184,18 @@ def _finish_outcome(
     workload: tuple[CallSpec, ...],
     burst: int = 0,
 ) -> EndpointOutcome:
-    burst_stats, steady_stats = _phase_stats(measured, burst)
+    ranked = _ranking_samples(measured, workload)
+    burst_stats, steady_stats = _phase_stats(ranked, burst)
     return EndpointOutcome(
         endpoint=endpoint,
         warmup=warmup_hits,
         samples=measured,
-        stats=summarize(measured),
+        stats=summarize(ranked),
         by_method=_by_method(measured, workload),
         burst_stats=burst_stats,
         steady_stats=steady_stats,
-        timing=summarize_timing(measured),
-        transport=summarize_transport(measured),
+        timing=summarize_timing(ranked),
+        transport=summarize_transport(ranked),
     )
 
 
