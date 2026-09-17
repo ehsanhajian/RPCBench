@@ -56,6 +56,7 @@ def test_cli_defaults() -> None:
     assert ns.batch == 0
     assert ns.logs_range == 0
     assert ns.simulate is False
+    assert ns.archive is False
     assert ns.rps == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False

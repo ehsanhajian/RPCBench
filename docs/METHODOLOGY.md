@@ -169,6 +169,23 @@ Trading and wallets live on “would this tx work?”, not `eth_blockNumber`. **
 
 These are **timed mix steps** (Methods table, Coverage, ranking) except unimplemented simulateV1: **skip**, dropped from ranking error rate, not a crash. YAML may list the same methods; simulateV1 stays optional.
 
+## Archive / historical state
+
+Indexers and wallets need old state, not only `latest`. **`--archive`** is one extra read after the pin is known: `eth_getBalance` of the zero address at **genesis** (`0x0`). Mix catalogs stay on `"latest"`. `--budget long` does not turn this on.
+
+If the cohort pin is below **128** blocks (a typical full-node prune window), the probe is **skipped** with reason `head` instead of calling a block the node still has. Non-EVM families skip with `family`.
+
+Each endpoint is classified **yes** / **no** / **unknown** / **rate-limited**:
+
+- **yes** — hex balance at genesis
+- **no** — pruned / missing-state JSON-RPC (`missing trie node`, `historical state is not available`, …)
+- **rate-limited** — HTTP 429 or CU/throttle
+- **unknown** — timeout, connection, other errors, or skip
+
+Missing archive is a capability result, not a crash and not a vulnerability. These samples are **not** mixed into ranking, reliability, or Fastest. Timed historical-vs-head latency is a later issue (`#11`).
+
+Adds **1 HTTP request per endpoint**.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
