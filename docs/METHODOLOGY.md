@@ -182,9 +182,19 @@ Each endpoint is classified **yes** / **no** / **unknown** / **rate-limited**:
 - **rate-limited** — HTTP 429 or CU/throttle
 - **unknown** — timeout, connection, other errors, or skip
 
-Missing archive is a capability result, not a crash and not a vulnerability. These samples are **not** mixed into ranking, reliability, or Fastest. Timed historical-vs-head latency is a later issue (`#11`).
+Missing archive is a capability result, not a crash and not a vulnerability. These samples are **not** mixed into ranking, reliability, or Fastest. Timed historical-vs-head latency is `--lookback` ([Historical queries](#historical-queries)).
 
 Adds **1 HTTP request per endpoint**.
+
+## Historical queries
+
+A genesis yes/no is not enough for indexers: they also need how slow a **non-head** read is. **`--lookback N`** (default 0 = off, omit N for 1000) is an extra read after archive detection: the same `eth_getBalance` of the zero address at **pin − N**, then once at `"latest"` so the two latencies are comparable. Mix catalogs stay on `"latest"`. `--budget long` does not turn this on.
+
+`--lookback` turns on `--archive`. A node classified **no** (pruned) skips when N ≥ 128 (the typical full-node window) with reason `archive`. A **rate-limited** archive probe skips with `rate_limit`. Shallower lookbacks still run — a Geth full node may keep the last ~128 blocks. If the pin is below N, the probe is **skipped** with reason `head`. Missing pin is `pin`. Non-EVM families skip with `family`. When pin − N is genesis and the archive probe already succeeded, that sample is reused instead of sending a second genesis read.
+
+Reported per endpoint: historical latency, latest (head) latency, ratio (`hist / head`), error rate, and a status (`ok` / `skip/…` / error class). These samples are **not** mixed into ranking, reliability, or Fastest. Missing history is skip, not a crash and not a vulnerability.
+
+Adds **up to 2 HTTP requests per endpoint** (plus the archive probe).
 
 ## P99
 

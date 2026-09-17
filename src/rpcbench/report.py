@@ -12,6 +12,7 @@ from typing import Any
 
 from rpcbench import __version__
 from rpcbench.archive import ArchiveHit, archive_label, archive_status, as_dict as archive_dict
+from rpcbench.history import HistoryHit, history_label, as_dict as history_dict
 from rpcbench.coverage import (
     as_dict as coverage_dict,
     cell_for,
@@ -450,6 +451,8 @@ def run_to_dict(
         blob["simulate"] = True
     if result.archive:
         blob["archive"] = True
+    if result.lookback:
+        blob["lookback"] = result.lookback
     return blob
 
 
@@ -510,6 +513,7 @@ def format_run(
         f"{_logs_range_mode_suffix(result)}"
         f"{_simulate_mode_suffix(result)}"
         f"{_archive_mode_suffix(result)}"
+        f"{_lookback_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result),
         "",
@@ -568,6 +572,8 @@ def format_run(
             lines.extend(_logs_range_section(result, use_color))
         if result.archive:
             lines.extend(_archive_section(result, use_color))
+        if result.lookback > 0:
+            lines.extend(_history_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -668,6 +674,8 @@ def _verbose_sections(
         lines.extend(_logs_range_section(result, use_color))
     if result.archive:
         lines.extend(_archive_section(result, use_color))
+    if result.lookback > 0:
+        lines.extend(_history_section(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1219,6 +1227,8 @@ def _extra_read_json(outcome: EndpointOutcome) -> dict[str, Any]:
         blob["logs_range"] = _logs_range_json(outcome)
     if outcome.archive is not None:
         blob["archive"] = archive_dict(outcome.archive)
+    if outcome.history is not None:
+        blob["history"] = history_dict(outcome.history)
     return blob
 
 
@@ -1261,6 +1271,51 @@ def _archive_status_cell(hit: ArchiveHit, use_color: bool) -> str:
     if hit.skip or status == "unknown":
         return label
     if status == "yes":
+        return _paint(label, _GREEN, enabled=use_color)
+    return _paint(label, _RED, enabled=use_color)
+
+
+def _history_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        "History  ("
+        f"eth_getBalance at pin−{result.lookback} vs latest; "
+        "extra read; not mixed into ranking)",
+        *_history_lines(result, use_color),
+    ]
+
+
+def _history_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        hit = outcome.history
+        if hit is None:
+            rows.append([name, "—", "—", "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                str(hit.lookback),
+                "—" if hit.block is None else str(hit.block),
+                _cell_ms(hit.latency_ms) if hit.ok else "—",
+                _cell_ms(hit.head_ms) if hit.head_ms is not None else "—",
+                _fmt_ratio(hit.ratio),
+                _history_status_cell(hit, use_color),
+            ]
+        )
+    return _grid(
+        ["name", "lookback", "block", "hist", "head", "ratio", "status"],
+        rows,
+        right=(False, True, True, True, True, True, False),
+    )
+
+
+def _history_status_cell(hit: HistoryHit, use_color: bool) -> str:
+    label = history_label(hit)
+    if hit.skip:
+        return label
+    if hit.ok:
         return _paint(label, _GREEN, enabled=use_color)
     return _paint(label, _RED, enabled=use_color)
 
@@ -2082,6 +2137,12 @@ def _archive_mode_suffix(result: RunResult) -> str:
     if not result.archive:
         return ""
     return "  ·  archive"
+
+
+def _lookback_mode_suffix(result: RunResult) -> str:
+    if result.lookback <= 0:
+        return ""
+    return f"  ·  lookback={result.lookback}"
 
 
 def _batch_summary_json(summary: Any) -> dict[str, Any] | None:

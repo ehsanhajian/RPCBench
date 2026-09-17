@@ -57,6 +57,7 @@ def test_cli_defaults() -> None:
     assert ns.logs_range == 0
     assert ns.simulate is False
     assert ns.archive is False
+    assert ns.lookback == 0
     assert ns.rps == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
@@ -636,6 +637,13 @@ def test_cli_batch_flag_defaults_to_three() -> None:
     assert ns.batch == 3
     ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--batch", "5"])
     assert ns.batch == 5
+
+
+def test_cli_lookback_flag_defaults_to_one_thousand() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--lookback"])
+    assert ns.lookback == 1000
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--lookback", "50"])
+    assert ns.lookback == 50
 
 
 def test_cli_rejects_batch_above_cap(tmp_path: Path, capsys) -> None:

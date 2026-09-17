@@ -16,6 +16,15 @@ from rpcbench.archive import (
     hit_from_probe as archive_from_probe,
     skipped_archive,
 )
+from rpcbench.history import (
+    HistoryHit,
+    history_block,
+    history_params,
+    history_skip_reason,
+    hit_from_probes as history_from_probes,
+    latest_params,
+    skipped_history,
+)
 from rpcbench.config import BenchConfig, Endpoint
 from rpcbench.consistency import (
     Consistency,
@@ -179,6 +188,7 @@ class EndpointOutcome:
     batch: BatchSummary | None = None
     logs_range: tuple[LogsRangeHit, ...] = ()
     archive: ArchiveHit | None = None
+    history: HistoryHit | None = None
 
 
 @dataclass(frozen=True)
@@ -220,6 +230,7 @@ class RunResult:
     logs_range: int = 0
     simulate: bool = False
     archive: bool = False
+    lookback: int = 0
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -488,6 +499,7 @@ def run_endpoints(
     profile_notes: str | None = None,
     simulate: bool = False,
     archive: bool = False,
+    lookback: int = 0,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -503,6 +515,8 @@ def run_endpoints(
         raise ValueError(f"batch must be 0–{MAX_BATCH}")
     if logs_range < 0 or logs_range > MAX_LOGS_RANGE:
         raise ValueError(f"logs-range must be 0–{MAX_LOGS_RANGE}")
+    if lookback < 0:
+        raise ValueError("lookback must be >= 0")
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -574,6 +588,7 @@ def run_endpoints(
             payload=payload,
             simulate=simulate,
             archive=archive,
+            lookback=lookback,
         )
     finally:
         if owns_client:
@@ -678,6 +693,7 @@ def _execute_run(
     payload: PayloadMeta | None,
     simulate: bool,
     archive: bool,
+    lookback: int,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -815,6 +831,28 @@ def _execute_run(
             )
             for outcome in outcomes
         ]
+    if lookback > 0:
+        measured_history = _measure_history(
+            config,
+            pin=pin,
+            lookback=lookback,
+            archives={
+                outcome.endpoint.name: outcome.archive for outcome in outcomes
+            },
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=wave_concurrency,
+            client=client,
+            family=FAMILY_EVM,
+        )
+        outcomes = [
+            replace(
+                outcome,
+                history=measured_history.get(outcome.endpoint.name),
+            )
+            for outcome in outcomes
+        ]
     if logs_range > 0:
         measured_logs = _measure_logs_ranges(
             config,
@@ -882,6 +920,7 @@ def _execute_run(
         logs_range=logs_range,
         simulate=simulate,
         archive=archive,
+        lookback=lookback,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -1036,6 +1075,89 @@ def _measure_archive(
     return {
         ep.name: archive_from_probe(wave[ep.name], block=target) for ep in endpoints
     }
+
+
+def _measure_history(
+    config: BenchConfig,
+    *,
+    pin: int | None,
+    lookback: int,
+    archives: dict[str, ArchiveHit | None],
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    concurrency: int,
+    client,
+    family: str,
+) -> dict[str, HistoryHit]:
+    endpoints = list(config.endpoints)
+    target = history_block(pin, lookback)
+    by_name: dict[str, HistoryHit] = {}
+    live: list[Endpoint] = []
+    reuse_hist: dict[str, ProbeResult] = {}
+    for ep in endpoints:
+        archive = archives.get(ep.name)
+        reason = history_skip_reason(
+            pin=pin, lookback=lookback, family=family, archive=archive
+        )
+        if reason:
+            by_name[ep.name] = skipped_history(reason, lookback=lookback, block=target)
+            continue
+        assert target is not None
+        if (
+            archive is not None
+            and archive.ok
+            and archive.block == target
+            and archive.latency_ms is not None
+        ):
+            reuse_hist[ep.name] = ProbeResult(
+                ok=True,
+                reachable=True,
+                latency_ms=archive.latency_ms,
+                result=archive.result,
+                error=None,
+                error_class=None,
+                attempts=1,
+                method="eth_getBalance",
+            )
+        live.append(ep)
+    if not live:
+        return by_name
+    live_cfg = replace(config, endpoints=tuple(live))
+    head_wave = _probe_wave(
+        live_cfg,
+        method="eth_getBalance",
+        params=list(latest_params()),
+        timeout=timeout,
+        budget=budget,
+        deadline=deadline,
+        concurrency=concurrency,
+        client=client,
+    )
+    need_hist = [ep for ep in live if ep.name not in reuse_hist]
+    hist_wave: dict[str, ProbeResult] = dict(reuse_hist)
+    if need_hist:
+        hist_cfg = replace(config, endpoints=tuple(need_hist))
+        hist_wave.update(
+            _probe_wave(
+                hist_cfg,
+                method="eth_getBalance",
+                params=list(history_params(target if target is not None else 0)),
+                timeout=timeout,
+                budget=budget,
+                deadline=deadline,
+                concurrency=concurrency,
+                client=client,
+            )
+        )
+    for ep in live:
+        by_name[ep.name] = history_from_probes(
+            lookback=lookback,
+            block=target if target is not None else 0,
+            historical=hist_wave[ep.name],
+            head=head_wave.get(ep.name),
+        )
+    return by_name
 
 
 def _measure_batch(

@@ -78,6 +78,11 @@ COLUMNS = (
     "archive_block",
     "archive_ms",
     "archive_status",
+    "history_ms",
+    "history_head_ms",
+    "history_ratio",
+    "history_block",
+    "history_status",
 )
 
 
@@ -147,6 +152,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
                 **_archive_cols(row.get("archive")),
+                **_history_cols(row.get("history")),
             }
         )
     return buf.getvalue()
@@ -237,6 +243,17 @@ def _archive_cols(raw: Any) -> dict[str, str]:
         "archive_block": _num(hit.get("block")),
         "archive_ms": _num(hit.get("latency_ms")),
         "archive_status": str(hit.get("label") or hit.get("status") or ""),
+    }
+
+
+def _history_cols(raw: Any) -> dict[str, str]:
+    hit = raw if isinstance(raw, dict) else {}
+    return {
+        "history_ms": _num(hit.get("latency_ms")),
+        "history_head_ms": _num(hit.get("head_ms")),
+        "history_ratio": _num(hit.get("ratio")),
+        "history_block": _num(hit.get("block")),
+        "history_status": str(hit.get("status") or ""),
     }
 
 

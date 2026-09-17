@@ -10,6 +10,7 @@ from rpcbench import __version__
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
+from rpcbench.history import DEFAULT_LOOKBACK
 from rpcbench.diff import (
     DiffError,
     compare_reports,
@@ -254,6 +255,19 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         ),
     )
     run.add_argument(
+        "--lookback",
+        type=int,
+        nargs="?",
+        const=DEFAULT_LOOKBACK,
+        default=0,
+        metavar="N",
+        help=(
+            "Timed eth_getBalance at pin−N vs latest "
+            f"(0=off, omit N for {DEFAULT_LOOKBACK}). "
+            "Skips when archive/history is missing. Not mixed into ranking."
+        ),
+    )
+    run.add_argument(
         "--sequential",
         action="store_true",
         help="Run endpoints one after another instead of racing each sample (default is paired)",
@@ -461,6 +475,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             workload = apply_simulate(workload)
             if not is_app_workload(method):
                 method = "simulate"
+        if args.lookback > 0:
+            args.archive = True
         units = request_units(workload)
         needed = (
             len(config.endpoints)
@@ -478,6 +494,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             needed += len(config.endpoints) * len(ranges_for(args.logs_range))
         if args.archive:
             needed += len(config.endpoints)
+        if args.lookback > 0:
+            needed += len(config.endpoints) * 2
         max_requests = args.max_requests
         extra_read = (
             is_app_workload(method)
@@ -485,6 +503,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             or args.logs_range > 0
             or args.simulate
             or args.archive
+            or args.lookback > 0
             or has_dynamic_source(workload)
         )
         if extra_read and needed > max_requests:
@@ -501,6 +520,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 raise SafetyError(
                     f"--logs-range {args.logs_range} needs {needed} requests "
                     f"({len(config.endpoints)} endpoints × {n_ranges} ranges); "
+                    f"pass --max-requests {needed}"
+                )
+            elif args.lookback > 0:
+                raise SafetyError(
+                    f"--lookback {args.lookback} needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × 2 extra); "
                     f"pass --max-requests {needed}"
                 )
             elif args.archive:
@@ -532,13 +557,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.batch < 0
         or args.batch > MAX_BATCH
         or args.rps < 0
+        or args.lookback < 0
         or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
             f"--concurrency >= 0, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
-            "--rps >= 0, "
+            "--rps >= 0, --lookback >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
         )
@@ -588,6 +614,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         profile_notes=plan.notes,
         simulate=args.simulate,
         archive=args.archive,
+        lookback=args.lookback,
     )
     json_blob = None
     md_blob = None
