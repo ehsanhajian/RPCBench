@@ -207,6 +207,23 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    archive = _archive_rows(data)
+    if archive:
+        lines.extend(
+            [
+                "## Archive",
+                "",
+                "Historical state via `eth_getBalance` at genesis. "
+                "Missing archive is skip / no, not a crash.",
+                "",
+                *_md_table(
+                    ["name", "archive", "block", "ms", "note"],
+                    archive,
+                    right=(False, False, True, True, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -307,6 +324,26 @@ def _simulate_rows(data: dict[str, Any]) -> list[list[str]]:
                 str(row.get("method") or "—"),
                 _ms(row.get("p95_ms")),
                 status,
+            ]
+        )
+    return rows
+
+
+def _archive_rows(data: dict[str, Any]) -> list[list[str]]:
+    if not data.get("archive"):
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        hit = row.get("archive")
+        if not hit:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                str(hit.get("label") or hit.get("status") or "—"),
+                "—" if hit.get("block") is None else str(hit.get("block")),
+                _ms(hit.get("latency_ms")) if hit.get("ok") else "—",
+                str(hit.get("skip") or hit.get("error_class") or "—"),
             ]
         )
     return rows

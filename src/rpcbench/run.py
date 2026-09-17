@@ -9,6 +9,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 
+from rpcbench.archive import (
+    ArchiveHit,
+    archive_block,
+    archive_params,
+    hit_from_probe as archive_from_probe,
+    skipped_archive,
+)
 from rpcbench.config import BenchConfig, Endpoint
 from rpcbench.consistency import (
     Consistency,
@@ -171,6 +178,7 @@ class EndpointOutcome:
     transport: TransportSummary | None = None
     batch: BatchSummary | None = None
     logs_range: tuple[LogsRangeHit, ...] = ()
+    archive: ArchiveHit | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +219,7 @@ class RunResult:
     batch: int = 0
     logs_range: int = 0
     simulate: bool = False
+    archive: bool = False
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -478,6 +487,7 @@ def run_endpoints(
     logs_range: int = 0,
     profile_notes: str | None = None,
     simulate: bool = False,
+    archive: bool = False,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -563,6 +573,7 @@ def run_endpoints(
             profile_notes=profile_notes,
             payload=payload,
             simulate=simulate,
+            archive=archive,
         )
     finally:
         if owns_client:
@@ -666,6 +677,7 @@ def _execute_run(
     profile_notes: str | None,
     payload: PayloadMeta | None,
     simulate: bool,
+    archive: bool,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -785,6 +797,24 @@ def _execute_run(
         )
         for outcome in outcomes
     ]
+    if archive:
+        measured_archive = _measure_archive(
+            config,
+            pin=pin,
+            timeout=timeout,
+            budget=purse,
+            deadline=deadline,
+            concurrency=wave_concurrency,
+            client=client,
+            family=FAMILY_EVM,
+        )
+        outcomes = [
+            replace(
+                outcome,
+                archive=measured_archive.get(outcome.endpoint.name),
+            )
+            for outcome in outcomes
+        ]
     if logs_range > 0:
         measured_logs = _measure_logs_ranges(
             config,
@@ -851,6 +881,7 @@ def _execute_run(
         batch=batch,
         logs_range=logs_range,
         simulate=simulate,
+        archive=archive,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
@@ -967,6 +998,44 @@ def _measure_logs_ranges(
             if hit.skip in {"budget", "duration"}:
                 starved = hit.skip
     return {name: tuple(rows) for name, rows in by_name.items()}
+
+
+def _measure_archive(
+    config: BenchConfig,
+    *,
+    pin: int | None,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    concurrency: int,
+    client,
+    family: str,
+) -> dict[str, ArchiveHit]:
+    endpoints = list(config.endpoints)
+    reason = family_skip_reason(family)
+    if reason:
+        hit = skipped_archive(reason)
+        return {ep.name: hit for ep in endpoints}
+    target = archive_block(pin)
+    if pin is None:
+        hit = skipped_archive("pin")
+        return {ep.name: hit for ep in endpoints}
+    if target is None:
+        hit = skipped_archive("head")
+        return {ep.name: hit for ep in endpoints}
+    wave = _probe_wave(
+        config,
+        method="eth_getBalance",
+        params=list(archive_params(target)),
+        timeout=timeout,
+        budget=budget,
+        deadline=deadline,
+        concurrency=concurrency,
+        client=client,
+    )
+    return {
+        ep.name: archive_from_probe(wave[ep.name], block=target) for ep in endpoints
+    }
 
 
 def _measure_batch(

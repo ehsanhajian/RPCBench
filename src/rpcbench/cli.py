@@ -246,6 +246,14 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         ),
     )
     run.add_argument(
+        "--archive",
+        action="store_true",
+        help=(
+            "Probe historical state (eth_getBalance at genesis). "
+            "Reports yes / no / unknown / rate-limited. Not mixed into ranking."
+        ),
+    )
+    run.add_argument(
         "--sequential",
         action="store_true",
         help="Run endpoints one after another instead of racing each sample (default is paired)",
@@ -468,12 +476,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
             needed += len(config.endpoints) * (1 + args.batch)
         if args.logs_range > 0:
             needed += len(config.endpoints) * len(ranges_for(args.logs_range))
+        if args.archive:
+            needed += len(config.endpoints)
         max_requests = args.max_requests
         extra_read = (
             is_app_workload(method)
             or args.batch > 0
             or args.logs_range > 0
             or args.simulate
+            or args.archive
             or has_dynamic_source(workload)
         )
         if extra_read and needed > max_requests:
@@ -490,6 +501,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 raise SafetyError(
                     f"--logs-range {args.logs_range} needs {needed} requests "
                     f"({len(config.endpoints)} endpoints × {n_ranges} ranges); "
+                    f"pass --max-requests {needed}"
+                )
+            elif args.archive:
+                raise SafetyError(
+                    f"--archive needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × 1 extra); "
                     f"pass --max-requests {needed}"
                 )
             else:
@@ -570,6 +587,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         logs_range=args.logs_range,
         profile_notes=plan.notes,
         simulate=args.simulate,
+        archive=args.archive,
     )
     json_blob = None
     md_blob = None

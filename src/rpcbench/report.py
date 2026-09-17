@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from rpcbench import __version__
+from rpcbench.archive import ArchiveHit, archive_label, archive_status, as_dict as archive_dict
 from rpcbench.coverage import (
     as_dict as coverage_dict,
     cell_for,
@@ -447,6 +448,8 @@ def run_to_dict(
         blob["payload"] = payload
     if result.simulate:
         blob["simulate"] = True
+    if result.archive:
+        blob["archive"] = True
     return blob
 
 
@@ -506,6 +509,7 @@ def format_run(
         f"{_batch_mode_suffix(result)}"
         f"{_logs_range_mode_suffix(result)}"
         f"{_simulate_mode_suffix(result)}"
+        f"{_archive_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result),
         "",
@@ -562,6 +566,8 @@ def format_run(
             lines.extend(_batch_section(result, use_color))
         if result.logs_range > 0:
             lines.extend(_logs_range_section(result, use_color))
+        if result.archive:
+            lines.extend(_archive_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -660,6 +666,8 @@ def _verbose_sections(
         lines.extend(_batch_section(result, use_color))
     if result.logs_range > 0:
         lines.extend(_logs_range_section(result, use_color))
+    if result.archive:
+        lines.extend(_archive_section(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1205,6 +1213,58 @@ def _logs_range_json(outcome: EndpointOutcome) -> list[dict[str, Any]]:
     return [_logs_range_hit_json(hit) for hit in outcome.logs_range]
 
 
+def _extra_read_json(outcome: EndpointOutcome) -> dict[str, Any]:
+    blob: dict[str, Any] = {}
+    if outcome.logs_range:
+        blob["logs_range"] = _logs_range_json(outcome)
+    if outcome.archive is not None:
+        blob["archive"] = archive_dict(outcome.archive)
+    return blob
+
+
+def _archive_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        "Archive  ("
+        "eth_getBalance at genesis; extra read; not mixed into ranking)",
+        *_archive_lines(result, use_color),
+    ]
+
+
+def _archive_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        hit = outcome.archive
+        if hit is None:
+            rows.append([name, "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                _archive_status_cell(hit, use_color),
+                str(hit.block),
+                _cell_ms(hit.latency_ms) if hit.ok else "—",
+                hit.skip or hit.error_class or "",
+            ]
+        )
+    return _grid(
+        ["name", "archive", "block", "ms", "note"],
+        rows,
+        right=(False, False, True, True, False),
+    )
+
+
+def _archive_status_cell(hit: ArchiveHit, use_color: bool) -> str:
+    label = archive_label(hit)
+    status = archive_status(hit)
+    if hit.skip or status == "unknown":
+        return label
+    if status == "yes":
+        return _paint(label, _GREEN, enabled=use_color)
+    return _paint(label, _RED, enabled=use_color)
+
+
 _BATCH_SKIP = frozenset({"budget", "duration"})
 
 
@@ -1536,11 +1596,7 @@ def _comparison_entry(
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
-        **(
-            {"logs_range": _logs_range_json(outcome)}
-            if outcome.logs_range
-            else {}
-        ),
+        **_extra_read_json(outcome),
     }
 
 
@@ -1825,11 +1881,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
-        **(
-            {"logs_range": _logs_range_json(outcome)}
-            if outcome.logs_range
-            else {}
-        ),
+        **_extra_read_json(outcome),
     }
 
 
@@ -1877,11 +1929,7 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
-        **(
-            {"logs_range": _logs_range_json(outcome)}
-            if outcome.logs_range
-            else {}
-        ),
+        **_extra_read_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
         "samples": [_hit_entry(hit) for hit in outcome.samples],
@@ -2028,6 +2076,12 @@ def _simulate_mode_suffix(result: RunResult) -> str:
     if not result.simulate:
         return ""
     return "  ·  simulate"
+
+
+def _archive_mode_suffix(result: RunResult) -> str:
+    if not result.archive:
+        return ""
+    return "  ·  archive"
 
 
 def _batch_summary_json(summary: Any) -> dict[str, Any] | None:

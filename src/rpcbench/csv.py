@@ -74,6 +74,10 @@ COLUMNS = (
     "estimate_status",
     "simulate_ms",
     "simulate_status",
+    "archive",
+    "archive_block",
+    "archive_ms",
+    "archive_status",
 )
 
 
@@ -142,6 +146,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
+                **_archive_cols(row.get("archive")),
             }
         )
     return buf.getvalue()
@@ -222,6 +227,16 @@ def _simulate_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
         "estimate_status": str(gas_cell.get("status") or ""),
         "simulate_ms": _num(sim.get("p95_ms")),
         "simulate_status": str(sim_cell.get("status") or ""),
+    }
+
+
+def _archive_cols(raw: Any) -> dict[str, str]:
+    hit = raw if isinstance(raw, dict) else {}
+    return {
+        "archive": str(hit.get("status") or ""),
+        "archive_block": _num(hit.get("block")),
+        "archive_ms": _num(hit.get("latency_ms")),
+        "archive_status": str(hit.get("label") or hit.get("status") or ""),
     }
 
 
