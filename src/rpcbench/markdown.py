@@ -224,6 +224,24 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    history = _history_rows(data)
+    if history:
+        lookback = data.get("lookback")
+        lines.extend(
+            [
+                "## History",
+                "",
+                f"`eth_getBalance` at pin−{lookback} vs latest. "
+                "Missing archive/history is skip, not a crash.",
+                "",
+                *_md_table(
+                    ["name", "block", "hist", "head", "ratio", "status"],
+                    history,
+                    right=(False, True, True, True, True, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -344,6 +362,27 @@ def _archive_rows(data: dict[str, Any]) -> list[list[str]]:
                 "—" if hit.get("block") is None else str(hit.get("block")),
                 _ms(hit.get("latency_ms")) if hit.get("ok") else "—",
                 str(hit.get("skip") or hit.get("error_class") or "—"),
+            ]
+        )
+    return rows
+
+
+def _history_rows(data: dict[str, Any]) -> list[list[str]]:
+    if not int(data.get("lookback") or 0):
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        hit = row.get("history")
+        if not hit:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                "—" if hit.get("block") is None else str(hit.get("block")),
+                _ms(hit.get("latency_ms")) if hit.get("ok") else "—",
+                _ms(hit.get("head_ms")) if hit.get("head_ms") is not None else "—",
+                _ratio(hit.get("ratio")),
+                str(hit.get("status") or "—"),
             ]
         )
     return rows

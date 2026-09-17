@@ -106,11 +106,12 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "rank_by",
         "rank",
     ]
-    assert COLUMNS[-4:] == (
-        "archive",
-        "archive_block",
-        "archive_ms",
-        "archive_status",
+    assert COLUMNS[-5:] == (
+        "history_ms",
+        "history_head_ms",
+        "history_ratio",
+        "history_block",
+        "history_status",
     )
     assert "batch_ratio" in COLUMNS
 

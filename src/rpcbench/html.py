@@ -59,6 +59,7 @@ def format_html(
         _batch_table(data),
         _logs_range_table(data),
         _archive_table(data),
+        _history_table(data),
         _size_scatter(data),
         _capabilities(data["capabilities"], ranking),
         _errors(ranking),
@@ -758,6 +759,53 @@ def _archive_table(data: dict[str, Any]) -> str:
         "<thead><tr>"
         "<th>name</th><th>archive</th>"
         '<th class="num">block</th><th class="num">ms</th><th>note</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _history_table(data: dict[str, Any]) -> str:
+    if not int(data.get("lookback") or 0):
+        return ""
+    lookback = data.get("lookback")
+    rows = []
+    for row in data.get("ranking") or []:
+        hit = row.get("history")
+        if not hit:
+            continue
+        status = str(hit.get("status") or "—")
+        if hit.get("ok"):
+            tone = "ok"
+        elif hit.get("skip"):
+            tone = "dim"
+        else:
+            tone = "bad"
+        ratio = hit.get("ratio")
+        ratio_txt = "—" if ratio is None else f"{float(ratio):.1f}×"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row.get("name") or "—"))}</td>'
+            f'<td class="num">{escape(str(hit.get("block") if hit.get("block") is not None else "—"))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("latency_ms")) if hit.get("ok") else "—")}</td>'
+            f'<td class="num">{escape(_ms(hit.get("head_ms")) if hit.get("head_ms") is not None else "—")}</td>'
+            f'<td class="num">{escape(ratio_txt)}</td>'
+            f'<td class="{tone}">{escape(status)}</td>'
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<section aria-label="history">'
+        "<h2>History</h2>"
+        f'<p class="meta">eth_getBalance at pin−{escape(str(lookback))} vs latest; '
+        "extra read; not mixed into ranking. Missing archive skips this table row.</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th>"
+        '<th class="num">block</th><th class="num">hist</th>'
+        '<th class="num">head</th><th class="num">ratio</th><th>status</th>'
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
