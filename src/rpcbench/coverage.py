@@ -53,19 +53,38 @@ def coverage_steps(result: RunResult) -> tuple[CallSpec, ...]:
     return (CallSpec(name, result.method, tuple(result.params)),)
 
 
-def is_coverage_miss(outcome: EndpointOutcome) -> bool:
-    """A required mix step never succeeded. Empty by_method means single-method stats."""
+def is_coverage_miss(
+    outcome: EndpointOutcome, result: RunResult | None = None
+) -> bool:
+    """A required mix step never succeeded. Optional not-offered steps are skip."""
     if not outcome.by_method:
         return False
-    return any(stats.n_ok == 0 for _name, stats in outcome.by_method)
+    if result is None:
+        return any(stats.n_ok == 0 for _name, stats in outcome.by_method)
+    for spec in coverage_steps(result):
+        cell = cell_for(outcome, spec, result)
+        if spec.optional and cell.status == STATUS_SKIP:
+            continue
+        if cell.status != STATUS_OK:
+            return True
+    return False
 
 
 def missed_steps(outcome: EndpointOutcome, result: RunResult) -> tuple[str, ...]:
     return tuple(
         spec.name
         for spec in coverage_steps(result)
-        if cell_for(outcome, spec, result).status != STATUS_OK
+        if _counts_as_miss(outcome, spec, result)
     )
+
+
+def _counts_as_miss(
+    outcome: EndpointOutcome, spec: CallSpec, result: RunResult
+) -> bool:
+    cell = cell_for(outcome, spec, result)
+    if spec.optional and cell.status == STATUS_SKIP:
+        return False
+    return cell.status != STATUS_OK
 
 
 def cell_for(
@@ -97,14 +116,17 @@ def as_dict(result: RunResult) -> dict[str, Any]:
         missed: list[str] = []
         for spec in steps:
             cell = cell_for(outcome, spec, result)
-            cells[spec.name] = {
+            row = {
                 "status": cell.status,
                 "n_ok": cell.n_ok,
                 "n_fail": cell.n_fail,
                 "error_class": cell.error_class,
                 "method": spec.method,
             }
-            if cell.status != STATUS_OK:
+            if spec.optional:
+                row["optional"] = True
+            cells[spec.name] = row
+            if _counts_as_miss(outcome, spec, result):
                 missed.append(spec.name)
         providers.append(
             {
@@ -115,7 +137,12 @@ def as_dict(result: RunResult) -> dict[str, Any]:
         )
     return {
         "steps": [
-            {"name": spec.name, "method": spec.method} for spec in steps
+            {
+                "name": spec.name,
+                "method": spec.method,
+                **({"optional": True} if spec.optional else {}),
+            }
+            for spec in steps
         ],
         "providers": providers,
     }

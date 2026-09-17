@@ -23,7 +23,13 @@ from rpcbench.csv import format_csv
 from rpcbench.html import format_html
 from rpcbench.logs import DEFAULT_LOGS_RANGE, LOGS_RANGES, ranges_for
 from rpcbench.markdown import format_md
-from rpcbench.methods import MethodError, is_app_workload, request_units, resolve_workload
+from rpcbench.methods import (
+    MethodError,
+    apply_simulate,
+    is_app_workload,
+    request_units,
+    resolve_workload,
+)
 from rpcbench.profile import has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import (
@@ -232,6 +238,14 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         ),
     )
     run.add_argument(
+        "--simulate",
+        action="store_true",
+        help=(
+            "Add read-only eth_call, eth_estimateGas, and eth_simulateV1 "
+            "(fixture tx, no send). Missing simulateV1 is skip, not a crash."
+        ),
+    )
+    run.add_argument(
         "--sequential",
         action="store_true",
         help="Run endpoints one after another instead of racing each sample (default is paired)",
@@ -435,6 +449,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         apply_sample_budget(args)
         config = load_targets(args.endpoints)
         method, workload = plan.label, plan.steps
+        if args.simulate:
+            workload = apply_simulate(workload)
+            if not is_app_workload(method):
+                method = "simulate"
         units = request_units(workload)
         needed = (
             len(config.endpoints)
@@ -455,6 +473,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             is_app_workload(method)
             or args.batch > 0
             or args.logs_range > 0
+            or args.simulate
             or has_dynamic_source(workload)
         )
         if extra_read and needed > max_requests:
@@ -550,6 +569,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         batch=args.batch,
         logs_range=args.logs_range,
         profile_notes=plan.notes,
+        simulate=args.simulate,
     )
     json_blob = None
     md_blob = None

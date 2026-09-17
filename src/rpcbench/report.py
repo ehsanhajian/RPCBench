@@ -122,14 +122,19 @@ def is_disagree(outcome: EndpointOutcome) -> bool:
 
 
 def reliable_for_place(
-    stats: Any, similar_band: float, outcome: EndpointOutcome | None = None
+    stats: Any,
+    similar_band: float,
+    outcome: EndpointOutcome | None = None,
+    result: RunResult | None = None,
 ) -> bool:
     if stats.n_ok == 0:
         return False
     if stats.error_rate is not None and stats.error_rate > similar_band:
         return False
     if outcome is not None and (
-        is_stale(outcome) or is_disagree(outcome) or is_coverage_miss(outcome)
+        is_stale(outcome)
+        or is_disagree(outcome)
+        or is_coverage_miss(outcome, result)
     ):
         return False
     return True
@@ -175,7 +180,7 @@ def place_outcomes(
         value = _rank_value(stats, key_name)
         if value is None:
             return (2, 0.0, 0.0, index)
-        tier = 0 if reliable_for_place(stats, band, outcome) else 1
+        tier = 0 if reliable_for_place(stats, band, outcome, result) else 1
         mean = stats.mean_ms if stats.mean_ms is not None else 0.0
         if higher:
             return (tier, -value, mean, index)
@@ -193,7 +198,7 @@ def place_outcomes(
         if value is None:
             rows.append(RankedPlace(outcome, None, False, False, p99_ok))
             continue
-        if not reliable_for_place(stats, band, outcome):
+        if not reliable_for_place(stats, band, outcome, result):
             rows.append(RankedPlace(outcome, None, False, False, p99_ok))
             continue
         if leader_val is not None and values_similar(
@@ -382,7 +387,7 @@ def run_to_dict(
             "stale_names": [o.endpoint.name for o in ranked if is_stale(o)],
             "disagree_names": [o.endpoint.name for o in ranked if is_disagree(o)],
             "coverage_miss_names": [
-                o.endpoint.name for o in ranked if is_coverage_miss(o)
+                o.endpoint.name for o in ranked if is_coverage_miss(o, result)
             ],
             "ready_names": [
                 row.outcome.endpoint.name
@@ -440,6 +445,8 @@ def run_to_dict(
     payload = _payload_json(result)
     if payload is not None:
         blob["payload"] = payload
+    if result.simulate:
+        blob["simulate"] = True
     return blob
 
 
@@ -498,6 +505,7 @@ def format_run(
         f"{_burst_mode_suffix(result)}"
         f"{_batch_mode_suffix(result)}"
         f"{_logs_range_mode_suffix(result)}"
+        f"{_simulate_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result),
         "",
@@ -524,7 +532,7 @@ def format_run(
             "~ high err, stale, disagree, or miss; failed last)",
         ]
     )
-    lines.extend(_ranking_lines(placed, name_w, use_color, rank_by))
+    lines.extend(_ranking_lines(placed, name_w, use_color, rank_by, result))
     lines.extend(_exception_lines(result, ranked))
     mix = _uses_mix(result)
     if verbose:
@@ -542,6 +550,14 @@ def format_run(
     else:
         if mix:
             lines.extend(_coverage_section(result, use_color))
+        if any(spec.method == "eth_simulateV1" for spec in result.workload):
+            lines.extend(
+                [
+                    "",
+                    "Methods  (per-method; ranking uses the whole mix)",
+                    *_methods_lines(result, name_w, use_color),
+                ]
+            )
         if result.batch > 0:
             lines.extend(_batch_section(result, use_color))
         if result.logs_range > 0:
@@ -741,7 +757,7 @@ def _summary_lines(
     if disagree_rows:
         names = ", ".join(o.endpoint.name for o in disagree_rows)
         lines.append(f"  Disagree {len(disagree_rows)}/{total}    {names}")
-    miss_rows = [row.outcome for row in placed if is_coverage_miss(row.outcome)]
+    miss_rows = [row.outcome for row in placed if is_coverage_miss(row.outcome, result)]
     if miss_rows:
         bits = []
         for outcome in miss_rows:
@@ -884,6 +900,8 @@ def _workload_step_json(spec: CallSpec) -> dict[str, Any]:
     }
     if spec.source:
         row["source"] = spec.source
+    if spec.optional:
+        row["optional"] = True
     return row
 
 
@@ -1540,6 +1558,7 @@ def _ranking_lines(
     name_w: int,
     use_color: bool,
     rank_by: str,
+    result: RunResult | None = None,
 ) -> list[str]:
     rows: list[list[str]] = []
     for row in placed:
@@ -1549,7 +1568,7 @@ def _ranking_lines(
             mark = "~"
         else:
             mark = "—"
-        rows.append(_ranking_cells(row.outcome, mark, use_color, rank_by))
+        rows.append(_ranking_cells(row.outcome, mark, use_color, rank_by, result))
     return _grid(
         ["#", "name", "status", "n", "err", "rel", "p95", "mean", "jit", "note"],
         rows,
@@ -1562,11 +1581,12 @@ def _ranking_cells(
     mark: str,
     use_color: bool,
     rank_by: str,
+    result: RunResult | None = None,
 ) -> list[str]:
     stats = outcome.stats
     ok = stats.n_ok > 0
     attempted = stats.n_ok + stats.n_fail
-    note = _row_note(outcome)
+    note = _row_note(outcome, result)
     if rank_by not in {"p95", "mean"} and ok:
         metric = _rank_metric_text(stats, rank_by)
         note = metric if note == "—" else f"{note}  {metric}"
@@ -1584,7 +1604,7 @@ def _ranking_cells(
     ]
 
 
-def _row_note(outcome: EndpointOutcome) -> str:
+def _row_note(outcome: EndpointOutcome, result: RunResult | None = None) -> str:
     stats = outcome.stats
     bits = [f"{name}={count}" for name, count in stats.by_class]
     if stats.n_ok == 0:
@@ -1599,7 +1619,10 @@ def _row_note(outcome: EndpointOutcome) -> str:
             bits.append(f"~{fresh.lag_s:g}s")
     if is_disagree(outcome):
         bits.append("disagree")
-    missed = [name for name, stats in outcome.by_method if stats.n_ok == 0]
+    if result is not None:
+        missed = list(missed_steps(outcome, result))
+    else:
+        missed = [name for name, stats in outcome.by_method if stats.n_ok == 0]
     if missed:
         bits.append("miss=" + ",".join(missed))
     tags = _tag_rate_limit_n(outcome)
@@ -1999,6 +2022,12 @@ def _logs_range_mode_suffix(result: RunResult) -> str:
     if result.logs_range <= 0:
         return ""
     return f"  ·  logs-range={result.logs_range}"
+
+
+def _simulate_mode_suffix(result: RunResult) -> str:
+    if not result.simulate:
+        return ""
+    return "  ·  simulate"
 
 
 def _batch_summary_json(summary: Any) -> dict[str, Any] | None:

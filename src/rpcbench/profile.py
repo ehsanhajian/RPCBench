@@ -12,12 +12,14 @@ from typing import Any
 import yaml
 
 from rpcbench.methods import (
+    CALL_TX,
     ZERO_ADDRESS,
     CallSpec,
     MethodError,
     WorkloadPlan,
     _reject_writes,
     canonical_workload,
+    simulate_params,
 )
 
 # Look-back for source: recent_block. Inclusive of head.
@@ -44,6 +46,8 @@ _SHORT_NAMES = {
     "eth_getBlockByNumber": "block",
     "eth_getBalance": "balance",
     "eth_call": "call",
+    "eth_estimateGas": "gas",
+    "eth_simulateV1": "simulate",
     "eth_getLogs": "logs",
 }
 
@@ -54,6 +58,8 @@ _PARAM_METHODS = frozenset(
         "eth_getBlockByNumber",
         "eth_getBalance",
         "eth_call",
+        "eth_estimateGas",
+        "eth_simulateV1",
         "eth_getLogs",
     }
 )
@@ -303,7 +309,7 @@ def _parse_step(
             raise MethodError(f"{loc}: source {src} is not valid for {method}")
         if src in _ADDRESS_SOURCES and method == "eth_getBlockByNumber":
             raise MethodError(
-                f"{loc}: source {src} is for balance/call/logs, not {method}"
+                f"{loc}: source {src} is for balance/call/gas/simulate/logs, not {method}"
             )
     contract = _parse_address(
         item.get("contract"), field="contract", source=loc
@@ -328,6 +334,12 @@ def _parse_step(
         name = raw_name.strip()
     else:
         raise MethodError(f"{loc}.name must be a non-empty string")
+    optional = method == "eth_simulateV1"
+    raw_optional = item.get("optional")
+    if raw_optional is not None:
+        if not isinstance(raw_optional, bool):
+            raise MethodError(f"{loc}.optional must be a boolean")
+        optional = raw_optional or optional
     return CallSpec(
         name=name,
         method=method,
@@ -335,6 +347,7 @@ def _parse_step(
         weight=weight,
         source=src,
         contract=contract,
+        optional=optional,
     )
 
 
@@ -344,7 +357,11 @@ def _default_params(method: str) -> tuple[Any, ...]:
     if method == "eth_getBalance":
         return (ZERO_ADDRESS, "latest")
     if method == "eth_call":
-        return ({"to": ZERO_ADDRESS, "data": "0x"}, "latest")
+        return (dict(CALL_TX), "latest")
+    if method == "eth_estimateGas":
+        return (dict(CALL_TX),)
+    if method == "eth_simulateV1":
+        return simulate_params()
     if method == "eth_getLogs":
         return (
             {
@@ -411,6 +428,13 @@ def _fill_params(
         to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
         tag = block if source in _BLOCK_SOURCES else "latest"
         return ({"to": to, "data": "0x"}, tag), fell
+    if method == "eth_estimateGas":
+        to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
+        return ({"to": to, "data": "0x"},), fell
+    if method == "eth_simulateV1":
+        to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
+        tag = block if source in _BLOCK_SOURCES else "latest"
+        return simulate_params(to=to, block=tag), fell
     if method == "eth_getLogs":
         addr = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
         tag = block if source in _BLOCK_SOURCES else "latest"

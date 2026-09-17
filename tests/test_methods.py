@@ -183,6 +183,9 @@ def test_indexer_has_bounded_logs_wallet_does_not() -> None:
     assert "logs" not in wallet
     assert wallet["balance"].weight > wallet["head"].weight
     assert wallet["call"].weight > wallet["head"].weight
+    assert "gas" in wallet
+    assert wallet["gas"].method == "eth_estimateGas"
+    assert not wallet["gas"].optional
     logs = indexer["logs"]
     filt = logs.params[0]
     assert logs.weight >= indexer["head"].weight
@@ -196,6 +199,7 @@ def test_trading_and_nft_mixes() -> None:
     nft = {spec.name: spec for spec in family_workload(FAMILY_EVM, "nft")}
     assert "logs" not in trading
     assert trading["call"].weight >= trading["head"].weight
+    assert trading["gas"].method == "eth_estimateGas"
     assert "logs" in nft
     assert nft["call"].weight > 1
     assert nft["logs"].weight > 1
@@ -220,6 +224,8 @@ def test_app_mixes_never_include_tracing_or_privileged() -> None:
         "txpool_",
         "eth_accounts",
         "rpc_modules",
+        "eth_send",
+        "eth_simulatev1",
     ):
         assert marker not in blob
     for family in WORKLOADS.values():

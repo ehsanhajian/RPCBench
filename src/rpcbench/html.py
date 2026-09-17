@@ -26,6 +26,8 @@ _METHOD_COLORS: dict[str, str] = {
     "eth_getBlockByNumber": "#d2a8ff",
     "eth_getBalance": "#ffa657",
     "eth_call": "#f778ba",
+    "eth_estimateGas": "#e3b341",
+    "eth_simulateV1": "#a371f7",
     "eth_getLogs": _GREEN,
 }
 _METHOD_FALLBACK = ("#e3b341", _RED, "#58a6ff", "#a371f7")

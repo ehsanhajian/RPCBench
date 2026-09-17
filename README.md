@@ -126,7 +126,8 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many mix rounds to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
-- **`--workload general|wallet|indexer|trading|nft`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call`. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **`--workload general|wallet|indexer|trading|nft`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call` / `eth_estimateGas`. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **`--simulate`** adds read-only `eth_call`, `eth_estimateGas`, and `eth_simulateV1` (fixture tx, never a send). Missing simulateV1 is skip, not a crash, and does not tank ranking. Details: [Read-only simulation](docs/METHODOLOGY.md#read-only-simulation).
 - **`--profile FILE.yaml`** is a custom mix you write (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed` so every provider gets the same sequence. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. Full YAML example, sources, seed, and fallback: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
 - **Batch** is opt-in (`--batch N`, omit N for 3, max 8). After timed samples, RPCBench sends one JSON-RPC array of N copies of the primary method, then the same N calls one-by-one, and reports wall-clock and the serial/batch ratio. A single-object error means the provider does not support batch (capability, not a crash). Partial item errors are marked `partial`. Adds 1+N requests per endpoint. Default is off (`--batch 0`). Not HTTP/2 multiplexing.
@@ -182,6 +183,8 @@ rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
 rpcbench run --endpoints endpoints.yaml --batch
 rpcbench run --endpoints endpoints.yaml --logs-range
+rpcbench run --endpoints endpoints.yaml --simulate --budget short
+rpcbench run --endpoints endpoints.yaml --workload wallet --simulate --budget short
 rpcbench run --endpoints endpoints.yaml --workload indexer --logs-range --budget short
 rpcbench run --endpoints endpoints.yaml --profile my-mix.yaml --seed 7
 rpcbench run --endpoints endpoints.yaml --sequential
@@ -219,6 +222,7 @@ rpcbench diff --history reports/
 | `--rps` | 0 | Cap starts/sec after `--burst` (`0`=off). Does not raise the budget |
 | `--batch` | 0 | JSON-RPC batch of N vs N serial (`0`=off, omit N for 3, max 8). Extra 1+N requests/endpoint |
 | `--logs-range` | 0 | Pinned `eth_getLogs` at 1/10/100/up to N blocks (`0`=off, omit N for 1000). Mix logs stay 1 block |
+| `--simulate` | off | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. Missing simulateV1 is skip |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |
@@ -233,7 +237,7 @@ rpcbench diff --history reports/
 | `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch and Logs range are already in the compact report when those flags are set |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Logs range, and simulate Methods are already in the compact report when those flags are set |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
 | `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Logs range when measured). `-o FILE` writes the same markdown |

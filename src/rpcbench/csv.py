@@ -70,6 +70,10 @@ COLUMNS = (
     "logs_1000_n",
     "logs_1000_status",
     "logs_1000_trunc",
+    "estimate_ms",
+    "estimate_status",
+    "simulate_ms",
+    "simulate_status",
 )
 
 
@@ -137,6 +141,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
                 **_logs_range_cols(row.get("logs_range")),
+                **_simulate_cols(data, row.get("name")),
             }
         )
     return buf.getvalue()
@@ -194,6 +199,30 @@ def _logs_range_cols(rows: Any) -> dict[str, str]:
         else:
             cols[f"logs_{span}_trunc"] = ""
     return cols
+
+
+def _simulate_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
+    methods = data.get("methods") or []
+    coverage = data.get("coverage") or {}
+    cells = {}
+    for provider in coverage.get("providers") or []:
+        if provider.get("name") == name:
+            cells = provider.get("cells") or {}
+            break
+    by_step: dict[str, dict[str, Any]] = {}
+    for row in methods:
+        if row.get("name") == name:
+            by_step[str(row.get("step") or "")] = row
+    gas = by_step.get("gas") or {}
+    sim = by_step.get("simulate") or {}
+    gas_cell = cells.get("gas") or {}
+    sim_cell = cells.get("simulate") or {}
+    return {
+        "estimate_ms": _num(gas.get("p95_ms")),
+        "estimate_status": str(gas_cell.get("status") or ""),
+        "simulate_ms": _num(sim.get("p95_ms")),
+        "simulate_status": str(sim_cell.get("status") or ""),
+    }
 
 
 def _bool(value: Any) -> str:
