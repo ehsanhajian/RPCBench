@@ -89,6 +89,7 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["sequence_id"] == ""
     assert data["pairs"] == []
     assert data["concurrency"] == 0
+    assert data["inflight"] == 0
     assert data["burst"] == 0
     assert data["rps"] == 0.0
     assert data["batch"] == 0
@@ -103,6 +104,9 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["comparison"][0]["batch"] is None
     assert data["ranking"][0]["batch"] is None
     assert data["providers"][0]["batch"] is None
+    assert data["comparison"][0]["inflight"] is None
+    assert data["ranking"][0]["inflight"] is None
+    assert data["providers"][0]["inflight"] is None
     assert data["providers"][0]["samples"][0]["http_version"] is None
     assert data["providers"][0]["samples"][0]["encoding"] is None
     assert data["providers"][0]["samples"][0]["bytes_out"] is None

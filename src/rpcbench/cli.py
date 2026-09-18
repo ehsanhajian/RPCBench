@@ -35,8 +35,10 @@ from rpcbench.profile import has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import (
     DEFAULT_BATCH,
+    DEFAULT_INFLIGHT,
     MAX_BATCH,
     MAX_BURST,
+    MAX_INFLIGHT,
     MODE_PAIRED,
     MODE_SEQUENTIAL,
     run_endpoints,
@@ -194,8 +196,16 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
     run.add_argument(
         "--concurrency",
         type=int,
-        default=None,
-        help="Max in-flight requests per paired wave (0 = all providers; default: from --budget). Not a load burst.",
+        nargs="?",
+        const=DEFAULT_INFLIGHT,
+        default=0,
+        metavar="N",
+        help=(
+            f"Overlap N extra copies of the primary method, then the same N serial "
+            f"(0=off, omit N for {DEFAULT_INFLIGHT}, max {MAX_INFLIGHT}). "
+            "Adds 2N requests per endpoint; not mixed into ranking. "
+            "Not an unbounded load test."
+        ),
     )
     run.add_argument(
         "--burst",
@@ -492,6 +502,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         needed += len(config.endpoints) * hint_request_count(workload)
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)
+        if args.concurrency > 0:
+            needed += len(config.endpoints) * (2 * args.concurrency)
         if args.logs_range > 0:
             needed += len(config.endpoints) * len(ranges_for(args.logs_range))
         if args.archive:
@@ -502,6 +514,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         extra_read = (
             is_app_workload(method)
             or args.batch > 0
+            or args.concurrency > 0
             or args.logs_range > 0
             or args.simulate
             or args.archive
@@ -536,6 +549,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     f"({len(config.endpoints)} endpoints × 1 extra); "
                     f"pass --max-requests {needed}"
                 )
+            elif args.concurrency > 0:
+                raise SafetyError(
+                    f"--concurrency {args.concurrency} needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × {2 * args.concurrency} extra); "
+                    f"pass --max-requests {needed}"
+                )
             else:
                 raise SafetyError(
                     f"--batch {args.batch} needs {needed} requests "
@@ -553,6 +572,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.warmup < 0
         or args.max_duration < 0
         or args.concurrency < 0
+        or args.concurrency > MAX_INFLIGHT
         or args.stale_blocks < 0
         or args.burst < 0
         or args.burst > MAX_BURST
@@ -565,7 +585,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
-            f"--concurrency >= 0, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
+            f"--concurrency 0–{MAX_INFLIGHT}, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
             "--rps >= 0, --lookback >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
@@ -606,7 +626,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         max_duration=args.max_duration,
         mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
         seed=args.seed,
-        concurrency=args.concurrency,
+        concurrency=0,
+        inflight=args.concurrency,
         burst=args.burst,
         rps=args.rps,
         new_connection=args.new_connection,

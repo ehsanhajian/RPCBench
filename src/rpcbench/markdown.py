@@ -9,6 +9,7 @@ from rpcbench.report import (
     DEFAULT_RANK_BY,
     DEFAULT_SIMILAR_BAND,
     batch_support_label,
+    inflight_status_label,
     run_to_dict,
 )
 from rpcbench.run import RunResult
@@ -172,6 +173,24 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    inflight = _inflight_rows(data)
+    if inflight:
+        size = data.get("inflight")
+        lines.extend(
+            [
+                "## Concurrency",
+                "",
+                f"{size} overlapping POSTs vs the same {size} serial; "
+                "not mixed into ranking",
+                "",
+                *_md_table(
+                    ["name", "status", "p50", "p95", "serial", "ratio", "err"],
+                    inflight,
+                    right=(False, False, True, True, True, True, True),
+                ),
+                "",
+            ]
+        )
     logs = _logs_range_rows(data)
     if logs:
         spans = data.get("logs_range")
@@ -320,6 +339,28 @@ def _batch_rows(data: dict[str, Any]) -> list[list[str]]:
                 _ms(summary.get("serial_ms")),
                 _ratio(summary.get("ratio")),
                 items,
+            ]
+        )
+    return rows
+
+
+def _inflight_rows(data: dict[str, Any]) -> list[list[str]]:
+    if int(data.get("inflight") or 0) <= 0:
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("inflight")
+        if not summary:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                inflight_status_label(summary),
+                _ms(summary.get("concurrent_p50_ms")),
+                _ms(summary.get("concurrent_p95_ms")),
+                _ms(summary.get("serial_p50_ms")),
+                _ratio(summary.get("ratio")),
+                _inflight_err(summary),
             ]
         )
     return rows
@@ -548,6 +589,14 @@ def _ratio(value: float | None) -> str:
     if value is None:
         return "—"
     return f"{float(value):.1f}×"
+
+
+def _inflight_err(summary: dict[str, Any]) -> str:
+    if inflight_status_label(summary) == "skip":
+        return str(summary.get("error_class") or "—")
+    if summary.get("n_fail") is None:
+        return "—"
+    return str(summary.get("n_fail"))
 
 
 def _bytes(value: float | None) -> str:

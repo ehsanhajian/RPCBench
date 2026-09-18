@@ -12,6 +12,7 @@ from rpcbench.report import (
     DEFAULT_RANK_BY,
     DEFAULT_SIMILAR_BAND,
     batch_support_label,
+    inflight_status_label,
     run_to_dict,
 )
 from rpcbench.run import RunResult
@@ -50,6 +51,13 @@ COLUMNS = (
     "batch_ms",
     "serial_ms",
     "batch_ratio",
+    "inflight_p50_ms",
+    "inflight_p95_ms",
+    "inflight_serial_p50_ms",
+    "inflight_ratio",
+    "inflight_n_ok",
+    "inflight_n_fail",
+    "inflight_status",
     "logs_1_ms",
     "logs_1_bytes",
     "logs_1_n",
@@ -153,6 +161,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "batch_ms": _num((row.get("batch") or {}).get("batch_ms")),
                 "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
+                **_inflight_cols(row.get("inflight")),
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
                 **_trace_cols(data, row.get("name")),
@@ -195,6 +204,29 @@ def _batch_supported(raw: dict[str, Any] | None) -> str:
     if label in {"partial", "skip"}:
         return label
     return "false"
+
+
+def _inflight_cols(raw: dict[str, Any] | None) -> dict[str, str]:
+    if not raw:
+        return {
+            "inflight_p50_ms": "",
+            "inflight_p95_ms": "",
+            "inflight_serial_p50_ms": "",
+            "inflight_ratio": "",
+            "inflight_n_ok": "",
+            "inflight_n_fail": "",
+            "inflight_status": "",
+        }
+    status = inflight_status_label(raw)
+    return {
+        "inflight_p50_ms": _num(raw.get("concurrent_p50_ms")),
+        "inflight_p95_ms": _num(raw.get("concurrent_p95_ms")),
+        "inflight_serial_p50_ms": _num(raw.get("serial_p50_ms")),
+        "inflight_ratio": _num(raw.get("ratio")),
+        "inflight_n_ok": _num(raw.get("n_ok")),
+        "inflight_n_fail": _num(raw.get("n_fail")),
+        "inflight_status": "" if status == "—" else status,
+    }
 
 
 def _logs_range_cols(rows: Any) -> dict[str, str]:

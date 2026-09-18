@@ -100,6 +100,9 @@ MAX_BURST = 8
 # Opt-in JSON-RPC batch vs serial extra read. Small and bounded.
 DEFAULT_BATCH = 3
 MAX_BATCH = 8
+# Opt-in overlapping HTTP POSTs vs serial extra read. Small and bounded.
+DEFAULT_INFLIGHT = 4
+MAX_INFLIGHT = 8
 # Exclusive upper bounds; last bucket is ≥ the final edge. Shared with CLI/JSON/HTML.
 HISTOGRAM_EDGES_MS: tuple[float, ...] = (50.0, 100.0, 250.0, 1000.0)
 HISTOGRAM_LABELS: tuple[str, ...] = ("<50ms", "<100ms", "<250ms", "<1s", "≥1s")
@@ -171,6 +174,25 @@ class BatchSummary:
 
 
 @dataclass(frozen=True)
+class ConcurrentSummary:
+    """N overlapping POSTs vs N serial. Extra read; not mixed into ranking."""
+
+    size: int
+    method: str
+    concurrent_p50_ms: float | None
+    concurrent_p95_ms: float | None
+    serial_p50_ms: float | None
+    serial_p95_ms: float | None
+    concurrent_ms: float | None
+    serial_ms: float | None
+    ratio: float | None
+    n_ok: int
+    n_fail: int
+    error: str | None
+    error_class: str | None
+
+
+@dataclass(frozen=True)
 class EndpointOutcome:
     endpoint: Endpoint
     warmup: tuple[ProbeResult, ...]
@@ -186,6 +208,7 @@ class EndpointOutcome:
     timing: TimingSummary | None = None
     transport: TransportSummary | None = None
     batch: BatchSummary | None = None
+    inflight: ConcurrentSummary | None = None
     logs_range: tuple[LogsRangeHit, ...] = ()
     archive: ArchiveHit | None = None
     history: HistoryHit | None = None
@@ -227,6 +250,7 @@ class RunResult:
     connection: str = CONN_KEEPALIVE
     http: str = HTTP_1
     batch: int = 0
+    inflight: int = 0
     logs_range: int = 0
     simulate: bool = False
     archive: bool = False
@@ -495,6 +519,7 @@ def run_endpoints(
     new_connection: bool = False,
     http2: bool = False,
     batch: int = 0,
+    inflight: int = 0,
     logs_range: int = 0,
     profile_notes: str | None = None,
     simulate: bool = False,
@@ -513,6 +538,8 @@ def run_endpoints(
         raise ValueError(f"burst must be 0–{MAX_BURST}")
     if batch < 0 or batch > MAX_BATCH:
         raise ValueError(f"batch must be 0–{MAX_BATCH}")
+    if inflight < 0 or inflight > MAX_INFLIGHT:
+        raise ValueError(f"concurrency must be 0–{MAX_INFLIGHT}")
     if logs_range < 0 or logs_range > MAX_LOGS_RANGE:
         raise ValueError(f"logs-range must be 0–{MAX_LOGS_RANGE}")
     if lookback < 0:
@@ -583,6 +610,7 @@ def run_endpoints(
             connection=connection,
             http=http,
             batch=batch,
+            inflight=inflight,
             logs_range=logs_range,
             profile_notes=profile_notes,
             payload=payload,
@@ -688,6 +716,7 @@ def _execute_run(
     connection: str,
     http: str,
     batch: int,
+    inflight: int,
     logs_range: int,
     profile_notes: str | None,
     payload: PayloadMeta | None,
@@ -890,6 +919,24 @@ def _execute_run(
             replace(outcome, batch=measured.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    if inflight > 0:
+        spec = steps[0]
+        measured_inflight = {
+            outcome.endpoint.name: _measure_inflight(
+                outcome.endpoint,
+                spec=spec,
+                size=inflight,
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                client=client,
+            )
+            for outcome in outcomes
+        }
+        outcomes = [
+            replace(outcome, inflight=measured_inflight.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -917,6 +964,7 @@ def _execute_run(
         connection=connection,
         http=http,
         batch=batch,
+        inflight=inflight,
         logs_range=logs_range,
         simulate=simulate,
         archive=archive,
@@ -1224,6 +1272,92 @@ def _measure_batch(
         n_fail=batched.n_fail,
         error=batched.error,
         error_class=batched.error_class,
+    )
+
+
+def _skipped_inflight(
+    size: int, method: str, error_class: str, error: str
+) -> ConcurrentSummary:
+    return ConcurrentSummary(
+        size=size,
+        method=method,
+        concurrent_p50_ms=None,
+        concurrent_p95_ms=None,
+        serial_p50_ms=None,
+        serial_p95_ms=None,
+        concurrent_ms=None,
+        serial_ms=None,
+        ratio=None,
+        n_ok=0,
+        n_fail=0,
+        error=error,
+        error_class=error_class,
+    )
+
+
+def _measure_inflight(
+    endpoint: Endpoint,
+    *,
+    spec: CallSpec,
+    size: int,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    client,
+) -> ConcurrentSummary:
+    if _expired(deadline):
+        return _skipped_inflight(
+            size, spec.method, "duration", "max duration exceeded"
+        )
+
+    def one() -> ProbeResult:
+        return _hit(
+            endpoint,
+            spec=spec,
+            timeout=timeout,
+            budget=budget,
+            deadline=deadline,
+            client=client,
+        )
+
+    conc_started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=max(1, size)) as pool:
+        futs = [pool.submit(one) for _ in range(size)]
+        concurrent = tuple(fut.result() for fut in futs)
+    concurrent_ms = (time.monotonic() - conc_started) * 1000
+    serial_started = time.monotonic()
+    serial = tuple(one() for _ in range(size))
+    serial_ms = (time.monotonic() - serial_started) * 1000
+    conc_stats = summarize(concurrent)
+    ser_stats = summarize(serial)
+    ratio = None
+    if (
+        conc_stats.p50_ms is not None
+        and ser_stats.p50_ms is not None
+        and ser_stats.p50_ms > 0
+    ):
+        ratio = conc_stats.p50_ms / ser_stats.p50_ms
+    error = None
+    error_class = None
+    if conc_stats.n_ok == 0:
+        miss = next((hit for hit in concurrent if hit.error_class), None)
+        if miss is not None:
+            error = miss.error
+            error_class = miss.error_class
+    return ConcurrentSummary(
+        size=size,
+        method=spec.method,
+        concurrent_p50_ms=conc_stats.p50_ms,
+        concurrent_p95_ms=conc_stats.p95_ms,
+        serial_p50_ms=ser_stats.p50_ms,
+        serial_p95_ms=ser_stats.p95_ms,
+        concurrent_ms=concurrent_ms,
+        serial_ms=serial_ms,
+        ratio=ratio,
+        n_ok=conc_stats.n_ok,
+        n_fail=conc_stats.n_fail,
+        error=error,
+        error_class=error_class,
     )
 
 
