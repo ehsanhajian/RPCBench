@@ -207,7 +207,7 @@ def test_trading_and_nft_mixes() -> None:
     assert filt["fromBlock"] == filt["toBlock"] == "latest"
 
 
-def test_app_mixes_never_include_tracing_or_privileged() -> None:
+def test_app_mixes_never_include_debug_or_privileged() -> None:
     blob = " ".join(
         spec.method
         for family in WORKLOADS.values()
@@ -215,7 +215,6 @@ def test_app_mixes_never_include_tracing_or_privileged() -> None:
         for spec in steps
     ).lower()
     for marker in (
-        "trace_",
         "debug_",
         "admin_",
         "personal_",
@@ -226,13 +225,16 @@ def test_app_mixes_never_include_tracing_or_privileged() -> None:
         "rpc_modules",
         "eth_send",
         "eth_simulatev1",
+        "trace_filter",
     ):
         assert marker not in blob
     for family in WORKLOADS.values():
-        for steps in family.values():
+        for name, steps in family.items():
             for spec in steps:
                 lower = spec.method.lower()
                 assert not any(lower.startswith(p) for p in _WRITE_PREFIXES)
+                if name != "tracing":
+                    assert not lower.startswith("trace_")
 
 
 def test_solana_family_is_not_an_evm_fallback() -> None:

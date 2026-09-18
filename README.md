@@ -28,6 +28,7 @@ PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --
 rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
 rpcbench compare --endpoints endpoints.yaml --workload --budget short
 rpcbench compare --endpoints endpoints.yaml --workload wallet --budget short
+rpcbench compare --endpoints endpoints.yaml --workload tracing --budget short
 rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
 rpcbench compare --endpoints endpoints.yaml --profile my-mix.yaml --seed 7 --budget short
 ```
@@ -109,7 +110,7 @@ The default CLI prints, in order:
 10. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
 11. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
 12. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
-13. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered. A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
+13. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
 14. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
 15. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
 16. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
@@ -128,7 +129,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many mix rounds to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
-- **`--workload general|wallet|indexer|trading|nft`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call` / `eth_estimateGas`. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+- **`--workload general|wallet|indexer|trading|nft|tracing`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call` / `eth_estimateGas`. **`--workload tracing`** times optional `trace_block`; missing traces skip, not a finding. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **`--simulate`** adds read-only `eth_call`, `eth_estimateGas`, and `eth_simulateV1` (fixture tx, never a send). Missing simulateV1 is skip, not a crash, and does not tank ranking. Details: [Read-only simulation](docs/METHODOLOGY.md#read-only-simulation).
 - **`--profile FILE.yaml`** is a custom mix you write (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed` so every provider gets the same sequence. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. Full YAML example, sources, seed, and fallback: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
@@ -175,7 +176,7 @@ These are not mixed into latency stats or Fastest.
 
 `--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Logs range, Simulation, Archive, and History tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, logs-range, simulate, archive, and history fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Logs range, Simulation, Trace, Archive, and History tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, logs-range, simulate, trace, archive, and history fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -183,6 +184,7 @@ These are not mixed into latency stats or Fastest.
 rpcbench run --endpoints endpoints.yaml --budget short
 rpcbench run --endpoints endpoints.yaml --workload --budget short
 rpcbench run --endpoints endpoints.yaml --workload wallet --budget short
+rpcbench run --endpoints endpoints.yaml --workload tracing --budget short
 rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
 rpcbench compare --endpoints http://127.0.0.1:8545
 rpcbench run --endpoints endpoints.yaml --rank-by p95
@@ -243,15 +245,15 @@ rpcbench diff --history reports/
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--workload` | | `general` (omit name), `wallet`, `indexer`, `trading`, `nft`. Weighted mix; compose with `--budget`. Do not combine with `--method` or `--preset` |
+| `--workload` | | `general` (omit name), `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix; compose with `--budget`. Do not combine with `--method` or `--preset` |
 | `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Logs range, simulate Methods, Archive, and History are already in the compact report when those flags are set |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
-| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Logs range, Archive, History when measured). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, logs-range, archive, history). `-o FILE` or `-o report.csv` writes CSV |
+| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Logs range, Archive, History, Trace when measured). `-o FILE` writes the same markdown |
+| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, logs-range, archive, history, trace). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 

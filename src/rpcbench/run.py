@@ -51,7 +51,7 @@ from rpcbench.logs import (
     ranges_for,
     skipped_range,
 )
-from rpcbench.coverage import is_not_offered
+from rpcbench.coverage import optional_skip_reason
 from rpcbench.methods import CallSpec
 from rpcbench.profile import (
     PayloadMeta,
@@ -1355,14 +1355,14 @@ def _hit(
 def _ranking_samples(
     measured: tuple[ProbeResult, ...], workload: tuple[CallSpec, ...]
 ) -> tuple[ProbeResult, ...]:
-    """Drop optional not-offered hits so unimplemented simulateV1 is not a fail."""
+    """Drop optional skip hits so unimplemented/restricted traces are not a fail."""
     optional = {spec.method for spec in workload if spec.optional}
     if not optional:
         return measured
     kept = []
     for hit in measured:
         method = hit.method or ""
-        if method in optional and not hit.ok and is_not_offered(hit.error):
+        if method in optional and optional_skip_reason(hit) is not None:
             continue
         kept.append(hit)
     return tuple(kept)

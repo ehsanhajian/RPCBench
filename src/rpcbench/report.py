@@ -558,7 +558,7 @@ def format_run(
     else:
         if mix:
             lines.extend(_coverage_section(result, use_color))
-        if any(spec.method == "eth_simulateV1" for spec in result.workload):
+        if any(spec.optional for spec in result.workload):
             lines.extend(
                 [
                     "",
