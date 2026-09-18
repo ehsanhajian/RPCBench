@@ -114,6 +114,9 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "history_status",
     )
     assert "batch_ratio" in COLUMNS
+    assert "inflight_p50_ms" in COLUMNS
+    assert "inflight_n_fail" in COLUMNS
+    assert "inflight_status" in COLUMNS
     assert "trace_ms" in COLUMNS
     assert "trace_status" in COLUMNS
     assert "debug_ms" in COLUMNS

@@ -365,6 +365,7 @@ def run_to_dict(
         "burst": result.burst,
         "rps": result.rps,
         "batch": result.batch,
+        "inflight": result.inflight,
         "logs_range": result.logs_range,
         "connection": result.connection,
         "http": result.http,
@@ -510,6 +511,7 @@ def format_run(
         f"concurrency={_concurrency_label(result.concurrency)}"
         f"{_burst_mode_suffix(result)}"
         f"{_batch_mode_suffix(result)}"
+        f"{_inflight_mode_suffix(result)}"
         f"{_logs_range_mode_suffix(result)}"
         f"{_simulate_mode_suffix(result)}"
         f"{_archive_mode_suffix(result)}"
@@ -568,6 +570,8 @@ def format_run(
             )
         if result.batch > 0:
             lines.extend(_batch_section(result, use_color))
+        if result.inflight > 0:
+            lines.extend(_inflight_section(result, use_color))
         if result.logs_range > 0:
             lines.extend(_logs_range_section(result, use_color))
         if result.archive:
@@ -670,6 +674,8 @@ def _verbose_sections(
         lines.extend(_transport_lines(result, name_w, use_color))
     if result.batch > 0:
         lines.extend(_batch_section(result, use_color))
+    if result.inflight > 0:
+        lines.extend(_inflight_section(result, use_color))
     if result.logs_range > 0:
         lines.extend(_logs_range_section(result, use_color))
     if result.archive:
@@ -1141,6 +1147,77 @@ def _batch_lines(result: RunResult, use_color: bool) -> list[str]:
         rows,
         right=(False, False, True, True, True, True),
     )
+
+
+def _inflight_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        "Concurrency  ("
+        f"{result.inflight} overlapping POSTs vs the same {result.inflight} "
+        "serial; extra read; not mixed into ranking)",
+        *_inflight_lines(result, use_color),
+    ]
+
+
+def _inflight_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        summary = outcome.inflight
+        if summary is None:
+            rows.append([name, "—", "—", "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                _inflight_status_cell(summary, use_color),
+                _cell_ms(summary.concurrent_p50_ms),
+                _cell_ms(summary.concurrent_p95_ms),
+                _cell_ms(summary.serial_p50_ms),
+                _fmt_ratio(summary.ratio),
+                summary.error_class
+                if inflight_status_label(summary) == "skip"
+                else str(summary.n_fail),
+            ]
+        )
+    return _grid(
+        ["name", "status", "p50", "p95", "serial", "ratio", "err"],
+        rows,
+        right=(False, False, True, True, True, True, True),
+    )
+
+
+_INFLIGHT_SKIP = frozenset({"budget", "duration"})
+
+
+def inflight_status_label(summary: Any) -> str:
+    """ok / skip / error class. skip = extra read did not run."""
+    if summary is None:
+        return "—"
+    if isinstance(summary, dict):
+        error_class = summary.get("error_class")
+        n_ok = int(summary.get("n_ok") or 0)
+        n_fail = int(summary.get("n_fail") or 0)
+    else:
+        error_class = summary.error_class
+        n_ok = summary.n_ok
+        n_fail = summary.n_fail
+    if error_class in _INFLIGHT_SKIP and n_ok == 0:
+        return "skip"
+    if n_ok == 0:
+        return str(error_class or "fail")
+    if n_fail:
+        return "ok"
+    return "ok"
+
+
+def _inflight_status_cell(summary: Any, use_color: bool) -> str:
+    label = inflight_status_label(summary)
+    if label == "ok":
+        return _paint(label, _GREEN, enabled=use_color)
+    if label not in {"skip", "—"}:
+        return _paint(label, _RED, enabled=use_color)
+    return label
 
 
 def _logs_range_section(result: RunResult, use_color: bool) -> list[str]:
@@ -1651,6 +1728,7 @@ def _comparison_entry(
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        "inflight": _inflight_summary_json(outcome.inflight),
         **_extra_read_json(outcome),
     }
 
@@ -1936,6 +2014,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        "inflight": _inflight_summary_json(outcome.inflight),
         **_extra_read_json(outcome),
     }
 
@@ -1984,6 +2063,7 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "timing": _timing_summary_json(outcome.timing),
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
+        "inflight": _inflight_summary_json(outcome.inflight),
         **_extra_read_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
@@ -2121,6 +2201,12 @@ def _batch_mode_suffix(result: RunResult) -> str:
     return f"  ·  batch={result.batch}"
 
 
+def _inflight_mode_suffix(result: RunResult) -> str:
+    if result.inflight <= 0:
+        return ""
+    return f"  ·  inflight={result.inflight}"
+
+
 def _logs_range_mode_suffix(result: RunResult) -> str:
     if result.logs_range <= 0:
         return ""
@@ -2154,6 +2240,26 @@ def _batch_summary_json(summary: Any) -> dict[str, Any] | None:
         "supported": summary.supported,
         "partial": summary.partial,
         "batch_ms": summary.batch_ms,
+        "serial_ms": summary.serial_ms,
+        "ratio": summary.ratio,
+        "n_ok": summary.n_ok,
+        "n_fail": summary.n_fail,
+        "error": summary.error,
+        "error_class": summary.error_class,
+    }
+
+
+def _inflight_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "size": summary.size,
+        "method": summary.method,
+        "concurrent_p50_ms": summary.concurrent_p50_ms,
+        "concurrent_p95_ms": summary.concurrent_p95_ms,
+        "serial_p50_ms": summary.serial_p50_ms,
+        "serial_p95_ms": summary.serial_p95_ms,
+        "concurrent_ms": summary.concurrent_ms,
         "serial_ms": summary.serial_ms,
         "ratio": summary.ratio,
         "n_ok": summary.n_ok,

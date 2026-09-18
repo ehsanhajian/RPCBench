@@ -7,7 +7,13 @@ from html import escape
 from typing import Any
 
 from rpcbench.methods import is_app_workload
-from rpcbench.report import DEFAULT_RANK_BY, DEFAULT_SIMILAR_BAND, batch_support_label, run_to_dict
+from rpcbench.report import (
+    DEFAULT_RANK_BY,
+    DEFAULT_SIMILAR_BAND,
+    batch_support_label,
+    inflight_status_label,
+    run_to_dict,
+)
 from rpcbench.run import RunResult
 from rpcbench.watermark import html_footer
 
@@ -60,6 +66,7 @@ def format_html(
         _methods_table(data["methods"]),
         _transport_table(data),
         _batch_table(data),
+        _inflight_table(data),
         _logs_range_table(data),
         _archive_table(data),
         _history_table(data),
@@ -676,6 +683,55 @@ def _batch_table(data: dict[str, Any]) -> str:
     )
 
 
+def _inflight_table(data: dict[str, Any]) -> str:
+    if int(data.get("inflight") or 0) <= 0:
+        return ""
+    rows = []
+    for row in data.get("ranking") or []:
+        summary = row.get("inflight")
+        if not summary:
+            continue
+        status = inflight_status_label(summary)
+        if status == "ok":
+            tone = "ok"
+        elif status == "skip":
+            tone = "dim"
+        else:
+            tone = "bad"
+        ratio = summary.get("ratio")
+        ratio_txt = "—" if ratio is None else f"{float(ratio):.1f}×"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row["name"]))}</td>'
+            f'<td class="{tone}">{escape(status)}</td>'
+            f'<td class="num">{_ms(summary.get("concurrent_p50_ms"))}</td>'
+            f'<td class="num">{_ms(summary.get("concurrent_p95_ms"))}</td>'
+            f'<td class="num">{_ms(summary.get("serial_p50_ms"))}</td>'
+            f'<td class="num">{escape(ratio_txt)}</td>'
+            f'<td class="num">{escape(_inflight_err_cell(summary))}</td>'
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    size = data.get("inflight")
+    return (
+        '<section aria-label="concurrency">'
+        "<h2>Concurrency</h2>"
+        f'<p class="meta">{escape(str(size))} overlapping POSTs vs the same '
+        f"{escape(str(size))} serial; not mixed into ranking</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th><th>status</th>"
+        '<th class="num">p50</th><th class="num">p95</th>'
+        '<th class="num">serial</th>'
+        '<th class="num">ratio</th><th class="num">err</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
 def _logs_range_table(data: dict[str, Any]) -> str:
     if int(data.get("logs_range") or 0) <= 0:
         return ""
@@ -1067,6 +1123,14 @@ def _match_cell(cons: dict[str, Any] | None) -> str:
     if verdict == "disagree":
         return "no"
     return "—"
+
+
+def _inflight_err_cell(summary: dict[str, Any]) -> str:
+    if inflight_status_label(summary) == "skip":
+        return str(summary.get("error_class") or "—")
+    if summary.get("n_fail") is None:
+        return "—"
+    return str(summary.get("n_fail"))
 
 
 def _ms(value: float | None) -> str:

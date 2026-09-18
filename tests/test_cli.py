@@ -34,7 +34,7 @@ def test_cli_defaults() -> None:
     assert ns.preset is None
     assert ns.verbose is False
     assert ns.allow_writes is False
-    assert ns.concurrency is None
+    assert ns.concurrency == 0
     assert ns.sequential is False
     assert ns.seed == 0
     assert ns.json is False
@@ -565,7 +565,7 @@ def test_cli_rejects_negative_concurrency(tmp_path: Path, capsys) -> None:
     assert "concurrency" in capsys.readouterr().err
 
 
-def test_cli_allows_concurrency_wave_cap(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cli_concurrency_runs_overlapping_requests(tmp_path: Path, monkeypatch, capsys) -> None:
     import httpx
 
     from rpcbench import run as run_mod
@@ -604,7 +604,10 @@ def test_cli_allows_concurrency_wave_cap(tmp_path: Path, monkeypatch, capsys) ->
         ]
     )
     assert code == 0
-    assert "Mode      paired" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Mode      paired" in out
+    assert "inflight=8" in out
+    assert "Concurrency  (" in out
 
 
 def test_cli_rejects_negative_stale_blocks(tmp_path: Path, capsys) -> None:
@@ -630,6 +633,29 @@ def test_cli_rejects_burst_above_cap(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "--burst" in err
+
+
+def test_cli_concurrency_flag_defaults_to_four() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--concurrency"])
+    assert ns.concurrency == 4
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--concurrency", "5"]
+    )
+    assert ns.concurrency == 5
+
+
+def test_cli_rejects_concurrency_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--concurrency", "9", "--samples", "1"]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--concurrency" in err
 
 
 def test_cli_batch_flag_defaults_to_three() -> None:

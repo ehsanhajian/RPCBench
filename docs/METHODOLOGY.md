@@ -90,13 +90,13 @@ JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `disco
 
 `--budget short|standard|long` is how long we sample, not a Nodeprobe scan profile.
 
-| Budget | Samples | Warmup | Timeout | Max duration | Concurrency |
+| Budget | Samples | Warmup | Timeout | Max duration | Paired wave |
 | --- | --- | --- | --- | --- | --- |
-| **short** | 3 | 0 | 5s | 30s | all providers (`0`) |
-| **standard** (default) | 10 | 1 | 10s | 600s | all providers (`0`) |
-| **long** | 50 | 2 | 15s | 1800s | all providers (`0`) |
+| **short** | 3 | 0 | 5s | 30s | all providers |
+| **standard** (default) | 10 | 1 | 10s | 600s | all providers |
+| **long** | 50 | 2 | 15s | 1800s | all providers |
 
-`--samples`, `--warmup`, `--timeout`, `--max-duration`, and `--concurrency` override the table. HTTP cap is `--max-requests` (default 128).
+`--samples`, `--warmup`, `--timeout`, and `--max-duration` override the table. HTTP cap is `--max-requests` (default 128). `--sequential` is A-then-B instead of a paired wave.
 
 `long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--workload indexer` includes bounded logs; `--workload wallet` does not; `--workload tracing` times optional `trace_block` and `debug_traceCall`).
 
@@ -155,6 +155,14 @@ HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many reque
 A JSON **array** means the provider accepted batch. A single JSON-RPC **object** (error or otherwise) is **`batch_unsupported`** — a capability result, not a crash. Item-level errors or missing ids are **`partial`**. HTTP 4xx/5xx stay those classes. Huge batches are out of scope; this is not an HTTP/2 multiplexing study.
 
 Adds **1+N HTTP requests per endpoint**.
+
+## Concurrent extra read
+
+**`--concurrency N`** (default 0 = off, omit N for 4, max 8) is an extra read after timed samples, tags, and client. RPCBench sends N overlapping HTTP POSTs of the primary workload method, then the same N calls one-by-one on the same keep-alive client. Reported numbers are per-request concurrent P50/P95, serial P50/P95, `ratio = concurrent_p50 / serial_p50` (>1 means in-flight copies were slower), wall-clock `concurrent_ms` / `serial_ms`, and the concurrent error count. These are **not** mixed into ranking, reliability, or Fastest.
+
+`--burst` still overlaps existing timed samples without adding requests. `--batch` is a JSON-RPC array vs serial. `--concurrency` is a bounded extra read, not an unbounded load generator.
+
+Adds **2N HTTP requests per endpoint**.
 
 ## getLogs range scaling
 
