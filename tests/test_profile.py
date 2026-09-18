@@ -120,6 +120,22 @@ def test_rejects_trace_filter_and_debug_in_yaml() -> None:
             {"methods": [{"method": "debug_traceBlockByNumber", "weight": 1}]},
             source="t.yaml",
         )
+    with pytest.raises(MethodError, match="not allowed"):
+        parse_profile(
+            {"methods": [{"method": "debug_memStats", "weight": 1}]},
+            source="t.yaml",
+        )
+    with pytest.raises(MethodError, match="not allowed"):
+        parse_profile(
+            {"methods": [{"method": "debug_verbosity", "weight": 1}]},
+            source="t.yaml",
+        )
+    plan = parse_profile(
+        {"name": "dbg", "methods": [{"method": "debug_traceCall"}]},
+        source="t.yaml",
+    )
+    assert plan.steps[0].method == "debug_traceCall"
+    assert plan.steps[0].optional is True
 
 
 def test_rejects_writes_without_flag() -> None:

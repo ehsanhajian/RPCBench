@@ -76,6 +76,8 @@ COLUMNS = (
     "simulate_status",
     "trace_ms",
     "trace_status",
+    "debug_ms",
+    "debug_status",
     "archive",
     "archive_block",
     "archive_ms",
@@ -154,6 +156,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
                 **_trace_cols(data, row.get("name")),
+                **_debug_cols(data, row.get("name")),
                 **_archive_cols(row.get("archive")),
                 **_history_cols(row.get("history")),
             }
@@ -259,6 +262,29 @@ def _trace_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
     return {
         "trace_ms": _num(trace.get("p95_ms")),
         "trace_status": status,
+    }
+
+
+def _debug_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
+    methods = data.get("methods") or []
+    coverage = data.get("coverage") or {}
+    cells = {}
+    for provider in coverage.get("providers") or []:
+        if provider.get("name") == name:
+            cells = provider.get("cells") or {}
+            break
+    by_step: dict[str, dict[str, Any]] = {}
+    for row in methods:
+        if row.get("name") == name:
+            by_step[str(row.get("step") or "")] = row
+    debug = by_step.get("debug") or {}
+    cell = cells.get("debug") or {}
+    status = str(cell.get("status") or "")
+    if cell.get("skip_reason"):
+        status = f"skip/{cell.get('skip_reason')}"
+    return {
+        "debug_ms": _num(debug.get("p95_ms")),
+        "debug_status": status,
     }
 
 

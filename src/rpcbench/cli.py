@@ -133,7 +133,8 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
             "What you are building: general (default when the flag is present), "
             "wallet, indexer, trading, nft, or tracing. Weighted read-only mix; "
             "compose with --budget. Alias: --profile mix = general. "
-            "tracing times optional trace_block; missing traces skip, not a crash."
+            "tracing times optional trace_block and debug_traceCall; "
+            "missing traces skip, not a crash."
         ),
     )
     run.add_argument(

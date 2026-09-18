@@ -151,8 +151,43 @@ def is_trace_filter(method: str) -> bool:
     return method.lower().startswith("trace_filter")
 
 
-# EVM catalogs. debug/admin never belong here (#9 is opt-in later).
-# tracing is the only catalog that times trace_*.
+# Cheap Geth-style debug execution. callTracer + 1s cap — not memStats / verbosity.
+DEBUG_TRACER = "callTracer"
+DEBUG_TRACE_TIMEOUT = "1s"
+DEBUG_TRACE_METHODS = frozenset({"debug_traceCall"})
+
+
+def debug_trace_call_params(
+    *, to: str = ZERO_ADDRESS, block: str = "latest"
+) -> tuple[dict[str, str], str, dict[str, str]]:
+    return (
+        {"to": to, "data": "0x"},
+        block,
+        {"tracer": DEBUG_TRACER, "timeout": DEBUG_TRACE_TIMEOUT},
+    )
+
+
+def _debug(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "debug",
+        "debug_traceCall",
+        debug_trace_call_params(),
+        weight,
+        optional=True,
+    )
+
+
+def is_debug_trace_method(method: str) -> bool:
+    return method.lower() in {name.lower() for name in DEBUG_TRACE_METHODS}
+
+
+def is_debug_recon(method: str) -> bool:
+    """True for debug_* that is not the cheap timed call (Nodeprobe's lane)."""
+    return method.lower().startswith("debug_") and not is_debug_trace_method(method)
+
+
+# EVM catalogs. Privileged admin never belongs here.
+# tracing is the only catalog that times trace_* / debug_traceCall.
 _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     "general": (
         _head(),
@@ -197,6 +232,7 @@ _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
         _chain_id(),
         _block(),
         _trace(4),
+        _debug(2),
     ),
 }
 
@@ -220,10 +256,10 @@ _WRITE_PREFIXES = (
 )
 
 # Privileged namespaces. App mixes must never use these as a probe.
-# trace_* is opt-in (--workload tracing / YAML); trace_filter is still rejected.
+# trace_* / debug_traceCall are opt-in (--workload tracing / YAML).
+# trace_filter and other debug_* (memStats, verbosity, …) stay rejected.
 _FORBIDDEN_MIX_PREFIXES = (
     *_WRITE_PREFIXES,
-    "debug_",
     "engine_",
     "txpool_",
     "clique_",
@@ -452,7 +488,7 @@ def _reject_writes(method: str) -> None:
 
 def _reject_mix_probe(method: str) -> None:
     lower = method.lower()
-    if is_trace_filter(method):
+    if is_trace_filter(method) or is_debug_recon(method):
         raise MethodError(f"{method} is not allowed in an app workload mix")
     if any(lower.startswith(p) for p in _FORBIDDEN_MIX_PREFIXES):
         raise MethodError(f"{method} is not allowed in an app workload mix")
