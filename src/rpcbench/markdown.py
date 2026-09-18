@@ -224,6 +224,23 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    debug = _debug_rows(data)
+    if debug:
+        lines.extend(
+            [
+                "## Debug",
+                "",
+                "Optional `debug_traceCall` (callTracer, 1s cap). "
+                "Missing or restricted debug traces skip, not a crash.",
+                "",
+                *_md_table(
+                    ["name", "step", "method", "p95", "status"],
+                    debug,
+                    right=(False, False, False, True, False),
+                ),
+                "",
+            ]
+        )
     archive = _archive_rows(data)
     if archive:
         lines.extend(
@@ -369,6 +386,40 @@ def _trace_rows(data: dict[str, Any]) -> list[list[str]]:
         str(row.get("name") or "")
         for row in (data.get("workload") or [])
         if str(row.get("method") or "").startswith("trace_")
+    }
+    if not steps:
+        return []
+    coverage = data.get("coverage") or {}
+    cells_by_name: dict[str, dict[str, Any]] = {}
+    for provider in coverage.get("providers") or []:
+        cells_by_name[str(provider.get("name") or "")] = provider.get("cells") or {}
+    rows: list[list[str]] = []
+    for row in data.get("methods") or []:
+        step = str(row.get("step") or "")
+        if step not in steps:
+            continue
+        name = str(row.get("name") or "—")
+        cell = (cells_by_name.get(name) or {}).get(step) or {}
+        status = str(cell.get("status") or "—")
+        if cell.get("skip_reason"):
+            status = f"skip/{cell.get('skip_reason')}"
+        rows.append(
+            [
+                name,
+                step,
+                str(row.get("method") or "—"),
+                _ms(row.get("p95_ms")),
+                status,
+            ]
+        )
+    return rows
+
+
+def _debug_rows(data: dict[str, Any]) -> list[list[str]]:
+    steps = {
+        str(row.get("name") or "")
+        for row in (data.get("workload") or [])
+        if str(row.get("method") or "").startswith("debug_")
     }
     if not steps:
         return []

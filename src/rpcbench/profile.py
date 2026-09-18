@@ -19,9 +19,12 @@ from rpcbench.methods import (
     WorkloadPlan,
     _reject_writes,
     canonical_workload,
+    is_debug_recon,
+    is_debug_trace_method,
     is_trace_filter,
     is_trace_method,
     simulate_params,
+    debug_trace_call_params,
     trace_block_params,
     trace_call_params,
 )
@@ -55,6 +58,7 @@ _SHORT_NAMES = {
     "eth_getLogs": "logs",
     "trace_block": "trace",
     "trace_call": "traceCall",
+    "debug_traceCall": "debug",
 }
 
 _BLOCK_SOURCES = frozenset({"latest_head", "recent_block"})
@@ -69,12 +73,13 @@ _PARAM_METHODS = frozenset(
         "eth_getLogs",
         "trace_block",
         "trace_call",
+        "debug_traceCall",
     }
 )
 
-# Never in a YAML mix, even with --allow-writes. trace_* is opt-in and optional.
+# Never in a YAML mix, even with --allow-writes.
+# debug_traceCall is the cheap timed exception (always optional).
 _PRIVILEGED_PREFIXES = (
-    "debug_",
     "engine_",
     "txpool_",
     "clique_",
@@ -344,7 +349,11 @@ def _parse_step(
         name = raw_name.strip()
     else:
         raise MethodError(f"{loc}.name must be a non-empty string")
-    optional = method == "eth_simulateV1" or is_trace_method(method)
+    optional = (
+        method == "eth_simulateV1"
+        or is_trace_method(method)
+        or is_debug_trace_method(method)
+    )
     raw_optional = item.get("optional")
     if raw_optional is not None:
         if not isinstance(raw_optional, bool):
@@ -384,12 +393,14 @@ def _default_params(method: str) -> tuple[Any, ...]:
         return trace_block_params()
     if method == "trace_call":
         return trace_call_params()
+    if method == "debug_traceCall":
+        return debug_trace_call_params()
     return ()
 
 
 def _reject_profile_method(method: str, *, allow_writes: bool) -> None:
     lower = method.lower()
-    if is_trace_filter(method):
+    if is_trace_filter(method) or is_debug_recon(method):
         raise MethodError(f"{method} is not allowed in an app workload mix")
     if any(lower.startswith(p) for p in _PRIVILEGED_PREFIXES):
         raise MethodError(f"{method} is not allowed in an app workload mix")
@@ -464,4 +475,8 @@ def _fill_params(
         to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
         tag = block if source in _BLOCK_SOURCES else "latest"
         return trace_call_params(to=to, block=tag), fell
+    if method == "debug_traceCall":
+        to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
+        tag = block if source in _BLOCK_SOURCES else "latest"
+        return debug_trace_call_params(to=to, block=tag), fell
     return spec.params, fell

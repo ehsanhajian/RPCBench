@@ -51,9 +51,9 @@ def test_core_catalogs_do_not_call_trace() -> None:
     assert tracing["trace"].optional is True
     assert tracing["trace"].params == trace_block_params()
     assert tracing["trace"].weight == 4
-    assert "debug_" not in " ".join(
-        spec.method for spec in family_workload("evm", "tracing")
-    )
+    assert tracing["debug"].method == "debug_traceCall"
+    assert tracing["debug"].optional is True
+    assert tracing["debug"].weight == 2
 
 
 def test_tracing_mix_reports_latency() -> None:
@@ -317,5 +317,8 @@ def test_cli_tracing(tmp_path, monkeypatch, capsys) -> None:
     assert "Method    tracing" in out
     assert "skip/unsupported" in out
     assert "finding" not in out.lower()
-    assert not any(m.startswith("debug_") for m in methods)
+    assert not any(m.startswith("debug_") for m in methods if m != "debug_traceCall")
     assert "trace_filter" not in methods
+    assert "debug_traceCall" in methods
+    assert "debug_memStats" not in methods
+    assert "debug_verbosity" not in methods

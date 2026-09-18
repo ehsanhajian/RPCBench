@@ -30,6 +30,7 @@ _METHOD_COLORS: dict[str, str] = {
     "eth_simulateV1": "#a371f7",
     "trace_block": "#7ee787",
     "trace_call": "#56d364",
+    "debug_traceCall": "#3fb950",
     "eth_getLogs": _GREEN,
 }
 _METHOD_FALLBACK = ("#e3b341", _RED, "#58a6ff", "#a371f7")

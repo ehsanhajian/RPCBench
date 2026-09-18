@@ -12,6 +12,7 @@ from rpcbench.methods import (
     _WRITE_PREFIXES,
     canonical_workload,
     family_workload,
+    is_debug_recon,
     request_units,
     resolve_method,
     resolve_workload,
@@ -207,7 +208,7 @@ def test_trading_and_nft_mixes() -> None:
     assert filt["fromBlock"] == filt["toBlock"] == "latest"
 
 
-def test_app_mixes_never_include_debug_or_privileged() -> None:
+def test_app_mixes_never_include_debug_recon_or_privileged() -> None:
     blob = " ".join(
         spec.method
         for family in WORKLOADS.values()
@@ -215,7 +216,8 @@ def test_app_mixes_never_include_debug_or_privileged() -> None:
         for spec in steps
     ).lower()
     for marker in (
-        "debug_",
+        "debug_memstats",
+        "debug_verbosity",
         "admin_",
         "personal_",
         "miner_",
@@ -233,8 +235,10 @@ def test_app_mixes_never_include_debug_or_privileged() -> None:
             for spec in steps:
                 lower = spec.method.lower()
                 assert not any(lower.startswith(p) for p in _WRITE_PREFIXES)
+                assert not is_debug_recon(spec.method)
                 if name != "tracing":
                     assert not lower.startswith("trace_")
+                    assert not lower.startswith("debug_")
 
 
 def test_solana_family_is_not_an_evm_fallback() -> None:
