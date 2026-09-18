@@ -19,7 +19,11 @@ from rpcbench.methods import (
     WorkloadPlan,
     _reject_writes,
     canonical_workload,
+    is_trace_filter,
+    is_trace_method,
     simulate_params,
+    trace_block_params,
+    trace_call_params,
 )
 
 # Look-back for source: recent_block. Inclusive of head.
@@ -49,6 +53,8 @@ _SHORT_NAMES = {
     "eth_estimateGas": "gas",
     "eth_simulateV1": "simulate",
     "eth_getLogs": "logs",
+    "trace_block": "trace",
+    "trace_call": "traceCall",
 }
 
 _BLOCK_SOURCES = frozenset({"latest_head", "recent_block"})
@@ -61,12 +67,13 @@ _PARAM_METHODS = frozenset(
         "eth_estimateGas",
         "eth_simulateV1",
         "eth_getLogs",
+        "trace_block",
+        "trace_call",
     }
 )
 
-# Never in a YAML mix, even with --allow-writes.
+# Never in a YAML mix, even with --allow-writes. trace_* is opt-in and optional.
 _PRIVILEGED_PREFIXES = (
-    "trace_",
     "debug_",
     "engine_",
     "txpool_",
@@ -307,7 +314,10 @@ def _parse_step(
         src = src.strip()
         if method not in _PARAM_METHODS:
             raise MethodError(f"{loc}: source {src} is not valid for {method}")
-        if src in _ADDRESS_SOURCES and method == "eth_getBlockByNumber":
+        if src in _ADDRESS_SOURCES and method in {
+            "eth_getBlockByNumber",
+            "trace_block",
+        }:
             raise MethodError(
                 f"{loc}: source {src} is for balance/call/gas/simulate/logs, not {method}"
             )
@@ -334,7 +344,7 @@ def _parse_step(
         name = raw_name.strip()
     else:
         raise MethodError(f"{loc}.name must be a non-empty string")
-    optional = method == "eth_simulateV1"
+    optional = method == "eth_simulateV1" or is_trace_method(method)
     raw_optional = item.get("optional")
     if raw_optional is not None:
         if not isinstance(raw_optional, bool):
@@ -370,11 +380,17 @@ def _default_params(method: str) -> tuple[Any, ...]:
                 "address": ZERO_ADDRESS,
             },
         )
+    if method == "trace_block":
+        return trace_block_params()
+    if method == "trace_call":
+        return trace_call_params()
     return ()
 
 
 def _reject_profile_method(method: str, *, allow_writes: bool) -> None:
     lower = method.lower()
+    if is_trace_filter(method):
+        raise MethodError(f"{method} is not allowed in an app workload mix")
     if any(lower.startswith(p) for p in _PRIVILEGED_PREFIXES):
         raise MethodError(f"{method} is not allowed in an app workload mix")
     if not allow_writes:
@@ -441,4 +457,11 @@ def _fill_params(
         return (
             {"fromBlock": tag, "toBlock": tag, "address": addr},
         ), fell
+    if method == "trace_block":
+        tag = block if source in _BLOCK_SOURCES else "latest"
+        return trace_block_params(tag), fell
+    if method == "trace_call":
+        to = address if source in _ADDRESS_SOURCES else ZERO_ADDRESS
+        tag = block if source in _BLOCK_SOURCES else "latest"
+        return trace_call_params(to=to, block=tag), fell
     return spec.params, fell

@@ -107,12 +107,17 @@ def test_fixture_fallback_when_head_missing() -> None:
     assert bound[0].params == ("latest", False)
 
 
-def test_rejects_trace_in_yaml() -> None:
+def test_rejects_trace_filter_and_debug_in_yaml() -> None:
     from rpcbench.profile import parse_profile
 
     with pytest.raises(MethodError, match="not allowed"):
         parse_profile(
-            {"methods": [{"method": "trace_block", "weight": 1}]},
+            {"methods": [{"method": "trace_filter", "weight": 1}]},
+            source="t.yaml",
+        )
+    with pytest.raises(MethodError, match="not allowed"):
+        parse_profile(
+            {"methods": [{"method": "debug_traceBlockByNumber", "weight": 1}]},
             source="t.yaml",
         )
 

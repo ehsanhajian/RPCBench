@@ -114,6 +114,8 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "history_status",
     )
     assert "batch_ratio" in COLUMNS
+    assert "trace_ms" in COLUMNS
+    assert "trace_status" in COLUMNS
 
 
 def test_csv_core_metrics_parse() -> None:

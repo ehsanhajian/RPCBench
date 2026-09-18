@@ -1493,6 +1493,7 @@ def test_cli_long_mix_does_not_add_archive_or_ws(
         "eth_getLogs",
         "web3_clientVersion",
     ]
+    assert "trace_block" not in methods
 
 
 def test_cli_rejects_workload_with_method(tmp_path: Path, capsys) -> None:

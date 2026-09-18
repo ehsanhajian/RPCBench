@@ -118,7 +118,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         metavar="NAME",
         help=(
             "App mix: mix (= general), general, wallet, indexer, trading, nft, "
-            "or a YAML file. Same as --workload for named mixes. "
+            "tracing, or a YAML file. Same as --workload for named mixes. "
             "Do not combine with --method."
         ),
     )
@@ -127,12 +127,13 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         nargs="?",
         const="general",
         default=None,
-        choices=("general", "wallet", "indexer", "trading", "nft"),
+        choices=("general", "wallet", "indexer", "trading", "nft", "tracing"),
         metavar="NAME",
         help=(
             "What you are building: general (default when the flag is present), "
-            "wallet, indexer, trading, or nft. Weighted read-only mix; compose "
-            "with --budget. Alias: --profile mix = general."
+            "wallet, indexer, trading, nft, or tracing. Weighted read-only mix; "
+            "compose with --budget. Alias: --profile mix = general. "
+            "tracing times optional trace_block; missing traces skip, not a crash."
         ),
     )
     run.add_argument(

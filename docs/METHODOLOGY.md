@@ -8,9 +8,9 @@ Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitt
 
 ## Method mix
 
-Default CLI is still one method (`eth_blockNumber`). **`--workload general|wallet|indexer|trading|nft`** is the documented production-like mix (`--workload` with no name is **general**). **`--profile mix`** is the old name for `--workload general`. `--budget short|standard|long` sets how many rounds to take. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`, and compact CLI when `eth_simulateV1` is in the mix) is per step.
+Default CLI is still one method (`eth_blockNumber`). **`--workload general|wallet|indexer|trading|nft|tracing`** is the documented production-like mix (`--workload` with no name is **general**). **`--profile mix`** is the old name for `--workload general`. `--budget short|standard|long` sets how many rounds to take. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`, and compact CLI when an optional step is in the mix) is per step.
 
-An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Tracing and debug methods are never part of these five catalogs.
+An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Debug methods are never in catalogs. `trace_*` is **`--workload tracing`** (or a YAML mix you write) only.
 
 Family catalogs are **EVM** today. Other families error instead of sending `eth_*` at a Solana or Bitcoin URL.
 
@@ -25,8 +25,9 @@ Shared read-only payloads (same on every provider):
 | call | `eth_call` | `[{"to": 0x000…0000, "data": "0x"}, "latest"]` |
 | gas | `eth_estimateGas` | `[{"to": 0x000…0000, "data": "0x"}]` |
 | logs | `eth_getLogs` | `[{fromBlock, toBlock: "latest", address: 0x000…0000}]` |
+| trace | `trace_block` | `["latest"]` |
 
-Logs are one block and one address. No unbounded scans. No writes. Logs appear only in mixes that need them. `eth_estimateGas` appears in **wallet** and **trading** only. `eth_simulateV1` is not in these five catalogs (`--simulate` or a YAML profile).
+Logs are one block and one address. No unbounded scans. No writes. Logs appear only in mixes that need them. `eth_estimateGas` appears in **wallet** and **trading** only. `eth_simulateV1` is not in these catalogs (`--simulate` or a YAML profile). `trace_block` is **`--workload tracing`** only: one recent block, `trace` types — not `vmTrace`, not `trace_filter`. It is optional (not-offered / restricted / timeout is skip, not a ranking miss).
 
 | `--workload` | What it models | Steps × weight |
 | --- | --- | --- |
@@ -35,12 +36,13 @@ Logs are one block and one address. No unbounded scans. No writes. Logs appear o
 | **indexer** | Blocks and bounded logs | head 1, chainId 1, block 3, call 1, logs 4 |
 | **trading** | Fresh head, calls, and gas | head 3, chainId 1, block 2, call 4, gas 2 |
 | **nft** | Calls and bounded logs | head 1, chainId 1, block 1, balance 1, call 3, logs 3 |
+| **tracing** | Optional `trace_block` | head 1, chainId 1, block 1, trace 4 |
 
 Example: `--workload wallet --budget short` is 3 rounds × 12 weighted calls = 36 timed samples per endpoint (plus extra freshness/hash/tag reads). `--workload indexer --budget short` is 3 × 10, and four of every ten are bounded `eth_getLogs`.
 
 ## Custom YAML profiles
 
-`--profile FILE.yaml` loads a mix without a code change. Named catalogs stay `--workload general|wallet|…` / `--profile mix`. Do not combine a file with `--method`, `--preset`, or `--params`.
+`--profile FILE.yaml` loads a mix without a code change. Named catalogs stay `--workload general|wallet|…|tracing` / `--profile mix`. Do not combine a file with `--method`, `--preset`, or `--params`.
 
 ```yaml
 name: dex
@@ -73,13 +75,13 @@ methods:
 
 The same `--seed` + profile + fetched head produces the same method/param sequence on every provider and on a re-run of that snapshot. A live head that moved between runs changes absolute block numbers; the offset and seeded address stay fixed. Static `params:` are allowed instead of `source`, not both on one step.
 
-Logs from these sources stay **one block**. Unbounded scans are out of scope (`--logs-range` is the extra range table). `trace_*` / `debug_*` / admin / txpool are rejected. Writes still need `--allow-writes`. `eth_simulateV1` in YAML is always optional (not-offered is skip, not a ranking miss).
+Logs from these sources stay **one block**. Unbounded scans are out of scope (`--logs-range` is the extra range table). `debug_*` / admin / txpool / `trace_filter` are rejected. `trace_block` / `trace_call` in YAML are always optional (unsupported / restricted / timeout is skip, not a ranking miss). Writes still need `--allow-writes`. `eth_simulateV1` in YAML is always optional (not-offered is skip, not a ranking miss).
 
 JSON `payload` records `source` (`chain` / `seed` / `yaml` / `fixture`), `head`, `chain_id`, and `fallback`. Compact CLI, HTML, CSV, and markdown print the same facts.
 
 ## Workload coverage
 
-Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--workload indexer` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. `--workload wallet` does not send logs, so a node that cannot serve `eth_getLogs` can still look ready for a wallet. Missing **required** steps take `~` in Ranking (same as high error, stale, or disagree). **`eth_simulateV1`** is optional: not-offered is skip, not a ranking miss and not mixed into error rate. Default catalogs never include admin/personal/miner/engine/txpool, never include `trace_*` / `debug_*`, and never include writes or `eth_simulateV1`.
+Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--workload indexer` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. `--workload wallet` does not send logs, so a node that cannot serve `eth_getLogs` can still look ready for a wallet. Missing **required** steps take `~` in Ranking (same as high error, stale, or disagree). **`eth_simulateV1`** and **`trace_*`** are optional: unsupported / restricted / timeout is skip, not a ranking miss and not mixed into error rate. Default catalogs never include admin/personal/miner/engine/txpool, never include `debug_*`, never include writes or `eth_simulateV1`. `trace_*` is `--workload tracing` (or YAML) only.
 
 JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `discover`.
 
@@ -95,7 +97,7 @@ JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `disco
 
 `--samples`, `--warmup`, `--timeout`, `--max-duration`, and `--concurrency` override the table. HTTP cap is `--max-requests` (default 128).
 
-`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--workload indexer` includes bounded logs; `--workload wallet` does not. There is no tracing mix yet).
+`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--workload indexer` includes bounded logs; `--workload wallet` does not; `--workload tracing` times optional `trace_block`).
 
 ## Paired compare
 
@@ -165,9 +167,15 @@ Adds **up to 4 HTTP requests per endpoint**.
 
 ## Read-only simulation
 
-Trading and wallets live on “would this tx work?”, not `eth_blockNumber`. **`--simulate`** appends any missing `eth_call`, `eth_estimateGas`, and `eth_simulateV1` to the active mix (fixture `{to: zero, data: "0x"}`; simulateV1 is one `blockStateCalls` entry with `validation: false`). Never `eth_send*`. `--workload wallet` and `--workload trading` already include `eth_estimateGas`. `eth_simulateV1` is not in the five catalogs.
+Trading and wallets live on “would this tx work?”, not `eth_blockNumber`. **`--simulate`** appends any missing `eth_call`, `eth_estimateGas`, and `eth_simulateV1` to the active mix (fixture `{to: zero, data: "0x"}`; simulateV1 is one `blockStateCalls` entry with `validation: false`). Never `eth_send*`. `--workload wallet` and `--workload trading` already include `eth_estimateGas`. `eth_simulateV1` is not in the core catalogs.
 
 These are **timed mix steps** (Methods table, Coverage, ranking) except unimplemented simulateV1: **skip**, dropped from ranking error rate, not a crash. YAML may list the same methods; simulateV1 stays optional.
+
+## Optional trace timing
+
+Indexers need to know whether traces are **fast enough**, not whether a public node “leaked” `trace_*`. **`--workload tracing`** times `trace_block("latest")` (one recent block, `trace` types only — not `vmTrace`, not `trace_filter`). general / wallet / indexer / trading / nft never send `trace_*`. `--budget long` does not turn this on.
+
+Missing, restricted (401/403 / disabled), or timed-out traces are **skip**, not a crash and not a vulnerability. They are not mixed into ranking error rate. YAML may include `trace_block` / `trace_call` (always optional); `trace_filter` and `debug_*` stay rejected.
 
 ## Archive / historical state
 

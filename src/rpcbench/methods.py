@@ -18,7 +18,8 @@ PRESETS: dict[str, tuple[str, list[Any]]] = {
 }
 
 # Named app mixes. --profile mix is the old name for general.
-APP_WORKLOADS = ("general", "wallet", "indexer", "trading", "nft")
+APP_WORKLOADS = ("general", "wallet", "indexer", "trading", "nft", "tracing")
+CORE_WORKLOADS = ("general", "wallet", "indexer", "trading", "nft")
 PROFILE_ALIASES = {"mix": "general"}
 
 
@@ -118,7 +119,40 @@ def _logs(weight: int = 1) -> CallSpec:
     return CallSpec("logs", "eth_getLogs", (_LOGS_FILTER,), weight)
 
 
-# EVM catalogs. Tracing/debug/admin never belong here (#8/#9 are opt-in later).
+# Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
+TRACE_TYPES = ("trace",)
+
+
+def trace_block_params(block: str = "latest") -> tuple[str]:
+    return (block,)
+
+
+def trace_call_params(
+    *, to: str = ZERO_ADDRESS, block: str = "latest"
+) -> tuple[dict[str, str], list[str], str]:
+    return ({"to": to, "data": "0x"}, list(TRACE_TYPES), block)
+
+
+def _trace(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "trace",
+        "trace_block",
+        trace_block_params(),
+        weight,
+        optional=True,
+    )
+
+
+def is_trace_method(method: str) -> bool:
+    return method.lower().startswith("trace_")
+
+
+def is_trace_filter(method: str) -> bool:
+    return method.lower().startswith("trace_filter")
+
+
+# EVM catalogs. debug/admin never belong here (#9 is opt-in later).
+# tracing is the only catalog that times trace_*.
 _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     "general": (
         _head(),
@@ -158,6 +192,12 @@ _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
         _call(3),
         _logs(3),
     ),
+    "tracing": (
+        _head(),
+        _chain_id(),
+        _block(),
+        _trace(4),
+    ),
 }
 
 # Family → named mix. Solana/others are not shipped; resolve errors instead of
@@ -179,10 +219,10 @@ _WRITE_PREFIXES = (
     "wallet_",
 )
 
-# Privileged / tracing namespaces. App mixes must never use these as a probe.
+# Privileged namespaces. App mixes must never use these as a probe.
+# trace_* is opt-in (--workload tracing / YAML); trace_filter is still rejected.
 _FORBIDDEN_MIX_PREFIXES = (
     *_WRITE_PREFIXES,
-    "trace_",
     "debug_",
     "engine_",
     "txpool_",
@@ -412,5 +452,7 @@ def _reject_writes(method: str) -> None:
 
 def _reject_mix_probe(method: str) -> None:
     lower = method.lower()
+    if is_trace_filter(method):
+        raise MethodError(f"{method} is not allowed in an app workload mix")
     if any(lower.startswith(p) for p in _FORBIDDEN_MIX_PREFIXES):
         raise MethodError(f"{method} is not allowed in an app workload mix")

@@ -74,6 +74,8 @@ COLUMNS = (
     "estimate_status",
     "simulate_ms",
     "simulate_status",
+    "trace_ms",
+    "trace_status",
     "archive",
     "archive_block",
     "archive_ms",
@@ -151,6 +153,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
+                **_trace_cols(data, row.get("name")),
                 **_archive_cols(row.get("archive")),
                 **_history_cols(row.get("history")),
             }
@@ -233,6 +236,29 @@ def _simulate_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
         "estimate_status": str(gas_cell.get("status") or ""),
         "simulate_ms": _num(sim.get("p95_ms")),
         "simulate_status": str(sim_cell.get("status") or ""),
+    }
+
+
+def _trace_cols(data: dict[str, Any], name: Any) -> dict[str, str]:
+    methods = data.get("methods") or []
+    coverage = data.get("coverage") or {}
+    cells = {}
+    for provider in coverage.get("providers") or []:
+        if provider.get("name") == name:
+            cells = provider.get("cells") or {}
+            break
+    by_step: dict[str, dict[str, Any]] = {}
+    for row in methods:
+        if row.get("name") == name:
+            by_step[str(row.get("step") or "")] = row
+    trace = by_step.get("trace") or {}
+    cell = cells.get("trace") or {}
+    status = str(cell.get("status") or "")
+    if cell.get("skip_reason"):
+        status = f"skip/{cell.get('skip_reason')}"
+    return {
+        "trace_ms": _num(trace.get("p95_ms")),
+        "trace_status": status,
     }
 
 
