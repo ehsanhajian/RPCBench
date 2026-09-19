@@ -6,10 +6,14 @@
 endpoints:
   - name: local
     url: http://127.0.0.1:8545
+    # Optional. Used only with --websocket.
+    # ws: ws://127.0.0.1:8546
   - name: publicnode
     url: https://ethereum.publicnode.com
+    # ws: wss://ethereum.publicnode.com
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY
+  #   ws: wss://eth.example/ws/v3/YOUR_KEY
   #   bearer: YOUR_TOKEN
   #   headers:
   #     X-Api-Key: YOUR_KEY

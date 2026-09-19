@@ -109,6 +109,75 @@ def test_headers_and_bearer() -> None:
     assert len(endpoint.url_id) == 12
 
 
+def test_optional_ws_url_accepts_ws_and_wss() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:8545",
+                    "ws": "ws://127.0.0.1:8546",
+                },
+                {
+                    "name": "public",
+                    "url": "https://example.invalid",
+                    "websocket": "wss://example.invalid/ws",
+                },
+            ]
+        }
+    )
+    assert cfg.endpoints[0].ws_url == "ws://127.0.0.1:8546"
+    assert cfg.endpoints[1].ws_url == "wss://example.invalid/ws"
+
+
+def test_ws_url_must_be_ws_or_wss() -> None:
+    with pytest.raises(ConfigError, match="ws or wss"):
+        parse_endpoints(
+            {
+                "endpoints": [
+                    {
+                        "name": "x",
+                        "url": "http://127.0.0.1:1",
+                        "ws": "https://example.invalid/ws",
+                    }
+                ]
+            }
+        )
+
+
+def test_ws_and_websocket_must_agree() -> None:
+    with pytest.raises(ConfigError, match="both ws and websocket"):
+        parse_endpoints(
+            {
+                "endpoints": [
+                    {
+                        "name": "x",
+                        "url": "http://127.0.0.1:1",
+                        "ws": "ws://127.0.0.1:1",
+                        "websocket": "wss://127.0.0.1:2",
+                    }
+                ]
+            }
+        )
+
+
+def test_ws_url_secrets_are_redacted() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "paid",
+                    "url": "https://rpc.example/v3/abcdabcdabcdabcdabcdabcdabcdabcd",
+                    "ws": "wss://rpc.example/ws/v3/abcdabcdabcdabcdabcdabcdabcdabcd",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].ws_url is not None
+    assert "abcdabcdabcdabcdabcdabcdabcdabcd" not in (cfg.endpoints[0].display_ws_url or "")
+    assert "[redacted]" in (cfg.endpoints[0].display_ws_url or "")
+
+
 def test_load_targets_url() -> None:
     cfg = load_targets("http://127.0.0.1:8545")
     assert len(cfg.endpoints) == 1

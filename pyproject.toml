@@ -27,6 +27,7 @@ dependencies = [
   "httpx>=0.27",
   "h2>=4.1",
   "PyYAML>=6.0",
+  "websockets>=13",
 ]
 
 [project.optional-dependencies]

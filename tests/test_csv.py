@@ -106,12 +106,14 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "rank_by",
         "rank",
     ]
-    assert COLUMNS[-5:] == (
-        "history_ms",
-        "history_head_ms",
-        "history_ratio",
-        "history_block",
-        "history_status",
+    assert COLUMNS[-7:] == (
+        "websocket_connect_ms",
+        "websocket_subscribe_ms",
+        "websocket_first_ms",
+        "websocket_n",
+        "websocket_missed",
+        "websocket_disconnects",
+        "websocket_status",
     )
     assert "batch_ratio" in COLUMNS
     assert "inflight_p50_ms" in COLUMNS

@@ -43,6 +43,7 @@ endpoints:
     url: https://eth.drpc.org
   - name: paid
     url: https://eth.example/v3/YOUR_KEY
+    ws: wss://eth.example/ws/v3/YOUR_KEY
     bearer: YOUR_TOKEN
     headers:
       X-Api-Key: YOUR_KEY
@@ -106,20 +107,21 @@ The default CLI prints, in order:
 9. **Logs range** — when `--logs-range` is set: pinned `eth_getLogs` at 1 / 10 / 100 / up to N blocks (latency, bytes, n, truncation). Mix logs stay one block. A provider that only dies at 1000 blocks shows here. Not mixed into ranking.
 10. **Archive** — when `--archive` is set: `eth_getBalance` at genesis, classified yes / no / unknown / rate-limited. Missing archive is a capability result, not a crash. Not mixed into ranking.
 11. **History** — when `--lookback N` is set: timed `eth_getBalance` at pin−N vs latest (latency, error rate, ratio). Endpoints without archive/history skip with a reason. Not mixed into ranking.
+12. **WebSocket** — when `--websocket` is set: connect time, `eth_subscribe` `newHeads` latency, first-event delivery, missed heads, and disconnects over a bounded window. Missing `ws`/`websocket` URL is **not configured**. Not mixed into ranking.
 
 `--verbose` adds the rest (same numbers, no data loss):
 
-12. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
-13. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
-14. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
-15. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
-16. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
-17. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-18. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
-19. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-20. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-21. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-22. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
+13. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
+14. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
+15. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
+16. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
+17. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
+18. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+19. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
+20. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+21. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+22. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+23. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -141,6 +143,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Logs range** is opt-in (`--logs-range N`, omit N for 1000). After the pin, the same zero-address `eth_getLogs` is sent at 1, 10, 100, and up to N blocks. Mix logs stay `latest→latest`. Too-short chains skip with `head`. Truncation and 1000-only failures show in the Logs range table. Adds up to 4 requests per endpoint. Default is off (`--logs-range 0`).
 - **`--archive`** probes historical state with one `eth_getBalance` of the zero address at genesis. Classified yes / no / unknown / rate-limited. Chains shorter than 128 blocks skip with `head`. Missing archive is a capability result, not a crash, and does not change ranking. Details: [Archive / historical state](docs/METHODOLOGY.md#archive--historical-state).
 - **`--lookback N`** times `eth_getBalance` at `pin−N` vs `latest` (omit N for 1000). Reuses `--archive` to skip when the node has no history. Not mixed into ranking. Details: [Historical queries](docs/METHODOLOGY.md#historical-queries).
+- **`--websocket SEC`** times WebSocket connect, `eth_subscribe` `newHeads`, and first-event delivery over a bounded window (omit SEC for 3s, max 10s). Needs an optional `ws` / `websocket` URL on the endpoint (`ws://` or `wss://`). Missing WS is **not configured**. Disconnects and missed block-number gaps are counted in that window. Does not consume `--max-requests`. Not mixed into ranking. Details: [WebSocket subscribe](docs/METHODOLOGY.md#websocket-subscribe).
 
 ### Stats
 
@@ -177,12 +180,13 @@ These are not mixed into latency stats or Fastest.
 - **Logs range** is opt-in (`--logs-range`, omit N for 1000). After the pin is known, RPCBench sends the same `eth_getLogs` (zero address, no topics) at 1, 10, 100, and up to N blocks ending at that pin. Mix catalogs still use `latest→latest`. A range is skipped with reason `head` when the chain is shorter than N blocks. Truncation (result cap / “too many logs”) is a table cell, not a ranking change. Adds up to 4 requests per endpoint.
 - **Archive** is opt-in (`--archive`). After the pin is known, one `eth_getBalance` of the zero address at genesis classifies the endpoint yes / no / unknown / rate-limited. Too-short chains skip with `head`. Not mixed into ranking. Adds 1 request per endpoint.
 - **History** is opt-in (`--lookback N`, omit N for 1000). Timed `eth_getBalance` at pin−N vs latest. `--lookback` turns on archive detection; a pruned node skips with `archive`. Not mixed into ranking. Adds up to 2 requests per endpoint.
+- **WebSocket** is opt-in (`--websocket SEC`, omit SEC for 3s, max 10s). Connect + `eth_subscribe` `newHeads` on the optional `ws` / `websocket` URL. Missing WS is **not configured**. Reports connect, subscribe, first-event, missed heads, and disconnects. Does not consume `--max-requests`. Not mixed into ranking.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), `websocket` (connect / subscribe / first-event ms, n, missed heads, disconnects), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Throughput, Logs range, Simulation, Trace, Debug, Archive, and History tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, throughput, logs-range, simulate, trace, debug, archive, and history fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Throughput, Logs range, Simulation, Trace, Debug, Archive, History, and WebSocket tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, throughput, logs-range, simulate, trace, debug, archive, history, and websocket fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -202,6 +206,7 @@ rpcbench run --endpoints endpoints.yaml --logs-range
 rpcbench run --endpoints endpoints.yaml --simulate --budget short
 rpcbench run --endpoints endpoints.yaml --archive --budget short
 rpcbench run --endpoints endpoints.yaml --lookback --budget short
+rpcbench run --endpoints endpoints.yaml --websocket
 rpcbench run --endpoints endpoints.yaml --workload wallet --simulate --budget short
 rpcbench run --endpoints endpoints.yaml --workload indexer --logs-range --budget short
 rpcbench run --endpoints endpoints.yaml --profile my-mix.yaml --seed 7
@@ -244,6 +249,7 @@ rpcbench diff --history reports/
 | `--simulate` | off | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. Missing simulateV1 is skip |
 | `--archive` | off | Probe `eth_getBalance` at genesis. yes / no / unknown / rate-limited. Not mixed into ranking |
 | `--lookback` | 0 | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
+| `--websocket` | 0 | Connect + `eth_subscribe` `newHeads` (`0`=off, omit SEC for 3s, max 10s). Missing WS is not configured |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |

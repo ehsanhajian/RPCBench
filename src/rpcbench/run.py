@@ -25,6 +25,12 @@ from rpcbench.history import (
     latest_params,
     skipped_history,
 )
+from rpcbench.websocket import (
+    DEFAULT_WEBSOCKET,
+    MAX_WEBSOCKET,
+    WebsocketHit,
+    probe_websocket,
+)
 from rpcbench.config import BenchConfig, Endpoint
 from rpcbench.consistency import (
     Consistency,
@@ -232,6 +238,7 @@ class EndpointOutcome:
     logs_range: tuple[LogsRangeHit, ...] = ()
     archive: ArchiveHit | None = None
     history: HistoryHit | None = None
+    websocket: WebsocketHit | None = None
 
 
 @dataclass(frozen=True)
@@ -276,6 +283,7 @@ class RunResult:
     simulate: bool = False
     archive: bool = False
     lookback: int = 0
+    websocket: float = 0.0
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -547,6 +555,8 @@ def run_endpoints(
     simulate: bool = False,
     archive: bool = False,
     lookback: int = 0,
+    websocket: float = 0.0,
+    open_ws=None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -568,6 +578,8 @@ def run_endpoints(
         raise ValueError(f"logs-range must be 0–{MAX_LOGS_RANGE}")
     if lookback < 0:
         raise ValueError("lookback must be >= 0")
+    if websocket < 0 or websocket > MAX_WEBSOCKET:
+        raise ValueError(f"websocket must be 0–{MAX_WEBSOCKET:g}")
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -642,6 +654,8 @@ def run_endpoints(
             simulate=simulate,
             archive=archive,
             lookback=lookback,
+            websocket=websocket,
+            open_ws=open_ws,
         )
     finally:
         if owns_client:
@@ -749,6 +763,8 @@ def _execute_run(
     simulate: bool,
     archive: bool,
     lookback: int,
+    websocket: float,
+    open_ws,
 ) -> RunResult:
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
@@ -982,6 +998,22 @@ def _execute_run(
             replace(outcome, throughput=measured_throughput.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    if websocket > 0:
+        measured_ws = {
+            outcome.endpoint.name: probe_websocket(
+                outcome.endpoint,
+                window=websocket,
+                timeout=timeout,
+                deadline=deadline,
+                family=FAMILY_EVM,
+                open_ws=open_ws,
+            )
+            for outcome in outcomes
+        }
+        outcomes = [
+            replace(outcome, websocket=measured_ws.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -1015,6 +1047,7 @@ def _execute_run(
         simulate=simulate,
         archive=archive,
         lookback=lookback,
+        websocket=websocket,
         family=FAMILY_EVM,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),

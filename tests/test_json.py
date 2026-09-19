@@ -96,6 +96,8 @@ def test_json_schema_has_performance_capability_ranking_reliability() -> None:
     assert data["batch"] == 0
     assert "lookback" not in data
     assert "history" not in data["ranking"][0]
+    assert "websocket" not in data
+    assert "websocket" not in data["ranking"][0]
     assert data["connection"] == "keepalive"
     assert data["http"] == "1.1"
     assert data["comparison"][0]["timing"] is None

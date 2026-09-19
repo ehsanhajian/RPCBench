@@ -37,10 +37,12 @@ from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
     DEFAULT_THROUGHPUT,
+    DEFAULT_WEBSOCKET,
     MAX_BATCH,
     MAX_BURST,
     MAX_INFLIGHT,
     MAX_THROUGHPUT,
+    MAX_WEBSOCKET,
     MODE_PAIRED,
     MODE_SEQUENTIAL,
     run_endpoints,
@@ -238,6 +240,20 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
             f"(0=off, omit N for {DEFAULT_THROUGHPUT}, max {MAX_THROUGHPUT}). "
             "Adds N requests per endpoint; paced by --rps; 429 is a rejected request. "
             "Not mixed into ranking. Not an unbounded load test."
+        ),
+    )
+    run.add_argument(
+        "--websocket",
+        type=float,
+        nargs="?",
+        const=DEFAULT_WEBSOCKET,
+        default=0.0,
+        metavar="SEC",
+        help=(
+            "Timed WebSocket connect + eth_subscribe newHeads "
+            f"(0=off, omit SEC for {DEFAULT_WEBSOCKET:g}s, max {MAX_WEBSOCKET:g}s). "
+            "Needs a ws/wss URL on the endpoint. Missing WS is not configured. "
+            "Not mixed into ranking. Does not consume --max-requests."
         ),
     )
     run.add_argument(
@@ -607,6 +623,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.throughput > MAX_THROUGHPUT
         or args.rps < 0
         or args.lookback < 0
+        or args.websocket < 0
+        or args.websocket > MAX_WEBSOCKET
         or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
@@ -614,6 +632,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
             f"--concurrency 0–{MAX_INFLIGHT}, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
             f"--throughput 0–{MAX_THROUGHPUT}, "
+            f"--websocket 0–{MAX_WEBSOCKET:g}, "
             "--rps >= 0, --lookback >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
@@ -667,6 +686,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         simulate=args.simulate,
         archive=args.archive,
         lookback=args.lookback,
+        websocket=args.websocket,
     )
     json_blob = None
     md_blob = None
