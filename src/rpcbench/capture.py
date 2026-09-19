@@ -375,13 +375,13 @@ def format_replay(
         _cite(result),
         "",
         "Summary",
-        f"  Match     {result.n_match}/{n}",
+        f"  Match     {result.n_match}/{n}  (bodies among successes)",
         f"  Mismatch  {result.n_mismatch}/{n}  "
         f"bodies={result.n_body_mismatch}  "
         f"status={result.n_status_mismatch}  "
         f"error={result.n_error_mismatch}",
         "",
-        "Calls  (lockstep; same method/params on every provider)",
+        "Calls  (lockstep; match = canonical body among who answered)",
     ]
     call_rows = []
     for step in result.steps:
@@ -468,7 +468,7 @@ def format_replay_md(result: ReplayResult) -> str:
         "# RPCBench replay",
         "",
         f"{n} lockstep calls from `{result.source}`. "
-        "Same method/params on every provider. Not mixed into ranking.",
+        "Match is canonical body among who answered. Not mixed into ranking.",
         "",
         f"- match **{data['match']}/{n}**",
         f"- mismatch **{data['mismatch']}/{n}** "
@@ -574,7 +574,8 @@ def format_replay_html(result: ReplayResult) -> str:
     body = [
         "<h1>RPCBench replay</h1>",
         f'<p class="meta">{escape(str(n))} lockstep calls from '
-        f'{escape(result.source)}; not mixed into ranking</p>',
+        f'{escape(result.source)}; match is canonical body among who answered; '
+        "not mixed into ranking</p>",
         "<h2>Summary</h2>",
         f"<p>match {data['match']}/{n} · mismatch {data['mismatch']}/{n} "
         f"(bodies={data['body_mismatch']}, status={data['status_mismatch']}, "
@@ -647,7 +648,8 @@ def _assess_step(
     body_mismatch = len(unique) > 1
     fail_classes = [hit.error_class or "" for hit in hits if not hit.ok]
     error_mismatch = len(set(fail_classes)) > 1
-    match = not (body_mismatch or status_mismatch or error_mismatch)
+    # Integrity is the body, among who answered. A down node is coverage, not a disagree.
+    match = not body_mismatch
     canon = None
     if len(unique) == 1:
         canon = next(iter(unique))
@@ -695,13 +697,22 @@ def _provider_summary(
     attempted = n_ok + n_fail
     latencies = [hit.latency_ms for hit in hits if hit.ok and hit.latency_ms is not None]
     p95 = percentile(latencies, 0.95) if latencies else None
-    match = sum(1 for step in steps if step.match)
+    match = 0
+    for step in steps:
+        mine = next((hit for hit in step.hits if hit.name == name), None)
+        if mine is None or not mine.ok:
+            continue
+        if step.body_mismatch:
+            if step.canonical_hash and mine.body_hash == step.canonical_hash:
+                match += 1
+            continue
+        match += 1
     return ReplayProvider(
         name=name,
         n_ok=n_ok,
         n_fail=n_fail,
         match=match,
-        mismatch=len(steps) - match,
+        mismatch=n_ok - match,
         p95_ms=p95,
         error_rate=(n_fail / attempted) if attempted else None,
     )

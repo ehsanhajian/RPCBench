@@ -186,12 +186,7 @@ These are not mixed into latency stats or Fastest.
 
 ### Capture and replay
 
-`rpcbench record` writes a JSONL capture (one `method` + `params` object per line) from the same mix `run` would send. `rpcbench replay --from FILE` sends that sequence in **lockstep** to every provider and compares status, JSON-RPC error, and canonicalized body. Mismatched bodies are counted; `--verbose` prints a unified diff. Write methods (`eth_send*`, `personal_*`, …) are blocked unless `--allow-writes`. Not mixed into ranking. Details: [Traffic capture and replay](docs/METHODOLOGY.md#traffic-capture-and-replay).
-- **WebSocket** is opt-in (`--websocket SEC`, omit SEC for 3s, max 10s). Connect + `eth_subscribe` `newHeads` on the optional `ws` / `websocket` URL. Missing WS is **not configured**. Reports connect, subscribe, first-event, missed heads, and disconnects. Does not consume `--max-requests`. Not mixed into ranking.
-
-### Capture and replay
-
-`rpcbench record` writes a JSONL capture (one `method` + `params` object per line) from the same mix `run` would send. `rpcbench replay --from FILE` sends that sequence in **lockstep** to every provider and compares status, JSON-RPC error, and canonicalized body. Mismatched bodies are counted; `--verbose` prints a unified diff. Write methods (`eth_send*`, `personal_*`, …) are blocked unless `--allow-writes`. Not mixed into ranking. Details: [Traffic capture and replay](docs/METHODOLOGY.md#traffic-capture-and-replay).
+`rpcbench record` writes a JSONL capture (one `method` + `params` object per line) from the same mix `run` would send. `rpcbench replay --from FILE` sends that sequence in **lockstep** and compares canonicalized bodies among who answered. A down or 429 node is status/error on that row, not a body mismatch. `--verbose` prints a unified diff when bodies disagree. Write methods (`eth_send*`, `personal_*`, …) are blocked unless `--allow-writes`. Not mixed into ranking. Details: [Traffic capture and replay](docs/METHODOLOGY.md#traffic-capture-and-replay).
 
 ### JSON
 

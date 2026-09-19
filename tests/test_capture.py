@@ -164,8 +164,33 @@ def test_replay_status_mismatch() -> None:
     )
     assert result.n_status_mismatch == 1
     assert result.steps[0].status_mismatch
+    assert result.steps[0].match
+    assert result.n_body_mismatch == 0
     compact = format_replay(result)
-    assert "status" in compact.split("Calls", 1)[1]
+    table = compact.split("Calls", 1)[1]
+    assert "status" in table
+    assert "yes" in table
+
+
+def test_replay_mixed_failures_still_match_when_bodies_agree() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "127.0.0.1:2" in str(request.url):
+            return httpx.Response(429, text="too many requests")
+        return _result(request, "0x10")
+
+    result = replay_calls(
+        _cfg(),
+        (CapturedCall("eth_blockNumber", ()),),
+        budget=16,
+        client=_client(handler),
+    )
+    assert result.n_match == 1
+    assert result.n_mismatch == 0
+    assert result.n_body_mismatch == 0
+    assert result.providers[0].match == 1
+    assert result.providers[1].match == 0
+    compact = format_replay(result)
+    assert "Match     1/1" in compact
 
 
 def test_record_writes_mix_jsonl(tmp_path: Path) -> None:

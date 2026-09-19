@@ -239,7 +239,7 @@ Versus + ethspam-style integrity, plus a dataset you can replay. **`rpcbench rec
 - **JSON-RPC / HTTP error class** — failures share a class
 - **canonicalized body** — successful `result` values hashed after `json.dumps(..., sort_keys=True)`
 
-A call **matches** when those three agree. Mismatched bodies are counted (`bodies=N` in Summary) and listed in the Calls table (`note=bodies`). **`--verbose`** prints a unified diff of the canonical JSON. `--json` / `--html` / `--md` / `--csv` carry the same match counts. These samples are **not** mixed into ranking, reliability, or Fastest.
+A call **matches** when successful `result` bodies agree (canonical JSON hash). A provider that times out or 429s is **status** / **error** on that row, not a body mismatch — down nodes are coverage, not a disagreeing chain. Mismatched bodies (`bodies=N`) are the integrity signal; `--verbose` prints a unified diff. `--json` / `--html` / `--md` / `--csv` carry the same match counts. These samples are **not** mixed into ranking, reliability, or Fastest.
 
 Write methods (`eth_send*`, `eth_sign*`, `personal_*`, `miner_*`, `admin_*`, `wallet_*`) are **blocked** on record and replay unless **`--allow-writes`**. Default is read-only.
 
