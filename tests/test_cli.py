@@ -60,6 +60,7 @@ def test_cli_defaults() -> None:
     assert ns.lookback == 0
     assert ns.rps == 0.0
     assert ns.throughput == 0
+    assert ns.websocket == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
     assert ns.http1 is False
@@ -705,6 +706,15 @@ def test_cli_throughput_flag_defaults_to_twenty() -> None:
     assert ns.throughput == 8
 
 
+def test_cli_websocket_flag_defaults_to_three() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--websocket"])
+    assert ns.websocket == 3.0
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--websocket", "2"]
+    )
+    assert ns.websocket == 2.0
+
+
 def test_cli_rejects_throughput_above_cap(tmp_path: Path, capsys) -> None:
     cfg = tmp_path / "e.yaml"
     cfg.write_text(
@@ -717,6 +727,20 @@ def test_cli_rejects_throughput_above_cap(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "--throughput" in err
+
+
+def test_cli_rejects_websocket_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--websocket", "11", "--samples", "1"]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--websocket" in err
 
 
 def test_cli_rejects_invalid_block_pin(tmp_path: Path, capsys) -> None:

@@ -21,10 +21,17 @@ class Endpoint:
     name: str
     url: str
     headers: tuple[tuple[str, str], ...] = ()
+    ws_url: str | None = None
 
     @property
     def display_url(self) -> str:
         return display_url(self.url)
+
+    @property
+    def display_ws_url(self) -> str | None:
+        if not self.ws_url:
+            return None
+        return display_url(self.ws_url)
 
     @property
     def url_id(self) -> str:
@@ -90,8 +97,9 @@ def parse_endpoints(data: object, *, source: str = "config") -> BenchConfig:
                 f"{source}: endpoints[{i}] ({name}) URL must be http or https"
             )
         headers = _parse_headers(item, source=source, index=i, name=name)
+        ws_url = _parse_ws_url(item, source=source, index=i, name=name)
         seen.add(name)
-        endpoints.append(Endpoint(name=name, url=url, headers=headers))
+        endpoints.append(Endpoint(name=name, url=url, headers=headers, ws_url=ws_url))
     return BenchConfig(endpoints=tuple(endpoints))
 
 
@@ -120,3 +128,32 @@ def _parse_headers(
             )
         headers.append(("Authorization", f"Bearer {bearer.strip()}"))
     return tuple(headers)
+
+
+def _parse_ws_url(
+    item: dict, *, source: str, index: int, name: str
+) -> str | None:
+    raw_ws = item.get("ws")
+    raw_websocket = item.get("websocket")
+    if (
+        raw_ws is not None
+        and raw_websocket is not None
+        and str(raw_ws).strip() != str(raw_websocket).strip()
+    ):
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) has both ws and websocket"
+        )
+    raw = raw_ws if raw_ws is not None else raw_websocket
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) ws must be a ws or wss URL"
+        )
+    ws_url = raw.strip()
+    scheme = ws_url.split(":", 1)[0].lower()
+    if scheme not in {"ws", "wss"}:
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) WS URL must be ws or wss"
+        )
+    return ws_url

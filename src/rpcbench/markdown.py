@@ -316,6 +316,24 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    websocket = _websocket_rows(data)
+    if websocket:
+        window = data.get("websocket")
+        lines.extend(
+            [
+                "## WebSocket",
+                "",
+                f"Connect + `eth_subscribe` `newHeads` for {window}s. "
+                "Missing WS URL is not configured. Not mixed into ranking.",
+                "",
+                *_md_table(
+                    ["name", "connect", "sub", "first", "n", "missed", "disc", "status"],
+                    websocket,
+                    right=(False, True, True, True, True, True, True, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -576,6 +594,29 @@ def _history_rows(data: dict[str, Any]) -> list[list[str]]:
                 _ms(hit.get("latency_ms")) if hit.get("ok") else "—",
                 _ms(hit.get("head_ms")) if hit.get("head_ms") is not None else "—",
                 _ratio(hit.get("ratio")),
+                str(hit.get("status") or "—"),
+            ]
+        )
+    return rows
+
+
+def _websocket_rows(data: dict[str, Any]) -> list[list[str]]:
+    if not float(data.get("websocket") or 0):
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        hit = row.get("websocket")
+        if not hit:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                _ms(hit.get("connect_ms")),
+                _ms(hit.get("subscribe_ms")),
+                _ms(hit.get("first_event_ms")),
+                "—" if hit.get("n_events") is None else str(hit.get("n_events")),
+                "—" if hit.get("missed") is None else str(hit.get("missed")),
+                "—" if hit.get("disconnects") is None else str(hit.get("disconnects")),
                 str(hit.get("status") or "—"),
             ]
         )

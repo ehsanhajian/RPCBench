@@ -102,6 +102,13 @@ COLUMNS = (
     "history_ratio",
     "history_block",
     "history_status",
+    "websocket_connect_ms",
+    "websocket_subscribe_ms",
+    "websocket_first_ms",
+    "websocket_n",
+    "websocket_missed",
+    "websocket_disconnects",
+    "websocket_status",
 )
 
 
@@ -176,6 +183,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 **_debug_cols(data, row.get("name")),
                 **_archive_cols(row.get("archive")),
                 **_history_cols(row.get("history")),
+                **_websocket_cols(row.get("websocket")),
             }
         )
     return buf.getvalue()
@@ -367,6 +375,19 @@ def _history_cols(raw: Any) -> dict[str, str]:
         "history_ratio": _num(hit.get("ratio")),
         "history_block": _num(hit.get("block")),
         "history_status": str(hit.get("status") or ""),
+    }
+
+
+def _websocket_cols(raw: Any) -> dict[str, str]:
+    hit = raw if isinstance(raw, dict) else {}
+    return {
+        "websocket_connect_ms": _num(hit.get("connect_ms")),
+        "websocket_subscribe_ms": _num(hit.get("subscribe_ms")),
+        "websocket_first_ms": _num(hit.get("first_event_ms")),
+        "websocket_n": _num(hit.get("n_events")),
+        "websocket_missed": _num(hit.get("missed")),
+        "websocket_disconnects": _num(hit.get("disconnects")),
+        "websocket_status": str(hit.get("status") or ""),
     }
 
 

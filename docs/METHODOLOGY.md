@@ -221,6 +221,14 @@ Reported per endpoint: historical latency, latest (head) latency, ratio (`hist /
 
 Adds **up to 2 HTTP requests per endpoint** (plus the archive probe).
 
+## WebSocket subscribe
+
+HTTP round-trips are not the same as a live head stream. **`--websocket SEC`** (default 0 = off, omit SEC for 3s, max 10s) is an extra read after timed samples: connect to the optional per-endpoint `ws` / `websocket` URL (`ws://` or `wss://`), complete the WebSocket handshake, send `eth_subscribe` `["newHeads"]`, and listen for that window.
+
+The HTTP `url` stays `http`/`https`. A missing WS URL is **not configured** (skip, not a crash). Non-EVM families skip with `family`. `--budget long` does not turn this on. WS frames do **not** consume `--max-requests`.
+
+Reported per endpoint: `connect_ms` (TCP/TLS + upgrade), `subscribe_ms` (subscribe send until subscription id), `first_event_ms` (ack until first `newHeads`), event count, **missed** block-number gaps in the window, and **disconnects**. These samples are **not** mixed into ranking, reliability, or Fastest. Not a WS origin/auth check.
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
@@ -290,7 +298,7 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency.
 
 ## Report watermark
 

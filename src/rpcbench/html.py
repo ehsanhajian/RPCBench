@@ -72,6 +72,7 @@ def format_html(
         _logs_range_table(data),
         _archive_table(data),
         _history_table(data),
+        _websocket_table(data),
         _size_scatter(data),
         _capabilities(data["capabilities"], ranking),
         _errors(ranking),
@@ -923,6 +924,54 @@ def _history_table(data: dict[str, Any]) -> str:
         "<th>name</th>"
         '<th class="num">block</th><th class="num">hist</th>'
         '<th class="num">head</th><th class="num">ratio</th><th>status</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _websocket_table(data: dict[str, Any]) -> str:
+    if not float(data.get("websocket") or 0):
+        return ""
+    window = data.get("websocket")
+    rows = []
+    for row in data.get("ranking") or []:
+        hit = row.get("websocket")
+        if not hit:
+            continue
+        status = str(hit.get("status") or "—")
+        if hit.get("ok"):
+            tone = "ok"
+        elif hit.get("skip"):
+            tone = "dim"
+        else:
+            tone = "bad"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row.get("name") or "—"))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("connect_ms")))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("subscribe_ms")))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("first_event_ms")))}</td>'
+            f'<td class="num">{escape(str(hit.get("n_events") if hit.get("n_events") is not None else "—"))}</td>'
+            f'<td class="num">{escape(str(hit.get("missed") if hit.get("missed") is not None else "—"))}</td>'
+            f'<td class="num">{escape(str(hit.get("disconnects") if hit.get("disconnects") is not None else "—"))}</td>'
+            f'<td class="{tone}">{escape(status)}</td>'
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    return (
+        '<section aria-label="websocket">'
+        "<h2>WebSocket</h2>"
+        f'<p class="meta">connect + eth_subscribe newHeads for {escape(str(window))}s; '
+        "extra read; not mixed into ranking. Missing WS URL is not configured.</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th>"
+        '<th class="num">connect</th><th class="num">sub</th>'
+        '<th class="num">first</th><th class="num">n</th>'
+        '<th class="num">missed</th><th class="num">disc</th><th>status</th>'
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
