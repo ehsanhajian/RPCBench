@@ -31,6 +31,7 @@
   "rps": 0.0,
   "batch": 0,
   "inflight": 0,
+  "throughput": 0,
   "logs_range": 0,
   "connection": "keepalive",
   "http": "1.1",
@@ -167,7 +168,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     },
     {
       "name": "fast",
@@ -239,7 +241,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     },
     {
       "name": "dead",
@@ -318,7 +321,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     }
   ],
   "ranking": [
@@ -366,7 +370,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     },
     {
       "rank": 2,
@@ -412,7 +417,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     },
     {
       "rank": null,
@@ -467,7 +473,8 @@
       "timing": null,
       "transport": null,
       "batch": null,
-      "inflight": null
+      "inflight": null,
+      "throughput": null
     }
   ],
   "methods": [],
@@ -608,6 +615,7 @@
       "transport": null,
       "batch": null,
       "inflight": null,
+      "throughput": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -725,6 +733,7 @@
       "transport": null,
       "batch": null,
       "inflight": null,
+      "throughput": null,
       "last_error": null,
       "warmup": [],
       "samples": [
@@ -851,6 +860,7 @@
       "transport": null,
       "batch": null,
       "inflight": null,
+      "throughput": null,
       "last_error": "timeout: took too long",
       "warmup": [],
       "samples": [

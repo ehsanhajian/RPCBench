@@ -59,6 +59,7 @@ def test_cli_defaults() -> None:
     assert ns.archive is False
     assert ns.lookback == 0
     assert ns.rps == 0.0
+    assert ns.throughput == 0
     assert ns.new_connection is False
     assert ns.http2 is False
     assert ns.http1 is False
@@ -693,6 +694,29 @@ def test_cli_rejects_negative_rps(tmp_path: Path, capsys) -> None:
     code = main(["run", "--endpoints", str(cfg), "--rps", "-1", "--samples", "1"])
     assert code == 2
     assert "--rps" in capsys.readouterr().err
+
+
+def test_cli_throughput_flag_defaults_to_twenty() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--throughput"])
+    assert ns.throughput == 20
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--throughput", "8"]
+    )
+    assert ns.throughput == 8
+
+
+def test_cli_rejects_throughput_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--throughput", "65", "--samples", "1"]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--throughput" in err
 
 
 def test_cli_rejects_invalid_block_pin(tmp_path: Path, capsys) -> None:

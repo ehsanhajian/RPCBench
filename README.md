@@ -102,23 +102,24 @@ The default CLI prints, in order:
 5. **Notes** — one line per endpoint that hit `rate_limit` on timed samples or tags (`merkle  rate_limit=2  tags=2`)
 6. **Batch** — when `--batch` is set: support, batch vs serial wall-clock, ratio. `skip` means the extra read did not run (`budget` / `duration`). Not mixed into ranking.
 7. **Concurrency** — when `--concurrency` is set: overlapping extra POSTs vs the same N serial (per-request P50/P95, ratio, error count). Default is off. Not mixed into ranking.
-8. **Logs range** — when `--logs-range` is set: pinned `eth_getLogs` at 1 / 10 / 100 / up to N blocks (latency, bytes, n, truncation). Mix logs stay one block. A provider that only dies at 1000 blocks shows here. Not mixed into ranking.
-9. **Archive** — when `--archive` is set: `eth_getBalance` at genesis, classified yes / no / unknown / rate-limited. Missing archive is a capability result, not a crash. Not mixed into ranking.
-10. **History** — when `--lookback N` is set: timed `eth_getBalance` at pin−N vs latest (latency, error rate, ratio). Endpoints without archive/history skip with a reason. Not mixed into ranking.
+8. **Throughput** — when `--throughput` is set: extra serial POSTs, successful req/s, duration, and completed count. `--rps` caps starts. 429 is a rejected request, not a crash. Default is off. Not mixed into ranking.
+9. **Logs range** — when `--logs-range` is set: pinned `eth_getLogs` at 1 / 10 / 100 / up to N blocks (latency, bytes, n, truncation). Mix logs stay one block. A provider that only dies at 1000 blocks shows here. Not mixed into ranking.
+10. **Archive** — when `--archive` is set: `eth_getBalance` at genesis, classified yes / no / unknown / rate-limited. Missing archive is a capability result, not a crash. Not mixed into ranking.
+11. **History** — when `--lookback N` is set: timed `eth_getBalance` at pin−N vs latest (latency, error rate, ratio). Endpoints without archive/history skip with a reason. Not mixed into ranking.
 
 `--verbose` adds the rest (same numbers, no data loss):
 
-11. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
-12. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
-13. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
-14. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
-15. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
-16. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-17. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
-18. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-19. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-20. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-21. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
+12. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
+13. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
+14. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
+15. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
+16. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
+17. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+18. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
+19. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+20. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+21. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+22. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -135,6 +136,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **`--profile FILE.yaml`** is a custom mix you write (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed` so every provider gets the same sequence. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. Full YAML example, sources, seed, and fallback: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
 - **Concurrency** is opt-in (`--concurrency N`, omit N for 4, max 8). After timed samples, RPCBench sends N overlapping HTTP POSTs of the primary method, then the same N calls one-by-one, and reports per-request concurrent P50/P95 vs serial P50 plus the concurrent error count. Adds 2N requests per endpoint. Default is off (`--concurrency 0`). Not an unbounded load test.
+- **Throughput** is opt-in (`--throughput N`, omit N for 20, max 64). After timed samples, RPCBench sends N extra serial POSTs of the primary method and reports successful req/s, wall duration, and completed count. `--rps` caps how often those starts fire. HTTP 429 is a rejected request (`rate_limit`), not a crash. Adds N requests per endpoint. Default is off (`--throughput 0`). Not concurrent fan-out and not an unbounded load test.
 - **Batch** is opt-in (`--batch N`, omit N for 3, max 8). After timed samples, RPCBench sends one JSON-RPC array of N copies of the primary method, then the same N calls one-by-one, and reports wall-clock and the serial/batch ratio. A single-object error means the provider does not support batch (capability, not a crash). Partial item errors are marked `partial`. Adds 1+N requests per endpoint. Default is off (`--batch 0`). Not HTTP/2 multiplexing.
 - **Logs range** is opt-in (`--logs-range N`, omit N for 1000). After the pin, the same zero-address `eth_getLogs` is sent at 1, 10, 100, and up to N blocks. Mix logs stay `latest→latest`. Too-short chains skip with `head`. Truncation and 1000-only failures show in the Logs range table. Adds up to 4 requests per endpoint. Default is off (`--logs-range 0`).
 - **`--archive`** probes historical state with one `eth_getBalance` of the zero address at genesis. Classified yes / no / unknown / rate-limited. Chains shorter than 128 blocks skip with `head`. Missing archive is a capability result, not a crash, and does not change ranking. Details: [Archive / historical state](docs/METHODOLOGY.md#archive--historical-state).
@@ -148,7 +150,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **HTTP timing** splits each successful sample into handshake (DNS+TCP+TLS), server wait after the connection is ready, and payload (body download + JSON parse). Ranking still uses total RTT. Default reuses keep-alive connections (handshake is ~0 after warmup). `--new-connection` opens a fresh TCP/TLS session every request so distance vs node time is visible. TLS here is handshake latency, not a certificate check.
 - **HTTP transport** records the negotiated protocol (`1.1` or `2`), `Content-Encoding` (`gzip`, `br`, …), request bytes, and response wire bytes. Huge `eth_getLogs` payloads and missing compression look like slow nodes. HTML **Size vs latency** is log(bytes) vs RTT, colored by method, so a 40-byte head and a 7kB `getBlock` are not stacked on the Y-axis. Ranking still uses total RTT. Default is HTTP/1.1. `--http2` asks for HTTP/2 via ALPN (falls back to 1.1). `--http1` forces HTTP/1.1. Not a TLS or CORS check.
 - **Error rate** is failed/attempted, with a class (timeout, connection, HTTP 4xx/5xx, **rate_limit**, JSON-RPC, malformed). `rate_limit` is HTTP 429 or a CU/throttle JSON-RPC message — reliability, not a scan.
-- **rps** in the table is `1000 / mean_ms` for this probe — not parallel throughput. `--rps N` is a start cap after `--burst`, not that formula.
+- **rps** in the ranking table is `1000 / mean_ms` for this probe — not parallel throughput. **`--throughput N`** is a bounded extra-read of successful req/s over a serial window (duration and completed count in that table). `--rps N` caps starts after `--burst` and during `--throughput`, not that formula.
 - **Reliability `rel`** is 0–100 for **this run** (not an SLA, not a security score). Same samples always produce the same score:
 
   `rel = round( 50×(1−error_rate) + 20×(1−timeout_share) + 20×(1−tail) + 10×coverage )`
@@ -171,15 +173,16 @@ These are not mixed into latency stats or Fastest.
 - **Tags** are one paired `eth_getBlockByNumber` snapshot each for `latest`, `safe`, and `finalized`. Latency and freshness are per tag vs that tag’s cohort. Unsupported tags are skipped with a reason and do not change Fastest. Full P95 of one tag is `--method eth_getBlockByNumber --params '["finalized", false]'`.
 - **Batch** is one JSON-RPC array of N calls vs the same N sent serially (`--batch N`). Wall-clock and ratio are extra reads. Unsupported batch is `batch_unsupported`; partial item errors are `partial`. Not mixed into Fastest.
 - **Concurrency** is N overlapping HTTP POSTs of the primary method vs the same N serial (`--concurrency N`). Per-request P50/P95, ratio vs serial, and concurrent error count. Bounded extra read (max 8), not a load generator. Not mixed into Fastest.
+- **Throughput** is N extra serial POSTs of the primary method (`--throughput N`). Successful req/s, duration, and completed count. `--rps` caps starts. 429 is rejected, not a crash. Bounded extra read (max 64), not concurrent fan-out. Not mixed into Fastest.
 - **Logs range** is opt-in (`--logs-range`, omit N for 1000). After the pin is known, RPCBench sends the same `eth_getLogs` (zero address, no topics) at 1, 10, 100, and up to N blocks ending at that pin. Mix catalogs still use `latest→latest`. A range is skipped with reason `head` when the chain is shorter than N blocks. Truncation (result cap / “too many logs”) is a table cell, not a ranking change. Adds up to 4 requests per endpoint.
 - **Archive** is opt-in (`--archive`). After the pin is known, one `eth_getBalance` of the zero address at genesis classifies the endpoint yes / no / unknown / rate-limited. Too-short chains skip with `head`. Not mixed into ranking. Adds 1 request per endpoint.
 - **History** is opt-in (`--lookback N`, omit N for 1000). Timed `eth_getBalance` at pin−N vs latest. `--lookback` turns on archive detection; a pruned node skips with `archive`. Not mixed into ranking. Adds up to 2 requests per endpoint.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Logs range, Simulation, Trace, Debug, Archive, and History tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, logs-range, simulate, trace, debug, archive, and history fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Throughput, Logs range, Simulation, Trace, Debug, Archive, and History tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, throughput, logs-range, simulate, trace, debug, archive, and history fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -194,6 +197,7 @@ rpcbench run --endpoints endpoints.yaml --rank-by p95
 rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
 rpcbench run --endpoints endpoints.yaml --batch
 rpcbench run --endpoints endpoints.yaml --concurrency
+rpcbench run --endpoints endpoints.yaml --throughput --rps 5
 rpcbench run --endpoints endpoints.yaml --logs-range
 rpcbench run --endpoints endpoints.yaml --simulate --budget short
 rpcbench run --endpoints endpoints.yaml --archive --budget short
@@ -233,7 +237,8 @@ rpcbench diff --history reports/
 | `--max-duration` | 600s | Stop and still print a report (overrides `--budget`; `0` = no limit) |
 | `--concurrency` | 0 | Overlap N extra POSTs vs N serial (`0`=off, omit N for 4, max 8). Extra 2N requests/endpoint. Not mixed into ranking |
 | `--burst` | 0 | Overlap the first N timed samples (`0`=off, max 8). Same request budget |
-| `--rps` | 0 | Cap starts/sec after `--burst` (`0`=off). Does not raise the budget |
+| `--rps` | 0 | Cap starts/sec after `--burst` and during `--throughput` (`0`=off). Does not raise the budget |
+| `--throughput` | 0 | Extra serial POSTs for successful req/s (`0`=off, omit N for 20, max 64). Extra N requests/endpoint. 429 is rejected |
 | `--batch` | 0 | JSON-RPC batch of N vs N serial (`0`=off, omit N for 3, max 8). Extra 1+N requests/endpoint |
 | `--logs-range` | 0 | Pinned `eth_getLogs` at 1/10/100/up to N blocks (`0`=off, omit N for 1000). Mix logs stay 1 block |
 | `--simulate` | off | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. Missing simulateV1 is skip |
@@ -253,11 +258,11 @@ rpcbench diff --history reports/
 | `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Logs range, simulate Methods, Archive, and History are already in the compact report when those flags are set |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, and History are already in the compact report when those flags are set |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
-| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Logs range, Archive, History, Trace, Debug when measured). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, logs-range, archive, history, trace, debug). `-o FILE` or `-o report.csv` writes CSV |
+| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Throughput, Logs range, Archive, History, Trace, Debug when measured). `-o FILE` writes the same markdown |
+| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, throughput, logs-range, archive, history, trace, debug). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 

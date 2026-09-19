@@ -13,6 +13,7 @@ from rpcbench.report import (
     DEFAULT_SIMILAR_BAND,
     batch_support_label,
     inflight_status_label,
+    throughput_status_label,
     run_to_dict,
 )
 from rpcbench.run import RunResult
@@ -58,6 +59,12 @@ COLUMNS = (
     "inflight_n_ok",
     "inflight_n_fail",
     "inflight_status",
+    "throughput_rps",
+    "throughput_duration_ms",
+    "throughput_n_ok",
+    "throughput_n_fail",
+    "throughput_n",
+    "throughput_status",
     "logs_1_ms",
     "logs_1_bytes",
     "logs_1_n",
@@ -162,6 +169,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 "serial_ms": _num((row.get("batch") or {}).get("serial_ms")),
                 "batch_ratio": _num((row.get("batch") or {}).get("ratio")),
                 **_inflight_cols(row.get("inflight")),
+                **_throughput_cols(row.get("throughput")),
                 **_logs_range_cols(row.get("logs_range")),
                 **_simulate_cols(data, row.get("name")),
                 **_trace_cols(data, row.get("name")),
@@ -226,6 +234,27 @@ def _inflight_cols(raw: dict[str, Any] | None) -> dict[str, str]:
         "inflight_n_ok": _num(raw.get("n_ok")),
         "inflight_n_fail": _num(raw.get("n_fail")),
         "inflight_status": "" if status == "—" else status,
+    }
+
+
+def _throughput_cols(raw: dict[str, Any] | None) -> dict[str, str]:
+    if not raw:
+        return {
+            "throughput_rps": "",
+            "throughput_duration_ms": "",
+            "throughput_n_ok": "",
+            "throughput_n_fail": "",
+            "throughput_n": "",
+            "throughput_status": "",
+        }
+    status = throughput_status_label(raw)
+    return {
+        "throughput_rps": _num(raw.get("rps")),
+        "throughput_duration_ms": _num(raw.get("duration_ms")),
+        "throughput_n_ok": _num(raw.get("n_ok")),
+        "throughput_n_fail": _num(raw.get("n_fail")),
+        "throughput_n": _num(raw.get("n")),
+        "throughput_status": "" if status == "—" else status,
     }
 
 
