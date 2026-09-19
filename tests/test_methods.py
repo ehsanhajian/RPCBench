@@ -59,6 +59,14 @@ def test_allow_writes_permits_send() -> None:
     assert params == []
 
 
+def test_is_write_method() -> None:
+    from rpcbench.methods import is_write_method
+
+    assert is_write_method("eth_sendRawTransaction")
+    assert is_write_method("personal_listAccounts")
+    assert not is_write_method("eth_blockNumber")
+
+
 def test_presets_are_read_only() -> None:
     for name, (method, _params) in PRESETS.items():
         lower = method.lower()
