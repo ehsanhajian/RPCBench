@@ -31,6 +31,8 @@ rpcbench compare --endpoints endpoints.yaml --workload wallet --budget short
 rpcbench compare --endpoints endpoints.yaml --workload tracing --budget short
 rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
 rpcbench compare --endpoints endpoints.yaml --profile my-mix.yaml --seed 7 --budget short
+rpcbench record --endpoints endpoints.yaml --workload wallet -o capture.jsonl
+rpcbench replay --endpoints endpoints.yaml --from capture.jsonl
 ```
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
@@ -182,6 +184,15 @@ These are not mixed into latency stats or Fastest.
 - **History** is opt-in (`--lookback N`, omit N for 1000). Timed `eth_getBalance` at pin−N vs latest. `--lookback` turns on archive detection; a pruned node skips with `archive`. Not mixed into ranking. Adds up to 2 requests per endpoint.
 - **WebSocket** is opt-in (`--websocket SEC`, omit SEC for 3s, max 10s). Connect + `eth_subscribe` `newHeads` on the optional `ws` / `websocket` URL. Missing WS is **not configured**. Reports connect, subscribe, first-event, missed heads, and disconnects. Does not consume `--max-requests`. Not mixed into ranking.
 
+### Capture and replay
+
+`rpcbench record` writes a JSONL capture (one `method` + `params` object per line) from the same mix `run` would send. `rpcbench replay --from FILE` sends that sequence in **lockstep** to every provider and compares status, JSON-RPC error, and canonicalized body. Mismatched bodies are counted; `--verbose` prints a unified diff. Write methods (`eth_send*`, `personal_*`, …) are blocked unless `--allow-writes`. Not mixed into ranking. Details: [Traffic capture and replay](docs/METHODOLOGY.md#traffic-capture-and-replay).
+- **WebSocket** is opt-in (`--websocket SEC`, omit SEC for 3s, max 10s). Connect + `eth_subscribe` `newHeads` on the optional `ws` / `websocket` URL. Missing WS is **not configured**. Reports connect, subscribe, first-event, missed heads, and disconnects. Does not consume `--max-requests`. Not mixed into ranking.
+
+### Capture and replay
+
+`rpcbench record` writes a JSONL capture (one `method` + `params` object per line) from the same mix `run` would send. `rpcbench replay --from FILE` sends that sequence in **lockstep** to every provider and compares status, JSON-RPC error, and canonicalized body. Mismatched bodies are counted; `--verbose` prints a unified diff. Write methods (`eth_send*`, `personal_*`, …) are blocked unless `--allow-writes`. Not mixed into ranking. Details: [Traffic capture and replay](docs/METHODOLOGY.md#traffic-capture-and-replay).
+
 ### JSON
 
 `--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), `websocket` (connect / subscribe / first-event ms, n, missed heads, disconnects), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
@@ -220,6 +231,9 @@ rpcbench run --endpoints endpoints.yaml --csv -o report.csv
 rpcbench run --endpoints endpoints.yaml --history reports/
 rpcbench diff old.json new.json
 rpcbench diff --history reports/
+rpcbench record --endpoints endpoints.yaml --workload wallet -o capture.jsonl
+rpcbench replay --endpoints endpoints.yaml --from capture.jsonl
+rpcbench replay --endpoints endpoints.yaml --from capture.jsonl --verbose
 ```
 
 `--profile FILE.yaml` is a custom weighted mix (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed`. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. YAML schema, sources table, and an example file: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
@@ -264,13 +278,15 @@ rpcbench diff --history reports/
 | `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, and History are already in the compact report when those flags are set |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, History, and WebSocket are already in the compact report when those flags are set. Replay prints body diffs |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
-| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Throughput, Logs range, Archive, History, Trace, Debug when measured). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, throughput, logs-range, archive, history, trace, debug). `-o FILE` or `-o report.csv` writes CSV |
+| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Throughput, Logs range, Archive, History, Trace, Debug, WebSocket when measured). `-o FILE` writes the same markdown |
+| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, throughput, logs-range, archive, history, trace, debug, websocket). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
+| `record -o FILE` | | Write a JSONL capture of the mix (`method` + `params` per line) |
+| `replay --from FILE` | | Lockstep replay; compare status, JSON-RPC error, and canonicalized body |
 
 ## Safety
 

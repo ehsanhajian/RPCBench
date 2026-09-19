@@ -478,9 +478,13 @@ def _pick_mix_label(*, profile: str | None, workload: str | None) -> str | None:
     return key
 
 
-def _reject_writes(method: str) -> None:
+def is_write_method(method: str) -> bool:
     lower = method.lower()
-    if any(lower.startswith(p) for p in _WRITE_PREFIXES):
+    return any(lower.startswith(p) for p in _WRITE_PREFIXES)
+
+
+def _reject_writes(method: str) -> None:
+    if is_write_method(method):
         raise MethodError(
             f"{method} is a write method; pass --allow-writes to run it anyway"
         )

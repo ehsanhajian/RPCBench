@@ -229,6 +229,22 @@ The HTTP `url` stays `http`/`https`. A missing WS URL is **not configured** (ski
 
 Reported per endpoint: `connect_ms` (TCP/TLS + upgrade), `subscribe_ms` (subscribe send until subscription id), `first_event_ms` (ack until first `newHeads`), event count, **missed** block-number gaps in the window, and **disconnects**. These samples are **not** mixed into ranking, reliability, or Fastest. Not a WS origin/auth check.
 
+## Traffic capture and replay
+
+Versus + ethspam-style integrity, plus a dataset you can replay. **`rpcbench record`** writes a JSONL file: one JSON object per line with `method` and `params` (full JSON-RPC requests are accepted on read). The sequence is the same mix `run` would send (`--workload` / `--method` / `--profile`, `--samples` rounds, no warmup). YAML `source` fields bind from chain when `--endpoints` is set.
+
+**`rpcbench replay --from FILE`** (or `--from -` for stdin) sends that exact sequence to every provider in **lockstep** (one call, all endpoints, then the next). Each call compares:
+
+- **status** — all ok, or all failed
+- **JSON-RPC / HTTP error class** — failures share a class
+- **canonicalized body** — successful `result` values hashed after `json.dumps(..., sort_keys=True)`
+
+A call **matches** when those three agree. Mismatched bodies are counted (`bodies=N` in Summary) and listed in the Calls table (`note=bodies`). **`--verbose`** prints a unified diff of the canonical JSON. `--json` / `--html` / `--md` / `--csv` carry the same match counts. These samples are **not** mixed into ranking, reliability, or Fastest.
+
+Write methods (`eth_send*`, `eth_sign*`, `personal_*`, `miner_*`, `admin_*`, `wallet_*`) are **blocked** on record and replay unless **`--allow-writes`**. Default is read-only.
+
+Adds **N × providers HTTP requests** (N = lines in the capture).
+
 ## P99
 
 Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
@@ -298,7 +314,7 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
 
 ## Report watermark
 

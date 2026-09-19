@@ -11,6 +11,19 @@ from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
 from rpcbench.history import DEFAULT_LOOKBACK
+from rpcbench.capture import (
+    CaptureError,
+    dump_jsonl,
+    format_replay,
+    format_replay_csv,
+    format_replay_html,
+    format_replay_json,
+    format_replay_md,
+    load_jsonl,
+    record_calls,
+    reject_write_calls,
+    replay_calls,
+)
 from rpcbench.diff import (
     DiffError,
     compare_reports,
@@ -96,6 +109,8 @@ def build_parser() -> argparse.ArgumentParser:
         "Same as run: print a ranked CLI report for configured endpoints",
     )
     _add_diff_parser(sub)
+    _add_record_parser(sub)
+    _add_replay_parser(sub)
     return parser
 
 
@@ -450,6 +465,158 @@ def _add_diff_parser(sub) -> None:
     )
 
 
+def _add_record_parser(sub) -> None:
+    rec = sub.add_parser(
+        "record",
+        help="Write a JSONL capture of a mix (method + params per line)",
+    )
+    rec.add_argument(
+        "--endpoints",
+        metavar="FILE|URL",
+        help="YAML/JSON file, or a single http(s) URL (needed to bind YAML sources)",
+    )
+    rec.add_argument("--method", default=None, help="JSON-RPC method to record")
+    rec.add_argument(
+        "--preset",
+        default=None,
+        metavar="NAME",
+        help="Read-only method pack: head, chainId, or balance",
+    )
+    rec.add_argument(
+        "--profile",
+        default=None,
+        metavar="NAME",
+        help="App mix or a YAML file. Same as --workload for named mixes.",
+    )
+    rec.add_argument(
+        "--workload",
+        nargs="?",
+        const="general",
+        default=None,
+        choices=("general", "wallet", "indexer", "trading", "nft", "tracing"),
+        metavar="NAME",
+        help="App mix: general (omit name), wallet, indexer, trading, nft, tracing",
+    )
+    rec.add_argument(
+        "--params",
+        default=None,
+        metavar="JSON",
+        help='JSON array of params, e.g. \'["0x0","latest"]\'',
+    )
+    rec.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="Allow write methods (eth_send*, personal_*, …). Default is read-only.",
+    )
+    rec.add_argument(
+        "--samples",
+        type=int,
+        default=1,
+        help="Mix rounds to write (default: 1). No warmup.",
+    )
+    rec.add_argument("--seed", type=int, default=0, help="Shared sequence stamp")
+    rec.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Per-request timeout when binding YAML sources (default: 10)",
+    )
+    rec.add_argument(
+        "--max-requests",
+        type=int,
+        default=DEFAULT_MAX_REQUESTS_FLAG,
+        help="HTTP cap when binding YAML sources (default: 128)",
+    )
+    rec.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Write JSONL to FILE (default: stdout)",
+    )
+
+
+def _add_replay_parser(sub) -> None:
+    rep = sub.add_parser(
+        "replay",
+        help="Replay a JSONL capture in lockstep and diff bodies across providers",
+    )
+    rep.add_argument(
+        "--endpoints",
+        required=True,
+        metavar="FILE|URL",
+        help="YAML/JSON file, or a single http(s) URL (localhost is allowed)",
+    )
+    rep.add_argument(
+        "--from",
+        dest="capture",
+        required=True,
+        metavar="FILE",
+        help="JSONL capture (method/params per line). Use - for stdin",
+    )
+    rep.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="Allow write methods (eth_send*, personal_*, …). Default is read-only.",
+    )
+    rep.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="Per-request timeout in seconds (default: 10)",
+    )
+    rep.add_argument(
+        "--max-requests",
+        type=int,
+        default=DEFAULT_MAX_REQUESTS_FLAG,
+        help="HTTP cap for the whole replay (default: 128)",
+    )
+    rep.add_argument(
+        "--max-duration",
+        type=float,
+        default=0.0,
+        help="Stop after SEC seconds and still print a report (default: 0 = no limit)",
+    )
+    rep.add_argument(
+        "--new-connection",
+        action="store_true",
+        help="Fresh TCP/TLS every request. Default is keep-alive",
+    )
+    rep.add_argument("--http2", action="store_true", help="Prefer HTTP/2 via ALPN")
+    rep.add_argument("--http1", action="store_true", help="Force HTTP/1.1 (default)")
+    rep.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Print canonical JSON body diffs for mismatched calls",
+    )
+    rep.add_argument(
+        "--json",
+        action="store_true",
+        help="Print a JSON report to stdout instead of the CLI table",
+    )
+    rep.add_argument(
+        "--html",
+        action="store_true",
+        help="Write a standalone HTML report to -o FILE",
+    )
+    rep.add_argument(
+        "--md",
+        action="store_true",
+        help="Print a GitHub-flavored markdown report",
+    )
+    rep.add_argument(
+        "--csv",
+        action="store_true",
+        help="Print a flat CSV (one row per provider)",
+    )
+    rep.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Write JSON/HTML/markdown/CSV to FILE",
+    )
+
+
 def _output_csv_path(args: argparse.Namespace) -> bool:
     if not args.output or args.html or args.md or args.json:
         return False
@@ -482,6 +649,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(args)
     if args.command == "diff":
         return _cmd_diff(args)
+    if args.command == "record":
+        return _cmd_record(args)
+    if args.command == "replay":
+        return _cmd_replay(args)
     parser.print_help()
     return 2
 
@@ -766,6 +937,160 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         return 2
     sys.stdout.write(format_diff_md(diff) if args.md else format_diff(diff))
     return 1 if diff.failed else 0
+
+
+def _cmd_record(args: argparse.Namespace) -> int:
+    stopped = kill_switch_reason()
+    if stopped:
+        print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
+        return 2
+    if args.samples < 1:
+        print("rpcbench: --samples must be >= 1", file=sys.stderr)
+        return 2
+    try:
+        check_budget(args.max_requests)
+        plan = resolve_workload(
+            profile=args.profile,
+            workload=args.workload,
+            method=args.method,
+            preset=args.preset,
+            params_json=args.params,
+            allow_writes=args.allow_writes,
+        )
+        config = load_targets(args.endpoints) if args.endpoints else None
+        calls = record_calls(
+            plan.steps,
+            samples=args.samples,
+            config=config,
+            seed=args.seed,
+            timeout=args.timeout,
+            budget=args.max_requests,
+        )
+        reject_write_calls(calls, allow_writes=args.allow_writes)
+    except (ConfigError, MethodError, SafetyError, CaptureError) as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
+    blob = dump_jsonl(calls)
+    if args.output:
+        path = Path(args.output)
+        try:
+            path.write_text(blob, encoding="utf-8")
+        except OSError as exc:
+            print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
+            return 2
+        return 0
+    sys.stdout.write(blob)
+    return 0
+
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    stopped = kill_switch_reason()
+    if stopped:
+        print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
+        return 2
+    if args.html and not args.output:
+        print("rpcbench: --html needs -o FILE", file=sys.stderr)
+        return 2
+    if args.http1 and args.http2:
+        print("rpcbench: pick --http1 or --http2, not both", file=sys.stderr)
+        return 2
+    formats = [name for name, on in (("json", args.json), ("md", args.md), ("csv", args.csv)) if on]
+    if len(formats) > 1:
+        print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
+        return 2
+    if args.timeout <= 0 or args.max_requests < 1 or args.max_duration < 0:
+        print(
+            "rpcbench: --timeout must be > 0, --max-requests >= 1, --max-duration >= 0",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        check_budget(args.max_requests)
+        config = load_targets(args.endpoints)
+        if args.capture == "-":
+            calls = load_jsonl(sys.stdin)
+            source = "stdin"
+        else:
+            calls = load_jsonl(args.capture)
+            source = str(args.capture)
+        reject_write_calls(calls, allow_writes=args.allow_writes)
+        needed = len(config.endpoints) * len(calls)
+        max_requests = args.max_requests
+        if needed > max_requests:
+            if args.max_requests == DEFAULT_MAX_REQUESTS_FLAG:
+                max_requests = needed
+            else:
+                raise SafetyError(
+                    f"replay needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × {len(calls)} calls); "
+                    f"pass --max-requests {needed}"
+                )
+        from rpcbench.rpc import make_client
+
+        client = make_client(
+            timeout=args.timeout,
+            new_connection=args.new_connection,
+            http2=args.http2,
+        )
+        try:
+            result = replay_calls(
+                config,
+                calls,
+                source=source,
+                timeout=args.timeout,
+                budget=max_requests,
+                max_duration=args.max_duration,
+                allow_writes=args.allow_writes,
+                client=client,
+            )
+        finally:
+            client.close()
+    except (ConfigError, MethodError, SafetyError, CaptureError) as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
+    json_blob = None
+    md_blob = None
+    csv_blob = None
+    write_csv = args.csv or (
+        bool(args.output)
+        and not args.html
+        and not args.md
+        and not args.json
+        and Path(args.output).suffix.lower() == ".csv"
+    )
+    need_json = bool(
+        args.json or (args.output and not args.html and not args.md and not write_csv)
+    )
+    if need_json:
+        json_blob = format_replay_json(result)
+    if args.md:
+        md_blob = format_replay_md(result)
+    if write_csv:
+        csv_blob = format_replay_csv(result)
+    if args.output:
+        path = Path(args.output)
+        try:
+            if args.html:
+                blob = format_replay_html(result)
+            elif args.md:
+                blob = md_blob
+            elif write_csv:
+                blob = csv_blob
+            else:
+                blob = json_blob
+            path.write_text(blob or "", encoding="utf-8")
+        except OSError as exc:
+            print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
+            return 2
+    if args.json:
+        sys.stdout.write(json_blob or format_replay_json(result))
+    elif args.md:
+        sys.stdout.write(md_blob or "")
+    elif args.csv:
+        sys.stdout.write(csv_blob or "")
+    else:
+        sys.stdout.write(format_replay(result, verbose=args.verbose))
+    return 0
 
 
 if __name__ == "__main__":
