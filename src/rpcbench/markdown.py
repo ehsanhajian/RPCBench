@@ -10,6 +10,7 @@ from rpcbench.report import (
     DEFAULT_SIMILAR_BAND,
     batch_support_label,
     inflight_status_label,
+    throughput_status_label,
     run_to_dict,
 )
 from rpcbench.run import RunResult
@@ -191,6 +192,26 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    throughput = _throughput_rows(data)
+    if throughput:
+        size = data.get("throughput")
+        cap = data.get("rps") or 0
+        cap_txt = f" cap {float(cap):g}/s;" if cap else ""
+        lines.extend(
+            [
+                "## Throughput",
+                "",
+                f"{size} serial POSTs;{cap_txt} successful req/s; "
+                "not mixed into ranking",
+                "",
+                *_md_table(
+                    ["name", "status", "rps", "duration", "n", "err"],
+                    throughput,
+                    right=(False, False, True, True, True, True),
+                ),
+                "",
+            ]
+        )
     logs = _logs_range_rows(data)
     if logs:
         spans = data.get("logs_range")
@@ -361,6 +382,36 @@ def _inflight_rows(data: dict[str, Any]) -> list[list[str]]:
                 _ms(summary.get("serial_p50_ms")),
                 _ratio(summary.get("ratio")),
                 _inflight_err(summary),
+            ]
+        )
+    return rows
+
+
+def _throughput_rows(data: dict[str, Any]) -> list[list[str]]:
+    if int(data.get("throughput") or 0) <= 0:
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("throughput")
+        if not summary:
+            continue
+        status = throughput_status_label(summary)
+        n = summary.get("n")
+        n_ok = summary.get("n_ok")
+        n_txt = "—" if n is None else f"{n_ok}/{n}"
+        err = (
+            str(summary.get("error_class") or "—")
+            if status == "skip"
+            else str(summary.get("n_fail") if summary.get("n_fail") is not None else "—")
+        )
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                status,
+                _throughput_rps(summary.get("rps")),
+                _throughput_duration(summary.get("duration_ms")),
+                n_txt,
+                err,
             ]
         )
     return rows
@@ -589,6 +640,21 @@ def _ratio(value: float | None) -> str:
     if value is None:
         return "—"
     return f"{float(value):.1f}×"
+
+
+def _throughput_rps(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{float(value):.1f}/s"
+
+
+def _throughput_duration(value: float | None) -> str:
+    if value is None:
+        return "—"
+    seconds = float(value) / 1000.0
+    if seconds < 10:
+        return f"{seconds:.2f}s"
+    return f"{seconds:.1f}s"
 
 
 def _inflight_err(summary: dict[str, Any]) -> str:

@@ -366,6 +366,7 @@ def run_to_dict(
         "rps": result.rps,
         "batch": result.batch,
         "inflight": result.inflight,
+        "throughput": result.throughput,
         "logs_range": result.logs_range,
         "connection": result.connection,
         "http": result.http,
@@ -512,6 +513,7 @@ def format_run(
         f"{_burst_mode_suffix(result)}"
         f"{_batch_mode_suffix(result)}"
         f"{_inflight_mode_suffix(result)}"
+        f"{_throughput_mode_suffix(result)}"
         f"{_logs_range_mode_suffix(result)}"
         f"{_simulate_mode_suffix(result)}"
         f"{_archive_mode_suffix(result)}"
@@ -572,6 +574,8 @@ def format_run(
             lines.extend(_batch_section(result, use_color))
         if result.inflight > 0:
             lines.extend(_inflight_section(result, use_color))
+        if result.throughput > 0:
+            lines.extend(_throughput_section(result, use_color))
         if result.logs_range > 0:
             lines.extend(_logs_range_section(result, use_color))
         if result.archive:
@@ -676,6 +680,8 @@ def _verbose_sections(
         lines.extend(_batch_section(result, use_color))
     if result.inflight > 0:
         lines.extend(_inflight_section(result, use_color))
+    if result.throughput > 0:
+        lines.extend(_throughput_section(result, use_color))
     if result.logs_range > 0:
         lines.extend(_logs_range_section(result, use_color))
     if result.archive:
@@ -1220,6 +1226,94 @@ def _inflight_status_cell(summary: Any, use_color: bool) -> str:
     return label
 
 
+_THROUGHPUT_SKIP = frozenset({"budget", "duration"})
+
+
+def throughput_status_label(summary: Any) -> str:
+    """ok / skip / error class. skip = extra read did not run."""
+    if summary is None:
+        return "—"
+    if isinstance(summary, dict):
+        error_class = summary.get("error_class")
+        n_ok = int(summary.get("n_ok") or 0)
+    else:
+        error_class = summary.error_class
+        n_ok = summary.n_ok
+    if error_class in _THROUGHPUT_SKIP and n_ok == 0:
+        return "skip"
+    if n_ok == 0:
+        return str(error_class or "fail")
+    return "ok"
+
+
+def _throughput_status_cell(summary: Any, use_color: bool) -> str:
+    label = throughput_status_label(summary)
+    if label == "ok":
+        return _paint(label, _GREEN, enabled=use_color)
+    if label not in {"skip", "—"}:
+        return _paint(label, _RED, enabled=use_color)
+    return label
+
+
+def _throughput_section(result: RunResult, use_color: bool) -> list[str]:
+    cap = ""
+    if result.rps > 0:
+        cap = f" cap {result.rps:g}/s;"
+    return [
+        "",
+        "Throughput  ("
+        f"{result.throughput} serial POSTs;{cap} successful req/s; "
+        "extra read; not mixed into ranking)",
+        *_throughput_lines(result, use_color),
+    ]
+
+
+def _throughput_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        summary = outcome.throughput
+        if summary is None:
+            rows.append([name, "—", "—", "—", "—", "—"])
+            continue
+        status = throughput_status_label(summary)
+        err = (
+            summary.error_class
+            if status == "skip"
+            else str(summary.n_fail)
+        )
+        rows.append(
+            [
+                name,
+                _throughput_status_cell(summary, use_color),
+                _fmt_throughput_rps(summary.rps),
+                _fmt_duration(summary.duration_ms),
+                f"{summary.n_ok}/{summary.n}" if summary.n else "—",
+                err or "—",
+            ]
+        )
+    return _grid(
+        ["name", "status", "rps", "duration", "n", "err"],
+        rows,
+        right=(False, False, True, True, True, True),
+    )
+
+
+def _fmt_throughput_rps(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}/s"
+
+
+def _fmt_duration(value: float | None) -> str:
+    if value is None:
+        return "—"
+    seconds = value / 1000.0
+    if seconds < 10:
+        return f"{seconds:.2f}s"
+    return f"{seconds:.1f}s"
+
+
 def _logs_range_section(result: RunResult, use_color: bool) -> list[str]:
     spans = ", ".join(str(n) for n in LOGS_RANGES if n <= result.logs_range)
     return [
@@ -1729,6 +1823,7 @@ def _comparison_entry(
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
         "inflight": _inflight_summary_json(outcome.inflight),
+        "throughput": _throughput_summary_json(outcome.throughput),
         **_extra_read_json(outcome),
     }
 
@@ -2015,6 +2110,7 @@ def _ranking_entry(row: RankedPlace, rank_by: str, verdict: Verdict) -> dict[str
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
         "inflight": _inflight_summary_json(outcome.inflight),
+        "throughput": _throughput_summary_json(outcome.throughput),
         **_extra_read_json(outcome),
     }
 
@@ -2064,6 +2160,7 @@ def _provider_entry(row: RankedPlace, method: str, verdict: Verdict) -> dict[str
         "transport": _transport_summary_json(outcome.transport),
         "batch": _batch_summary_json(outcome.batch),
         "inflight": _inflight_summary_json(outcome.inflight),
+        "throughput": _throughput_summary_json(outcome.throughput),
         **_extra_read_json(outcome),
         "last_error": _last_error(outcome) or None,
         "warmup": [_hit_entry(hit) for hit in outcome.warmup],
@@ -2207,6 +2304,12 @@ def _inflight_mode_suffix(result: RunResult) -> str:
     return f"  ·  inflight={result.inflight}"
 
 
+def _throughput_mode_suffix(result: RunResult) -> str:
+    if result.throughput <= 0:
+        return ""
+    return f"  ·  throughput={result.throughput}"
+
+
 def _logs_range_mode_suffix(result: RunResult) -> str:
     if result.logs_range <= 0:
         return ""
@@ -2264,6 +2367,23 @@ def _inflight_summary_json(summary: Any) -> dict[str, Any] | None:
         "ratio": summary.ratio,
         "n_ok": summary.n_ok,
         "n_fail": summary.n_fail,
+        "error": summary.error,
+        "error_class": summary.error_class,
+    }
+
+
+def _throughput_summary_json(summary: Any) -> dict[str, Any] | None:
+    if summary is None:
+        return None
+    return {
+        "size": summary.size,
+        "method": summary.method,
+        "rps": summary.rps,
+        "duration_ms": summary.duration_ms,
+        "n_ok": summary.n_ok,
+        "n_fail": summary.n_fail,
+        "n": summary.n,
+        "rate_limit": summary.rate_limit,
         "error": summary.error,
         "error_class": summary.error_class,
     }

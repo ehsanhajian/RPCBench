@@ -36,9 +36,11 @@ from rpcbench.report import RankError, format_json, format_run, normalize_rank_b
 from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
+    DEFAULT_THROUGHPUT,
     MAX_BATCH,
     MAX_BURST,
     MAX_INFLIGHT,
+    MAX_THROUGHPUT,
     MODE_PAIRED,
     MODE_SEQUENTIAL,
     run_endpoints,
@@ -222,7 +224,21 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         type=float,
         default=0.0,
         metavar="N",
-        help="Cap starts per second after --burst (0=off). Does not raise the request budget.",
+        help="Cap starts per second after --burst and during --throughput (0=off). Does not raise the request budget.",
+    )
+    run.add_argument(
+        "--throughput",
+        type=int,
+        nargs="?",
+        const=DEFAULT_THROUGHPUT,
+        default=0,
+        metavar="N",
+        help=(
+            f"Extra serial copies of the primary method for successful req/s "
+            f"(0=off, omit N for {DEFAULT_THROUGHPUT}, max {MAX_THROUGHPUT}). "
+            "Adds N requests per endpoint; paced by --rps; 429 is a rejected request. "
+            "Not mixed into ranking. Not an unbounded load test."
+        ),
     )
     run.add_argument(
         "--batch",
@@ -504,6 +520,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
             needed += len(config.endpoints) * (1 + args.batch)
         if args.concurrency > 0:
             needed += len(config.endpoints) * (2 * args.concurrency)
+        if args.throughput > 0:
+            needed += len(config.endpoints) * args.throughput
         if args.logs_range > 0:
             needed += len(config.endpoints) * len(ranges_for(args.logs_range))
         if args.archive:
@@ -515,6 +533,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             is_app_workload(method)
             or args.batch > 0
             or args.concurrency > 0
+            or args.throughput > 0
             or args.logs_range > 0
             or args.simulate
             or args.archive
@@ -555,6 +574,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
                     f"({len(config.endpoints)} endpoints × {2 * args.concurrency} extra); "
                     f"pass --max-requests {needed}"
                 )
+            elif args.throughput > 0:
+                raise SafetyError(
+                    f"--throughput {args.throughput} needs {needed} requests "
+                    f"({len(config.endpoints)} endpoints × {args.throughput} extra); "
+                    f"pass --max-requests {needed}"
+                )
             else:
                 raise SafetyError(
                     f"--batch {args.batch} needs {needed} requests "
@@ -578,6 +603,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.burst > MAX_BURST
         or args.batch < 0
         or args.batch > MAX_BATCH
+        or args.throughput < 0
+        or args.throughput > MAX_THROUGHPUT
         or args.rps < 0
         or args.lookback < 0
         or (args.block_time is not None and args.block_time <= 0)
@@ -586,6 +613,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             "rpcbench: --timeout must be > 0, --samples >= 1, "
             "--warmup >= 0, --max-requests >= 1, --max-duration >= 0, "
             f"--concurrency 0–{MAX_INFLIGHT}, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
+            f"--throughput 0–{MAX_THROUGHPUT}, "
             "--rps >= 0, --lookback >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
@@ -630,6 +658,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         inflight=args.concurrency,
         burst=args.burst,
         rps=args.rps,
+        throughput=args.throughput,
         new_connection=args.new_connection,
         http2=args.http2,
         batch=args.batch,

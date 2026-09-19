@@ -164,6 +164,14 @@ Adds **1+N HTTP requests per endpoint**.
 
 Adds **2N HTTP requests per endpoint**.
 
+## Throughput extra read
+
+**`--throughput N`** (default 0 = off, omit N for 20, max 64) is an extra read after timed samples, tags, and client. RPCBench sends N serial HTTP POSTs of the primary workload method on the same keep-alive client. **`--rps`** caps how often those starts fire (`0` = as fast as responses allow). Reported numbers are successful req/s (`n_ok / duration_s`), wall-clock `duration_ms`, completed count `n`, and `n_fail` (HTTP **429** / CU throttle is class **`rate_limit`**, a rejected request, not a crash). These are **not** mixed into ranking, reliability, or Fastest.
+
+Ranking table `rps` stays `1000 / mean_ms` of the timed samples. `--concurrency` is overlapping extra POSTs vs serial. `--burst` overlaps existing timed samples. `--throughput` is a bounded extra read, not concurrent fan-out and not an unbounded load generator.
+
+Adds **N HTTP requests per endpoint**.
+
 ## getLogs range scaling
 
 **`--logs-range N`** (default 0 = off, omit N for 1000, allowed 1 / 10 / 100 / 1000) is an extra read after the pinned head is known. Mix catalogs still send `eth_getLogs` as **one block** (`latest→latest`). The extra read uses a **fixed** filter on every provider: `address` is the zero address, no `topics`, `toBlock` is the cohort pin, `fromBlock` is `pin − N + 1`.
@@ -282,7 +290,7 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential `rps` is `1000 / mean_ms`, not parallel throughput.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s.
 
 ## Report watermark
 

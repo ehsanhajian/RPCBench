@@ -12,6 +12,7 @@ from rpcbench.report import (
     DEFAULT_SIMILAR_BAND,
     batch_support_label,
     inflight_status_label,
+    throughput_status_label,
     run_to_dict,
 )
 from rpcbench.run import RunResult
@@ -67,6 +68,7 @@ def format_html(
         _transport_table(data),
         _batch_table(data),
         _inflight_table(data),
+        _throughput_table(data),
         _logs_range_table(data),
         _archive_table(data),
         _history_table(data),
@@ -732,6 +734,61 @@ def _inflight_table(data: dict[str, Any]) -> str:
     )
 
 
+def _throughput_table(data: dict[str, Any]) -> str:
+    if int(data.get("throughput") or 0) <= 0:
+        return ""
+    rows = []
+    for row in data.get("ranking") or []:
+        summary = row.get("throughput")
+        if not summary:
+            continue
+        status = throughput_status_label(summary)
+        if status == "ok":
+            tone = "ok"
+        elif status == "skip":
+            tone = "dim"
+        else:
+            tone = "bad"
+        n_ok = summary.get("n_ok")
+        n = summary.get("n")
+        n_txt = "—" if n is None else f"{n_ok}/{n}"
+        err = (
+            str(summary.get("error_class") or "—")
+            if status == "skip"
+            else str(summary.get("n_fail") if summary.get("n_fail") is not None else "—")
+        )
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row["name"]))}</td>'
+            f'<td class="{tone}">{escape(status)}</td>'
+            f'<td class="num">{escape(_throughput_rps(summary.get("rps")))}</td>'
+            f'<td class="num">{escape(_throughput_duration(summary.get("duration_ms")))}</td>'
+            f'<td class="num">{escape(n_txt)}</td>'
+            f'<td class="num">{escape(err)}</td>'
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    size = data.get("throughput")
+    cap = data.get("rps") or 0
+    cap_txt = f" cap {float(cap):g}/s;" if cap else ""
+    return (
+        '<section aria-label="throughput">'
+        "<h2>Throughput</h2>"
+        f'<p class="meta">{escape(str(size))} serial POSTs;{escape(cap_txt)} '
+        "successful req/s; not mixed into ranking</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th><th>status</th>"
+        '<th class="num">rps</th><th class="num">duration</th>'
+        '<th class="num">n</th><th class="num">err</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
 def _logs_range_table(data: dict[str, Any]) -> str:
     if int(data.get("logs_range") or 0) <= 0:
         return ""
@@ -1131,6 +1188,21 @@ def _inflight_err_cell(summary: dict[str, Any]) -> str:
     if summary.get("n_fail") is None:
         return "—"
     return str(summary.get("n_fail"))
+
+
+def _throughput_rps(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{float(value):.1f}/s"
+
+
+def _throughput_duration(value: float | None) -> str:
+    if value is None:
+        return "—"
+    seconds = float(value) / 1000.0
+    if seconds < 10:
+        return f"{seconds:.2f}s"
+    return f"{seconds:.1f}s"
 
 
 def _ms(value: float | None) -> str:

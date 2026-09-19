@@ -103,6 +103,9 @@ MAX_BATCH = 8
 # Opt-in overlapping HTTP POSTs vs serial extra read. Small and bounded.
 DEFAULT_INFLIGHT = 4
 MAX_INFLIGHT = 8
+# Opt-in serial throughput extra read. Small and bounded.
+DEFAULT_THROUGHPUT = 20
+MAX_THROUGHPUT = 64
 # Exclusive upper bounds; last bucket is ≥ the final edge. Shared with CLI/JSON/HTML.
 HISTOGRAM_EDGES_MS: tuple[float, ...] = (50.0, 100.0, 250.0, 1000.0)
 HISTOGRAM_LABELS: tuple[str, ...] = ("<50ms", "<100ms", "<250ms", "<1s", "≥1s")
@@ -193,6 +196,22 @@ class ConcurrentSummary:
 
 
 @dataclass(frozen=True)
+class ThroughputSummary:
+    """Serial extra-read window. Successful req/s; not mixed into ranking."""
+
+    size: int
+    method: str
+    rps: float | None
+    duration_ms: float | None
+    n_ok: int
+    n_fail: int
+    n: int
+    rate_limit: int
+    error: str | None
+    error_class: str | None
+
+
+@dataclass(frozen=True)
 class EndpointOutcome:
     endpoint: Endpoint
     warmup: tuple[ProbeResult, ...]
@@ -209,6 +228,7 @@ class EndpointOutcome:
     transport: TransportSummary | None = None
     batch: BatchSummary | None = None
     inflight: ConcurrentSummary | None = None
+    throughput: ThroughputSummary | None = None
     logs_range: tuple[LogsRangeHit, ...] = ()
     archive: ArchiveHit | None = None
     history: HistoryHit | None = None
@@ -251,6 +271,7 @@ class RunResult:
     http: str = HTTP_1
     batch: int = 0
     inflight: int = 0
+    throughput: int = 0
     logs_range: int = 0
     simulate: bool = False
     archive: bool = False
@@ -520,6 +541,7 @@ def run_endpoints(
     http2: bool = False,
     batch: int = 0,
     inflight: int = 0,
+    throughput: int = 0,
     logs_range: int = 0,
     profile_notes: str | None = None,
     simulate: bool = False,
@@ -540,6 +562,8 @@ def run_endpoints(
         raise ValueError(f"batch must be 0–{MAX_BATCH}")
     if inflight < 0 or inflight > MAX_INFLIGHT:
         raise ValueError(f"concurrency must be 0–{MAX_INFLIGHT}")
+    if throughput < 0 or throughput > MAX_THROUGHPUT:
+        raise ValueError(f"throughput must be 0–{MAX_THROUGHPUT}")
     if logs_range < 0 or logs_range > MAX_LOGS_RANGE:
         raise ValueError(f"logs-range must be 0–{MAX_LOGS_RANGE}")
     if lookback < 0:
@@ -611,6 +635,7 @@ def run_endpoints(
             http=http,
             batch=batch,
             inflight=inflight,
+            throughput=throughput,
             logs_range=logs_range,
             profile_notes=profile_notes,
             payload=payload,
@@ -717,6 +742,7 @@ def _execute_run(
     http: str,
     batch: int,
     inflight: int,
+    throughput: int,
     logs_range: int,
     profile_notes: str | None,
     payload: PayloadMeta | None,
@@ -937,6 +963,25 @@ def _execute_run(
             replace(outcome, inflight=measured_inflight.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    if throughput > 0:
+        spec = steps[0]
+        measured_throughput = {
+            outcome.endpoint.name: _measure_throughput(
+                outcome.endpoint,
+                spec=spec,
+                size=throughput,
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                rps=rps,
+                client=client,
+            )
+            for outcome in outcomes
+        }
+        outcomes = [
+            replace(outcome, throughput=measured_throughput.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -965,6 +1010,7 @@ def _execute_run(
         http=http,
         batch=batch,
         inflight=inflight,
+        throughput=throughput,
         logs_range=logs_range,
         simulate=simulate,
         archive=archive,
@@ -1356,6 +1402,84 @@ def _measure_inflight(
         ratio=ratio,
         n_ok=conc_stats.n_ok,
         n_fail=conc_stats.n_fail,
+        error=error,
+        error_class=error_class,
+    )
+
+
+def _skipped_throughput(
+    size: int, method: str, error_class: str, error: str
+) -> ThroughputSummary:
+    return ThroughputSummary(
+        size=size,
+        method=method,
+        rps=None,
+        duration_ms=None,
+        n_ok=0,
+        n_fail=0,
+        n=0,
+        rate_limit=0,
+        error=error,
+        error_class=error_class,
+    )
+
+
+def _measure_throughput(
+    endpoint: Endpoint,
+    *,
+    spec: CallSpec,
+    size: int,
+    timeout: float,
+    budget: RequestBudget,
+    deadline: float | None,
+    rps: float,
+    client,
+) -> ThroughputSummary:
+    if _expired(deadline):
+        return _skipped_throughput(
+            size, spec.method, "duration", "max duration exceeded"
+        )
+    hits: list[ProbeResult] = []
+    last_start: float | None = None
+    started = time.monotonic()
+    for _ in range(size):
+        if _expired(deadline):
+            break
+        last_start = _pace(last_start, rps)
+        hits.append(
+            _hit(
+                endpoint,
+                spec=spec,
+                timeout=timeout,
+                budget=budget,
+                deadline=deadline,
+                client=client,
+            )
+        )
+    duration_ms = (time.monotonic() - started) * 1000
+    if not hits:
+        return _skipped_throughput(
+            size, spec.method, "duration", "max duration exceeded"
+        )
+    stats = summarize(tuple(hits))
+    elapsed_s = duration_ms / 1000.0
+    ok_rps = (stats.n_ok / elapsed_s) if elapsed_s > 0 else None
+    error = None
+    error_class = None
+    if stats.n_ok == 0:
+        miss = next((hit for hit in hits if hit.error_class), None)
+        if miss is not None:
+            error = miss.error
+            error_class = miss.error_class
+    return ThroughputSummary(
+        size=size,
+        method=spec.method,
+        rps=ok_rps,
+        duration_ms=duration_ms,
+        n_ok=stats.n_ok,
+        n_fail=stats.n_fail,
+        n=stats.n_ok + stats.n_fail,
+        rate_limit=dict(stats.by_class).get("rate_limit", 0),
         error=error,
         error_class=error_class,
     )

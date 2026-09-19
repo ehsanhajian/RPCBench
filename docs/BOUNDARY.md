@@ -20,7 +20,7 @@ Three tools, three questions. Do not copy checks across the line.
 
 ## RPCBench owns (even if a method name appears in both)
 
-- Timed samples: P50/P95/P99, jitter, histograms, RPS, batch, concurrent extra-read, load shapes
+- Timed samples: P50/P95/P99, jitter, histograms, RPS, batch, concurrent extra-read, throughput extra-read, load shapes
 - Fair paired compare, similar-band, body/hash **consistency** (correctness under load, not “exposed API”)
 - Head freshness / lag vs cohort; `latest` vs `safe` vs `finalized` **latency**
 - Archive / historical **read performance** (can this indexer finish, and how slow)
