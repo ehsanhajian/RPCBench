@@ -210,7 +210,7 @@ def test_cli_simulate(tmp_path, monkeypatch, capsys) -> None:
     assert "eth_simulateV1" in methods
     assert "eth_call" in methods
     assert not any(m.startswith("eth_send") for m in methods)
-    assert "Method    simulate" in out
+    assert "Method    general" in out
 
 
 def test_yaml_simulateV1_is_always_optional(tmp_path) -> None:

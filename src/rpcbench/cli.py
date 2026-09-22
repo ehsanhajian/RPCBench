@@ -40,11 +40,12 @@ from rpcbench.markdown import format_md
 from rpcbench.methods import (
     MethodError,
     apply_simulate,
+    canonical_workload,
     is_app_workload,
     request_units,
     resolve_workload,
 )
-from rpcbench.profile import has_dynamic_source, hint_request_count
+from rpcbench.profile import as_profile_path, has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.run import (
     DEFAULT_BATCH,
@@ -91,31 +92,95 @@ SAMPLE_BUDGETS: dict[str, dict[str, int | float]] = {
 DEFAULT_MAX_REQUESTS_FLAG = 128
 
 
-def build_parser() -> argparse.ArgumentParser:
+_LAB_DESTS = frozenset(
+    {
+        "method",
+        "preset",
+        "profile",
+        "params",
+        "allow_writes",
+        "samples",
+        "warmup",
+        "timeout",
+        "max_requests",
+        "max_duration",
+        "concurrency",
+        "burst",
+        "rps",
+        "throughput",
+        "websocket",
+        "batch",
+        "logs_range",
+        "simulate",
+        "archive",
+        "lookback",
+        "sequential",
+        "new_connection",
+        "http2",
+        "http1",
+        "seed",
+        "rank_by",
+        "similar_band",
+        "stale_blocks",
+        "block_time",
+        "block",
+        "verbose",
+    }
+)
+_SIMULATE_JOBS = frozenset({"wallet", "trading"})
+_JOB_EPILOG = (
+    "No other flags: general workload, short budget. "
+    "wallet and trading add simulate. "
+    "indexer adds logs-range, archive, and lookback. "
+    "--budget is size only (not archive, WebSocket, or tracing). "
+    "Lab flags: --help-all"
+)
+
+
+def build_parser(*, full: bool = False) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rpcbench",
-        description="Measure RPC quality and compare providers.",
+        description="Which RPC endpoint is ready for this workload, from this machine.",
+        epilog=_JOB_EPILOG,
     )
     parser.add_argument("--version", action="version", version=f"rpcbench {__version__}")
+    parser.add_argument(
+        "--help-all",
+        action="store_true",
+        help="Show lab flags, run, record, and replay",
+    )
     sub = parser.add_subparsers(dest="command")
     _add_run_parser(
         sub,
         "run",
-        "Measure JSON-RPC round-trip latency and print a comparison report",
+        "Same as compare",
+        full=full,
+        show=full,
     )
     _add_run_parser(
         sub,
         "compare",
-        "Same as run: print a ranked CLI report for configured endpoints",
+        "Rank endpoints for a workload and print a verdict",
+        full=full,
+        show=True,
     )
     _add_diff_parser(sub)
-    _add_record_parser(sub)
-    _add_replay_parser(sub)
+    _add_record_parser(sub, show=full)
+    _add_replay_parser(sub, show=full)
     return parser
 
 
-def _add_run_parser(sub, name: str, help_text: str) -> None:
-    run = sub.add_parser(name, help=help_text)
+def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -> None:
+    run = sub.add_parser(
+        name,
+        help=help_text if show else argparse.SUPPRESS,
+        epilog=_JOB_EPILOG,
+    )
+    run.add_argument(
+        "--help-all",
+        action="store_true",
+        help="Show lab flags",
+    )
     run.add_argument(
         "--endpoints",
         required=True,
@@ -151,11 +216,10 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         choices=("general", "wallet", "indexer", "trading", "nft", "tracing"),
         metavar="NAME",
         help=(
-            "What you are building: general (default when the flag is present), "
-            "wallet, indexer, trading, nft, or tracing. Weighted read-only mix; "
-            "compose with --budget. Alias: --profile mix = general. "
-            "tracing times optional trace_block and debug_traceCall; "
-            "missing traces skip, not a crash."
+            "Job: general (default), wallet, indexer, trading, nft, or tracing. "
+            "wallet and trading add simulate. indexer adds logs-range, archive, "
+            "and lookback. tracing times optional trace_block and debug_traceCall. "
+            "Compose with --budget. --profile mix is an alias for general."
         ),
     )
     run.add_argument(
@@ -172,11 +236,12 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
     run.add_argument(
         "--budget",
         choices=tuple(SAMPLE_BUDGETS),
-        default="standard",
+        default=None,
         dest="sample_budget",
         help=(
-            "Sample budget: short, standard (default), or long. "
+            "Sample size: short (default when no other flags), standard, or long. "
             "Sets samples, warmup, timeout, and max duration. "
+            "Does not enable archive, WebSocket, or tracing. "
             "Not a Nodeprobe scan profile. HTTP cap is --max-requests."
         ),
     )
@@ -289,7 +354,7 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
         type=int,
         nargs="?",
         const=DEFAULT_LOGS_RANGE,
-        default=0,
+        default=None,
         metavar="N",
         help=(
             "Extra pinned eth_getLogs at 1, 10, 100, and up to N blocks "
@@ -297,28 +362,52 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
             "Mix logs stay one block. Not mixed into ranking."
         ),
     )
-    run.add_argument(
+    sim = run.add_mutually_exclusive_group()
+    sim.add_argument(
         "--simulate",
-        action="store_true",
+        action="store_const",
+        const=True,
+        dest="simulate",
+        default=None,
         help=(
             "Add read-only eth_call, eth_estimateGas, and eth_simulateV1 "
-            "(fixture tx, no send). Missing simulateV1 is skip, not a crash."
+            "(fixture tx, no send). Missing simulateV1 is skip, not a crash. "
+            "On for wallet and trading unless --no-simulate."
         ),
     )
-    run.add_argument(
+    sim.add_argument(
+        "--no-simulate",
+        action="store_const",
+        const=False,
+        dest="simulate",
+        help="Do not add simulate steps (overrides wallet and trading).",
+    )
+    archive = run.add_mutually_exclusive_group()
+    archive.add_argument(
         "--archive",
-        action="store_true",
+        action="store_const",
+        const=True,
+        dest="archive",
+        default=None,
         help=(
             "Probe historical state (eth_getBalance at genesis). "
-            "Reports yes / no / unknown / rate-limited. Not mixed into ranking."
+            "Reports yes / no / unknown / rate-limited. Not mixed into ranking. "
+            "On for indexer unless --no-archive."
         ),
+    )
+    archive.add_argument(
+        "--no-archive",
+        action="store_const",
+        const=False,
+        dest="archive",
+        help="Do not probe archive (overrides indexer and --lookback).",
     )
     run.add_argument(
         "--lookback",
         type=int,
         nargs="?",
         const=DEFAULT_LOOKBACK,
-        default=0,
+        default=None,
         metavar="N",
         help=(
             "Timed eth_getBalance at pin−N vs latest "
@@ -437,6 +526,10 @@ def _add_run_parser(sub, name: str, help_text: str) -> None:
             "or CSV when --csv / FILE ends in .csv (CLI table still prints unless --json/--md/--csv)"
         ),
     )
+    if not full:
+        for action in run._actions:
+            if action.dest in _LAB_DESTS:
+                action.help = argparse.SUPPRESS
 
 
 def _add_diff_parser(sub) -> None:
@@ -465,10 +558,14 @@ def _add_diff_parser(sub) -> None:
     )
 
 
-def _add_record_parser(sub) -> None:
+def _add_record_parser(sub, *, show: bool = True) -> None:
     rec = sub.add_parser(
         "record",
-        help="Write a JSONL capture of a mix (method + params per line)",
+        help=(
+            "Write a JSONL capture of a mix (method + params per line)"
+            if show
+            else argparse.SUPPRESS
+        ),
     )
     rec.add_argument(
         "--endpoints",
@@ -535,10 +632,14 @@ def _add_record_parser(sub) -> None:
     )
 
 
-def _add_replay_parser(sub) -> None:
+def _add_replay_parser(sub, *, show: bool = True) -> None:
     rep = sub.add_parser(
         "replay",
-        help="Replay a JSONL capture in lockstep and diff bodies across providers",
+        help=(
+            "Replay a JSONL capture in lockstep and diff bodies across providers"
+            if show
+            else argparse.SUPPRESS
+        ),
     )
     rep.add_argument(
         "--endpoints",
@@ -623,6 +724,39 @@ def _output_csv_path(args: argparse.Namespace) -> bool:
     return Path(args.output).suffix.lower() == ".csv"
 
 
+def apply_job(args: argparse.Namespace) -> argparse.Namespace:
+    """Bare compare is the general job. Named workloads turn on their extras.
+
+    Unset extra-read flags stay None until here, so an explicit 0 / --no-* wins.
+    --budget long does not turn extras on.
+    """
+    bare = not any((args.method, args.preset, args.profile, args.workload))
+    if bare:
+        args.workload = "general"
+    if args.sample_budget is None:
+        args.sample_budget = "short" if bare else "standard"
+    job = _named_job(args)
+    if args.logs_range is None:
+        args.logs_range = DEFAULT_LOGS_RANGE if job == "indexer" else 0
+    if args.lookback is None:
+        args.lookback = DEFAULT_LOOKBACK if job == "indexer" else 0
+    if args.simulate is None:
+        args.simulate = job in _SIMULATE_JOBS
+    if args.archive is None:
+        args.archive = job == "indexer" or args.lookback > 0
+    return args
+
+
+def _named_job(args: argparse.Namespace) -> str | None:
+    """Catalog mix this run asked for, or None for a single method or YAML file."""
+    if args.method or args.preset:
+        return None
+    raw = args.workload or args.profile
+    if not raw or as_profile_path(raw) is not None:
+        return None
+    return canonical_workload(raw)
+
+
 def apply_sample_budget(args: argparse.Namespace) -> argparse.Namespace:
     """Fill samples/warmup/timeout/max-duration/concurrency from --budget unless set."""
     spec = SAMPLE_BUDGETS[args.sample_budget]
@@ -640,8 +774,14 @@ def apply_sample_budget(args: argparse.Namespace) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    full = "--help-all" in raw
+    if full:
+        raw = [arg for arg in raw if arg != "--help-all"]
+        if "--help" not in raw and "-h" not in raw:
+            raw.append("--help")
+    parser = build_parser(full=full)
+    args = parser.parse_args(raw)
     if args.command is None:
         parser.print_help()
         return 2
@@ -673,6 +813,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
         return 2
     try:
+        apply_job(args)
         plan = resolve_workload(
             profile=args.profile,
             workload=args.workload,
@@ -690,8 +831,6 @@ def _cmd_run(args: argparse.Namespace) -> int:
             workload = apply_simulate(workload)
             if not is_app_workload(method):
                 method = "simulate"
-        if args.lookback > 0:
-            args.archive = True
         units = request_units(workload)
         needed = (
             len(config.endpoints)

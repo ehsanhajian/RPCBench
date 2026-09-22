@@ -37,6 +37,7 @@ jobs:
         run: >
           rpcbench run
           --endpoints endpoints.ci.yaml
+          --method eth_blockNumber
           --samples 1
           --warmup 0
           --max-requests 8
