@@ -29,7 +29,7 @@ def test_cli_defaults() -> None:
     assert ns.samples is None
     assert ns.warmup is None
     assert ns.max_requests == 128
-    assert ns.sample_budget == "standard"
+    assert ns.sample_budget is None
     assert ns.method is None
     assert ns.preset is None
     assert ns.verbose is False
@@ -54,16 +54,195 @@ def test_cli_defaults() -> None:
     assert ns.max_duration is None
     assert ns.burst == 0
     assert ns.batch == 0
-    assert ns.logs_range == 0
-    assert ns.simulate is False
-    assert ns.archive is False
-    assert ns.lookback == 0
+    assert ns.logs_range is None
+    assert ns.simulate is None
+    assert ns.archive is None
+    assert ns.lookback is None
     assert ns.rps == 0.0
     assert ns.throughput == 0
     assert ns.websocket == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
     assert ns.http1 is False
+
+
+def test_job_bare_compare_is_general_short() -> None:
+    from rpcbench.cli import apply_job
+
+    ns = build_parser().parse_args(["compare", "--endpoints", "x.yaml"])
+    apply_job(ns)
+    assert ns.workload == "general"
+    assert ns.sample_budget == "short"
+    assert ns.simulate is False
+    assert ns.archive is False
+    assert ns.logs_range == 0
+    assert ns.lookback == 0
+    assert ns.websocket == 0.0
+
+
+def test_job_wallet_and_trading_enable_simulate() -> None:
+    from rpcbench.cli import apply_job
+
+    for name in ("wallet", "trading"):
+        ns = build_parser().parse_args(
+            ["compare", "--endpoints", "x.yaml", "--workload", name]
+        )
+        apply_job(ns)
+        assert ns.simulate is True
+        assert ns.archive is False
+        assert ns.logs_range == 0
+        assert ns.sample_budget == "standard"
+
+
+def test_job_indexer_enables_history_extras() -> None:
+    from rpcbench.logs import DEFAULT_LOGS_RANGE
+    from rpcbench.history import DEFAULT_LOOKBACK
+    from rpcbench.cli import apply_job
+
+    ns = build_parser().parse_args(
+        ["compare", "--endpoints", "x.yaml", "--workload", "indexer"]
+    )
+    apply_job(ns)
+    assert ns.simulate is False
+    assert ns.archive is True
+    assert ns.logs_range == DEFAULT_LOGS_RANGE
+    assert ns.lookback == DEFAULT_LOOKBACK
+    assert ns.websocket == 0.0
+
+
+def test_job_budget_long_does_not_enable_extras() -> None:
+    from rpcbench.cli import apply_job
+
+    ns = build_parser().parse_args(
+        ["compare", "--endpoints", "x.yaml", "--budget", "long"]
+    )
+    apply_job(ns)
+    assert ns.workload == "general"
+    assert ns.sample_budget == "long"
+    assert ns.archive is False
+    assert ns.logs_range == 0
+    assert ns.lookback == 0
+    assert ns.websocket == 0.0
+    assert ns.simulate is False
+
+
+def test_job_explicit_flags_override() -> None:
+    from rpcbench.cli import apply_job
+
+    wallet = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--workload", "wallet", "--no-simulate"]
+    )
+    apply_job(wallet)
+    assert wallet.simulate is False
+
+    general = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--simulate", "--archive"]
+    )
+    apply_job(general)
+    assert general.workload == "general"
+    assert general.simulate is True
+    assert general.archive is True
+
+    indexer = build_parser().parse_args(
+        [
+            "compare",
+            "--endpoints",
+            "x.yaml",
+            "--workload",
+            "indexer",
+            "--no-archive",
+            "--logs-range",
+            "0",
+            "--lookback",
+            "0",
+        ]
+    )
+    apply_job(indexer)
+    assert indexer.archive is False
+    assert indexer.logs_range == 0
+    assert indexer.lookback == 0
+
+
+def test_job_method_preset_and_profile_mix_still_work() -> None:
+    from rpcbench.cli import apply_job
+    from rpcbench.methods import canonical_workload, resolve_workload
+
+    head = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--method", "eth_blockNumber"]
+    )
+    apply_job(head)
+    plan = resolve_workload(
+        profile=head.profile,
+        workload=head.workload,
+        method=head.method,
+        preset=head.preset,
+        params_json=head.params,
+    )
+    assert plan.label == "eth_blockNumber"
+    assert head.sample_budget == "standard"
+    assert head.simulate is False
+
+    preset = build_parser().parse_args(
+        ["compare", "--endpoints", "x.yaml", "--preset", "head"]
+    )
+    apply_job(preset)
+    plan = resolve_workload(
+        profile=preset.profile,
+        workload=preset.workload,
+        method=preset.method,
+        preset=preset.preset,
+        params_json=preset.params,
+    )
+    assert plan.steps[0].method == "eth_blockNumber"
+
+    mix = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--profile", "mix"]
+    )
+    apply_job(mix)
+    plan = resolve_workload(
+        profile=mix.profile,
+        workload=mix.workload,
+        method=mix.method,
+        preset=mix.preset,
+        params_json=mix.params,
+    )
+    assert canonical_workload(plan.label) == "general"
+    assert mix.archive is False
+    assert mix.simulate is False
+
+
+def test_compare_help_hides_lab_flags(capsys) -> None:
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["compare", "--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--endpoints" in out
+    assert "--workload" in out
+    assert "--budget" in out
+    assert "--output" in out
+    assert "--batch" not in out
+    assert "--http2" not in out
+    assert "--method" not in out
+
+    with pytest.raises(SystemExit) as exc:
+        main(["compare", "--help-all"])
+    assert exc.value.code == 0
+    full = capsys.readouterr().out
+    assert "--batch" in full
+    assert "--method" in full
+    assert "--websocket" in full
+    assert "record" in main_help(capsys)
+
+
+def main_help(capsys) -> str:
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--help-all"])
+    assert exc.value.code == 0
+    return capsys.readouterr().out
 
 
 def test_cli_sample_budget_short() -> None:
@@ -142,7 +321,9 @@ def test_cli_short_budget_two_endpoints(tmp_path: Path, monkeypatch, capsys) -> 
     import rpcbench.cli as cli
 
     monkeypatch.setattr(cli, "run_endpoints", wrapped)
-    code = main(["run", "--endpoints", str(cfg), "--budget", "short"])
+    code = main(
+        ["run", "--endpoints", str(cfg), "--budget", "short", "--method", "eth_blockNumber"]
+    )
     assert code == 0
     assert calls["n"] == 16
     out = capsys.readouterr().out
@@ -186,6 +367,8 @@ def test_cli_run_mixed(tmp_path: Path, monkeypatch, capsys) -> None:
             "run",
             "--endpoints",
             str(cfg),
+            "--method",
+            "eth_blockNumber",
             "--samples",
             "1",
             "--warmup",
@@ -548,7 +731,7 @@ def test_cli_kill_switch_file(tmp_path: Path, monkeypatch, capsys) -> None:
 def test_cli_budget_hard_cap(monkeypatch, capsys) -> None:
     monkeypatch.setenv("RPCBENCH_MAX_REQUESTS", "4")
     code = main(
-        ["run", "--endpoints", "http://127.0.0.1:8545", "--max-requests", "5"]
+        ["run", "--endpoints", "http://127.0.0.1:8545", "--method", "eth_blockNumber", "--max-requests", "5"]
     )
     assert code == 2
     assert "hard cap" in capsys.readouterr().err
@@ -801,6 +984,8 @@ def test_cli_block_pin_is_passed(tmp_path: Path, monkeypatch, capsys) -> None:
             "run",
             "--endpoints",
             str(cfg),
+            "--method",
+            "eth_blockNumber",
             "--block",
             "0x10",
             "--samples",
@@ -1344,6 +1529,8 @@ def test_cli_batch_budget_too_low(tmp_path: Path, capsys) -> None:
             "run",
             "--endpoints",
             str(cfg),
+            "--method",
+            "eth_blockNumber",
             "--samples",
             "1",
             "--warmup",
@@ -1394,7 +1581,12 @@ def test_cli_logs_range(tmp_path: Path, monkeypatch, capsys) -> None:
             )
         if method == "eth_getLogs":
             filt = payload["params"][0]
-            start = int(filt["fromBlock"], 16)
+            start_raw = filt["fromBlock"]
+            if not isinstance(start_raw, str) or not start_raw.startswith("0x"):
+                return httpx.Response(
+                    200, json={"jsonrpc": "2.0", "id": 1, "result": []}
+                )
+            start = int(start_raw, 16)
             end = int(filt["toBlock"], 16)
             spans.append(end - start + 1)
             return httpx.Response(
@@ -1691,7 +1883,7 @@ def test_cli_wallet_omits_logs_indexer_includes_them(
     assert methods.count("eth_call") == 3
     assert methods.count("eth_estimateGas") == 2
     assert "eth_getLogs" not in methods
-    assert "eth_simulateV1" not in methods
+    assert "eth_simulateV1" in methods
 
     methods.clear()
     code = main(
@@ -1701,6 +1893,11 @@ def test_cli_wallet_omits_logs_indexer_includes_them(
             str(cfg),
             "--workload",
             "indexer",
+            "--logs-range",
+            "0",
+            "--lookback",
+            "0",
+            "--no-archive",
             "--samples",
             "1",
             "--warmup",

@@ -20,20 +20,17 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--samples 1 --warmup 0`). No local node in CI; the smoke passes if either public endpoint is ok.
+PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--method eth_blockNumber --samples 1 --warmup 0`). No local node in CI; the smoke passes if either public endpoint is ok.
 
 ## Start
 
 ```bash
-rpcbench compare --endpoints https://ethereum.publicnode.com --budget short
-rpcbench compare --endpoints endpoints.yaml --workload --budget short
-rpcbench compare --endpoints endpoints.yaml --workload wallet --budget short
-rpcbench compare --endpoints endpoints.yaml --workload tracing --budget short
-rpcbench compare --endpoints endpoints.yaml --profile mix --budget short --json
-rpcbench compare --endpoints endpoints.yaml --profile my-mix.yaml --seed 7 --budget short
-rpcbench record --endpoints endpoints.yaml --workload wallet -o capture.jsonl
-rpcbench replay --endpoints endpoints.yaml --from capture.jsonl
+rpcbench compare --endpoints endpoints.yaml
+rpcbench compare --endpoints endpoints.yaml --workload wallet
+rpcbench compare --endpoints endpoints.yaml --html -o report.html
 ```
+
+The first command is the **general** mix at **short** size (verdict and route). `--workload wallet` or `trading` also runs simulate. `--workload indexer` also runs logs-range, archive, and lookback. `--budget` only changes how long to sample. A single call is `--method eth_blockNumber`. Lab flags (`--batch`, `--websocket`, `--rank-by`, …) are in `rpcbench compare --help-all`.
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
 
@@ -51,17 +48,7 @@ endpoints:
       X-Api-Key: YOUR_KEY
 ```
 
-```bash
-rpcbench run --endpoints endpoints.yaml
-rpcbench compare --endpoints endpoints.yaml --json
-rpcbench run --endpoints endpoints.yaml -o report.json
-rpcbench compare --endpoints endpoints.yaml --html -o report.html
-rpcbench compare --endpoints endpoints.yaml --md
-rpcbench compare --endpoints endpoints.yaml --csv -o report.csv
-rpcbench diff old.json new.json
-```
-
-`run` and `compare` are the same command.
+`run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
 
 ## Report
 
@@ -136,15 +123,15 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **Paired by default:** one shared read-only sequence; each sample is raced to every provider at the same time. `--sequential` is A-then-B.
 - **`--budget`** picks a named size (`short` / `standard` / `long`). That sets how many mix rounds to take. **`--max-requests`** is the HTTP cap (how many requests the run may send). `--samples` and `--warmup` override the named size. `long` is more samples only — not archive, WebSocket, or tracing unless the workload asks.
 - **`--workload general|wallet|indexer|trading|nft|tracing`** runs a documented, weighted, read-only mix. Omit the name for **general**. **`--profile mix`** is the same as `--workload general`. `--samples` is per mix round; a step’s weight is how often it appears in that round. Ranking uses the whole mix, not one cheap head read. **Coverage** is those methods only: `ok`, error class, or `skip` if not offered. A failing `eth_getLogs` is a miss for `--workload indexer`, not a vuln; `--workload wallet` does not send logs and emphasizes `eth_getBalance` / `eth_call` / `eth_estimateGas`. **`--workload tracing`** times optional `trace_block` and `debug_traceCall`; missing traces skip, not a crash. Payloads and weights: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
-- **`--simulate`** adds read-only `eth_call`, `eth_estimateGas`, and `eth_simulateV1` (fixture tx, never a send). Missing simulateV1 is skip, not a crash, and does not tank ranking. Details: [Read-only simulation](docs/METHODOLOGY.md#read-only-simulation).
+- **`--simulate`** adds read-only `eth_call`, `eth_estimateGas`, and `eth_simulateV1` (fixture tx, never a send). **wallet** and **trading** turn this on. `--no-simulate` turns it off. Missing simulateV1 is skip, not a crash, and does not tank ranking. Details: [Read-only simulation](docs/METHODOLOGY.md#read-only-simulation).
 - **`--profile FILE.yaml`** is a custom mix you write (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed` so every provider gets the same sequence. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. Full YAML example, sources, seed, and fallback: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
 - **Burst** is opt-in (`--burst N`, max 8). The first N timed samples overlap; the rest are a steady phase, optionally capped with `--rps`. Burst splits the existing sample budget and does not add requests. Burst vs steady error rate and rps are reported separately. Tag 429s are `tags=N` on that table (not mixed into timed n/err). Default is off (`--burst 0`, `--rps 0`). Ramp/spike/soak shapes are a later issue.
 - **Concurrency** is opt-in (`--concurrency N`, omit N for 4, max 8). After timed samples, RPCBench sends N overlapping HTTP POSTs of the primary method, then the same N calls one-by-one, and reports per-request concurrent P50/P95 vs serial P50 plus the concurrent error count. Adds 2N requests per endpoint. Default is off (`--concurrency 0`). Not an unbounded load test.
 - **Throughput** is opt-in (`--throughput N`, omit N for 20, max 64). After timed samples, RPCBench sends N extra serial POSTs of the primary method and reports successful req/s, wall duration, and completed count. `--rps` caps how often those starts fire. HTTP 429 is a rejected request (`rate_limit`), not a crash. Adds N requests per endpoint. Default is off (`--throughput 0`). Not concurrent fan-out and not an unbounded load test.
 - **Batch** is opt-in (`--batch N`, omit N for 3, max 8). After timed samples, RPCBench sends one JSON-RPC array of N copies of the primary method, then the same N calls one-by-one, and reports wall-clock and the serial/batch ratio. A single-object error means the provider does not support batch (capability, not a crash). Partial item errors are marked `partial`. Adds 1+N requests per endpoint. Default is off (`--batch 0`). Not HTTP/2 multiplexing.
-- **Logs range** is opt-in (`--logs-range N`, omit N for 1000). After the pin, the same zero-address `eth_getLogs` is sent at 1, 10, 100, and up to N blocks. Mix logs stay `latest→latest`. Too-short chains skip with `head`. Truncation and 1000-only failures show in the Logs range table. Adds up to 4 requests per endpoint. Default is off (`--logs-range 0`).
-- **`--archive`** probes historical state with one `eth_getBalance` of the zero address at genesis. Classified yes / no / unknown / rate-limited. Chains shorter than 128 blocks skip with `head`. Missing archive is a capability result, not a crash, and does not change ranking. Details: [Archive / historical state](docs/METHODOLOGY.md#archive--historical-state).
-- **`--lookback N`** times `eth_getBalance` at `pin−N` vs `latest` (omit N for 1000). Reuses `--archive` to skip when the node has no history. Not mixed into ranking. Details: [Historical queries](docs/METHODOLOGY.md#historical-queries).
+- **Logs range** is on for **indexer** (1000 blocks) and otherwise opt-in (`--logs-range N`, omit N for 1000, `0` off). After the pin, the same zero-address `eth_getLogs` is sent at 1, 10, 100, and up to N blocks. Mix logs stay `latest→latest`. Too-short chains skip with `head`. Truncation and 1000-only failures show in the Logs range table. Adds up to 4 requests per endpoint.
+- **`--archive`** probes historical state with one `eth_getBalance` of the zero address at genesis. **indexer** turns this on. `--no-archive` turns it off. Classified yes / no / unknown / rate-limited. Chains shorter than 128 blocks skip with `head`. Missing archive is a capability result, not a crash, and does not change ranking. Details: [Archive / historical state](docs/METHODOLOGY.md#archive--historical-state).
+- **`--lookback N`** times `eth_getBalance` at `pin−N` vs `latest` (indexer uses 1000; otherwise omit N for 1000, `0` off). Reuses `--archive` to skip when the node has no history. Not mixed into ranking. Details: [Historical queries](docs/METHODOLOGY.md#historical-queries).
 - **`--websocket SEC`** times WebSocket connect, `eth_subscribe` `newHeads`, and first-event delivery over a bounded window (omit SEC for 3s, max 10s). Needs an optional `ws` / `websocket` URL on the endpoint (`ws://` or `wss://`). Missing WS is **not configured**. Disconnects and missed block-number gaps are counted in that window. Does not consume `--max-requests`. Not mixed into ranking. Details: [WebSocket subscribe](docs/METHODOLOGY.md#websocket-subscribe).
 
 ### Stats
@@ -196,54 +183,19 @@ These are not mixed into latency stats or Fastest.
 
 ## Flags
 
-```bash
-rpcbench run --endpoints endpoints.yaml --budget short
-rpcbench run --endpoints endpoints.yaml --workload --budget short
-rpcbench run --endpoints endpoints.yaml --workload wallet --budget short
-rpcbench run --endpoints endpoints.yaml --workload tracing --budget short
-rpcbench run --endpoints endpoints.yaml --profile mix --budget standard --max-requests 512
-rpcbench compare --endpoints http://127.0.0.1:8545
-rpcbench run --endpoints endpoints.yaml --rank-by p95
-rpcbench run --endpoints endpoints.yaml --burst 4 --rps 2
-rpcbench run --endpoints endpoints.yaml --batch
-rpcbench run --endpoints endpoints.yaml --concurrency
-rpcbench run --endpoints endpoints.yaml --throughput --rps 5
-rpcbench run --endpoints endpoints.yaml --logs-range
-rpcbench run --endpoints endpoints.yaml --simulate --budget short
-rpcbench run --endpoints endpoints.yaml --archive --budget short
-rpcbench run --endpoints endpoints.yaml --lookback --budget short
-rpcbench run --endpoints endpoints.yaml --websocket
-rpcbench run --endpoints endpoints.yaml --workload wallet --simulate --budget short
-rpcbench run --endpoints endpoints.yaml --workload indexer --logs-range --budget short
-rpcbench run --endpoints endpoints.yaml --profile my-mix.yaml --seed 7
-rpcbench run --endpoints endpoints.yaml --sequential
-rpcbench run --endpoints endpoints.yaml --new-connection
-rpcbench run --endpoints endpoints.yaml --verbose
-rpcbench run --endpoints endpoints.yaml --verbose --json
-rpcbench run --endpoints endpoints.yaml --html -o report.html
-rpcbench run --endpoints endpoints.yaml --md
-rpcbench run --endpoints endpoints.yaml --csv -o report.csv
-rpcbench run --endpoints endpoints.yaml --history reports/
-rpcbench diff old.json new.json
-rpcbench diff --history reports/
-rpcbench record --endpoints endpoints.yaml --workload wallet -o capture.jsonl
-rpcbench replay --endpoints endpoints.yaml --from capture.jsonl
-rpcbench replay --endpoints endpoints.yaml --from capture.jsonl --verbose
-```
-
-`--profile FILE.yaml` is a custom weighted mix (methods, weights, optional timeout/notes). `source: latest_head|recent_block|known_contract|seeded_address` fills params from a shared chain snapshot and `--seed`. If the chain cannot supply data, documented fixtures (`latest`, zero address) are used. YAML schema, sources table, and an example file: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles).
+Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extras on: wallet and trading add simulate; indexer adds logs-range, archive, and lookback. `--budget long` does not. Overrides (`--no-simulate`, `--no-archive`, `--logs-range 0`, `--lookback 0`, `--websocket 0`) and the rest of the lab flags are `rpcbench compare --help-all`. `--profile FILE.yaml` is a custom mix. `--preset`, `--profile mix`, and `run` still work.
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
 
 | `--budget` | Samples | Warmup | Timeout | Stop after |
 | --- | --- | --- | --- | --- |
 | `short` | 3 | 0 | 5s | 30s |
-| `standard` (default) | 10 | 1 | 10s | 600s |
+| `standard` | 10 | 1 | 10s | 600s |
 | `long` | 50 | 2 | 15s | 1800s |
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--budget` | `standard` | Named size in the table above |
+| `--budget` | `short` with no other flags; else `standard` | Named size in the table above. Does not enable archive, WebSocket, or tracing |
 | `--samples` | 10 | Timed mix rounds after warmup (overrides `--budget`). Each round sends `sum(weights)` calls |
 | `--warmup` | 1 | Requests excluded from stats (overrides `--budget`) |
 | `--timeout` | 10s | Per-request timeout (overrides `--budget`) |
@@ -254,10 +206,10 @@ rpcbench replay --endpoints endpoints.yaml --from capture.jsonl --verbose
 | `--rps` | 0 | Cap starts/sec after `--burst` and during `--throughput` (`0`=off). Does not raise the budget |
 | `--throughput` | 0 | Extra serial POSTs for successful req/s (`0`=off, omit N for 20, max 64). Extra N requests/endpoint. 429 is rejected |
 | `--batch` | 0 | JSON-RPC batch of N vs N serial (`0`=off, omit N for 3, max 8). Extra 1+N requests/endpoint |
-| `--logs-range` | 0 | Pinned `eth_getLogs` at 1/10/100/up to N blocks (`0`=off, omit N for 1000). Mix logs stay 1 block |
-| `--simulate` | off | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. Missing simulateV1 is skip |
-| `--archive` | off | Probe `eth_getBalance` at genesis. yes / no / unknown / rate-limited. Not mixed into ranking |
-| `--lookback` | 0 | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
+| `--logs-range` | 0 (1000 on indexer) | Pinned `eth_getLogs` at 1/10/100/up to N blocks (`0`=off, omit N for 1000). Mix logs stay 1 block |
+| `--simulate` | on for wallet and trading | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. `--no-simulate` turns it off. Missing simulateV1 is skip |
+| `--archive` | on for indexer | Probe `eth_getBalance` at genesis. yes / no / unknown / rate-limited. `--no-archive` turns it off. Not mixed into ranking |
+| `--lookback` | 0 (1000 on indexer) | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
 | `--websocket` | 0 | Connect + `eth_subscribe` `newHeads` (`0`=off, omit SEC for 3s, max 10s). Missing WS is not configured |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
@@ -269,9 +221,9 @@ rpcbench replay --endpoints endpoints.yaml --from capture.jsonl --verbose
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--workload` | | `general` (omit name), `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix; compose with `--budget`. Do not combine with `--method` or `--preset` |
-| `--profile` | | Alias for `--workload`, or a YAML mix file. `mix` = `general`. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
-| `--method` / `--params` | `eth_blockNumber` | JSON-RPC method and JSON array of params. Do not combine `--method` with `--preset` |
+| `--workload` | `general` when omitted | `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix. Omit the flag for general + short. Do not combine with `--method` or `--preset` |
+| `--profile` | | YAML mix file, or alias `mix` = general. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
+| `--method` / `--params` | | Single JSON-RPC method and JSON array of params. Head probe: `--method eth_blockNumber`. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
 | `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, History, and WebSocket are already in the compact report when those flags are set. Replay prints body diffs |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |

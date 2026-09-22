@@ -8,7 +8,7 @@ Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitt
 
 ## Method mix
 
-Default CLI is still one method (`eth_blockNumber`). **`--workload general|wallet|indexer|trading|nft|tracing`** is the documented production-like mix (`--workload` with no name is **general**). **`--profile mix`** is the old name for `--workload general`. `--budget short|standard|long` sets how many rounds to take. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`, and compact CLI when an optional step is in the mix) is per step.
+Default CLI is the **general** mix at **short** size when you pass only `--endpoints`. **`--workload wallet|indexer|trading|nft|tracing`** is the other documented job (`wallet` and `trading` also run simulate; `indexer` also runs logs-range, archive, and lookback). **`--profile mix`** is the old name for general. A single call is **`--method`** (head is `eth_blockNumber`) or **`--preset`**. `--budget short|standard|long` sets how many rounds to take and does not turn extras on. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`, and compact CLI when an optional step is in the mix) is per step.
 
 An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Privileged debug recon (`debug_memStats`, `debug_verbosity`, …) is never in catalogs. `trace_*` and `debug_traceCall` are **`--workload tracing`** (or a YAML mix you write) only.
 
