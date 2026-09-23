@@ -87,7 +87,10 @@ def optional_skip_reason(hit: ProbeResult) -> str | None:
 def coverage_steps(result: RunResult) -> tuple[CallSpec, ...]:
     if result.workload:
         return result.workload
-    name = "head" if result.method == "eth_blockNumber" and not result.params else "call"
+    from rpcbench.family import head_method_for
+
+    head = head_method_for(result.family)
+    name = "head" if result.method == head and not result.params else "call"
     return (CallSpec(name, result.method, tuple(result.params)),)
 
 

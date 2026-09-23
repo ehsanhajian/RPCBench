@@ -76,6 +76,7 @@ from rpcbench.rpc import (
     probe_batch,
 )
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
+from rpcbench.family import benchmark_family
 from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
 from rpcbench.tags import (
     BLOCK_TAGS,
@@ -557,6 +558,7 @@ def run_endpoints(
     lookback: int = 0,
     websocket: float = 0.0,
     open_ws=None,
+    family: str = FAMILY_EVM,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -598,6 +600,7 @@ def run_endpoints(
     try:
         payload = None
         if has_dynamic_source(steps):
+            adapter = benchmark_family(family)
             steps, payload = _bind_from_chain(
                 config,
                 steps,
@@ -607,6 +610,8 @@ def run_endpoints(
                 deadline=deadline,
                 concurrency=1 if mode == MODE_SEQUENTIAL else concurrency,
                 client=client,
+                head_method=adapter.head_method,
+                chain_method=adapter.chain_method,
             )
             if len(steps) == 1:
                 rpc_params = list(steps[0].params)
@@ -656,6 +661,7 @@ def run_endpoints(
             lookback=lookback,
             websocket=websocket,
             open_ws=open_ws,
+            family=family,
         )
     finally:
         if owns_client:
@@ -672,6 +678,8 @@ def _bind_from_chain(
     deadline: float | None,
     concurrency: int,
     client,
+    head_method: str,
+    chain_method: str,
 ) -> tuple[tuple[CallSpec, ...], PayloadMeta]:
     """Paired extra reads to fill YAML sources. Not mixed into ranking."""
     need_head, need_chain = hint_needs(steps)
@@ -680,7 +688,7 @@ def _bind_from_chain(
     if need_head:
         hits = _probe_wave(
             config,
-            method="eth_blockNumber",
+            method=head_method,
             params=[],
             timeout=timeout,
             budget=purse,
@@ -699,7 +707,7 @@ def _bind_from_chain(
     if need_chain:
         hits = _probe_wave(
             config,
-            method="eth_chainId",
+            method=chain_method,
             params=[],
             timeout=timeout,
             budget=purse,
@@ -765,7 +773,9 @@ def _execute_run(
     lookback: int,
     websocket: float,
     open_ws,
+    family: str,
 ) -> RunResult:
+    adapter = benchmark_family(family)
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
             config,
@@ -795,10 +805,10 @@ def _execute_run(
         )
     extra_heads: dict[str, ProbeResult] = {}
     wave_concurrency = 1 if mode == MODE_SEQUENTIAL else concurrency
-    if not any(spec.method == "eth_blockNumber" for spec in steps):
+    if not any(spec.method == adapter.head_method for spec in steps):
         extra_heads = _probe_wave(
             config,
-            method="eth_blockNumber",
+            method=adapter.head_method,
             params=[],
             timeout=timeout,
             budget=purse,
@@ -806,10 +816,12 @@ def _execute_run(
             concurrency=wave_concurrency,
             client=client,
         )
-    chain_id = _sample_chain_id(outcomes)
+    chain_id = _sample_chain_id(outcomes, adapter.chain_method)
     resolved_time = block_time_for_chain(chain_id, block_time_s)
     heights = {
-        outcome.endpoint.name: _head_height(outcome, method, extra_heads)
+        outcome.endpoint.name: _head_height(
+            outcome, method, extra_heads, adapter.head_method
+        )
         for outcome in outcomes
     }
     judged = assess_freshness(
@@ -825,7 +837,7 @@ def _execute_run(
     if pin is not None:
         extra_blocks = _probe_wave(
             config,
-            method="eth_getBlockByNumber",
+            method=adapter.block_method,
             params=[hex(pin), False],
             timeout=timeout,
             budget=purse,
@@ -863,7 +875,7 @@ def _execute_run(
     for tag in BLOCK_TAGS:
         hits = _probe_wave(
             config,
-            method="eth_getBlockByNumber",
+            method=adapter.block_method,
             params=[tag, False],
             timeout=timeout,
             budget=purse,
@@ -893,7 +905,7 @@ def _execute_run(
             deadline=deadline,
             concurrency=wave_concurrency,
             client=client,
-            family=FAMILY_EVM,
+            family=family,
         )
         outcomes = [
             replace(
@@ -915,7 +927,7 @@ def _execute_run(
             deadline=deadline,
             concurrency=wave_concurrency,
             client=client,
-            family=FAMILY_EVM,
+            family=family,
         )
         outcomes = [
             replace(
@@ -934,7 +946,7 @@ def _execute_run(
             deadline=deadline,
             concurrency=wave_concurrency,
             client=client,
-            family=FAMILY_EVM,
+            family=family,
         )
         outcomes = [
             replace(
@@ -1005,7 +1017,7 @@ def _execute_run(
                 window=websocket,
                 timeout=timeout,
                 deadline=deadline,
-                family=FAMILY_EVM,
+                family=family,
                 open_ws=open_ws,
             )
             for outcome in outcomes
@@ -1048,7 +1060,7 @@ def _execute_run(
         archive=archive,
         lookback=lookback,
         websocket=websocket,
-        family=FAMILY_EVM,
+        family=family,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
         vantage=vantage_label(),
@@ -1057,12 +1069,14 @@ def _execute_run(
     )
 
 
-def _sample_height(outcome: EndpointOutcome, run_method: str) -> int | None:
+def _sample_height(
+    outcome: EndpointOutcome, run_method: str, head_method: str
+) -> int | None:
     for hit in outcome.samples:
         if not hit.ok:
             continue
         method = hit.method or run_method
-        if method != "eth_blockNumber":
+        if method != head_method:
             continue
         height = parse_block_height(hit.result)
         if height is not None:
@@ -1074,8 +1088,9 @@ def _head_height(
     outcome: EndpointOutcome,
     run_method: str,
     extra: dict[str, ProbeResult],
+    head_method: str,
 ) -> int | None:
-    height = _sample_height(outcome, run_method)
+    height = _sample_height(outcome, run_method, head_method)
     if height is not None:
         return height
     hit = extra.get(outcome.endpoint.name)
@@ -1084,12 +1099,14 @@ def _head_height(
     return parse_block_height(hit.result)
 
 
-def _sample_chain_id(outcomes: list[EndpointOutcome]) -> int | None:
+def _sample_chain_id(
+    outcomes: list[EndpointOutcome], chain_method: str
+) -> int | None:
     for outcome in outcomes:
         for hit in outcome.samples:
             if not hit.ok:
                 continue
-            if (hit.method or "") != "eth_chainId":
+            if (hit.method or "") != chain_method:
                 continue
             parsed = parse_block_height(hit.result)
             if parsed is not None:
