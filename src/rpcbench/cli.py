@@ -24,6 +24,7 @@ from rpcbench.capture import (
     reject_write_calls,
     replay_calls,
 )
+from rpcbench.family import benchmark_family, resolve_benchmark_family
 from rpcbench.diff import (
     DiffError,
     compare_reports,
@@ -125,6 +126,7 @@ _LAB_DESTS = frozenset(
         "block_time",
         "block",
         "verbose",
+        "family",
     }
 )
 _SIMULATE_JOBS = frozenset({"wallet", "trading"})
@@ -243,6 +245,16 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
             "Sets samples, warmup, timeout, and max duration. "
             "Does not enable archive, WebSocket, or tracing. "
             "Not a Nodeprobe scan profile. HTTP cap is --max-requests."
+        ),
+    )
+    run.add_argument(
+        "--family",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Benchmark family for every endpoint (overrides the file). "
+            "evm is the default. auto detects from eth_chainId, getHealth, "
+            "or system_health. Unimplemented families error. Not a scan."
         ),
     )
     run.add_argument(
@@ -826,6 +838,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
             args.timeout = plan.timeout
         apply_sample_budget(args)
         config = load_targets(args.endpoints)
+        family_name = resolve_benchmark_family(
+            config, override=args.family, timeout=args.timeout
+        )
+        head_method = benchmark_family(family_name).head_method
         method, workload = plan.label, plan.steps
         if args.simulate:
             workload = apply_simulate(workload)
@@ -837,7 +853,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             * units
             * (args.samples + args.warmup)
         )
-        if not any(spec.method == "eth_blockNumber" for spec in workload):
+        if not any(spec.method == head_method for spec in workload):
             needed += len(config.endpoints)
         needed += len(config.endpoints)
         needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
@@ -997,6 +1013,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         archive=args.archive,
         lookback=args.lookback,
         websocket=args.websocket,
+        family=family_name,
     )
     json_blob = None
     md_blob = None

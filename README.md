@@ -221,6 +221,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
+| `--family` | `evm` | Benchmark family. `auto` detects from `eth_chainId` / `getHealth` / `system_health`. Unimplemented families error. Not a scan |
 | `--workload` | `general` when omitted | `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix. Omit the flag for general + short. Do not combine with `--method` or `--preset` |
 | `--profile` | | YAML mix file, or alias `mix` = general. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | | Single JSON-RPC method and JSON array of params. Head probe: `--method eth_blockNumber`. Do not combine `--method` with `--preset` |

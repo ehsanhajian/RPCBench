@@ -22,6 +22,7 @@ class Endpoint:
     url: str
     headers: tuple[tuple[str, str], ...] = ()
     ws_url: str | None = None
+    family: str = "evm"
 
     @property
     def display_url(self) -> str:
@@ -98,8 +99,17 @@ def parse_endpoints(data: object, *, source: str = "config") -> BenchConfig:
             )
         headers = _parse_headers(item, source=source, index=i, name=name)
         ws_url = _parse_ws_url(item, source=source, index=i, name=name)
+        family = _parse_family(item, source=source, index=i, name=name)
         seen.add(name)
-        endpoints.append(Endpoint(name=name, url=url, headers=headers, ws_url=ws_url))
+        endpoints.append(
+            Endpoint(
+                name=name,
+                url=url,
+                headers=headers,
+                ws_url=ws_url,
+                family=family,
+            )
+        )
     return BenchConfig(endpoints=tuple(endpoints))
 
 
@@ -157,3 +167,19 @@ def _parse_ws_url(
             f"{source}: endpoints[{index}] ({name}) WS URL must be ws or wss"
         )
     return ws_url
+
+
+def _parse_family(item: dict, *, source: str, index: int, name: str) -> str:
+    from rpcbench.family import normalize_family
+
+    if "family" not in item:
+        return normalize_family(None)
+    raw = item.get("family")
+    if not isinstance(raw, str):
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) family must be a name"
+        )
+    try:
+        return normalize_family(raw)
+    except ConfigError as exc:
+        raise ConfigError(f"{source}: endpoints[{index}] ({name}) {exc}") from exc

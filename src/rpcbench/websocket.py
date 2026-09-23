@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from rpcbench.config import Endpoint
+from rpcbench.family import EVM
 from rpcbench.freshness import parse_block_height
 from rpcbench.logs import family_skip_reason
 
 DEFAULT_WEBSOCKET = 3.0
 MAX_WEBSOCKET = 10.0
-SUBSCRIBE_METHOD = "eth_subscribe"
-SUBSCRIBE_PARAMS = ("newHeads",)
+SUBSCRIBE_METHOD = EVM.ws_method
+SUBSCRIBE_PARAMS = EVM.ws_params
 _SUBSCRIBE_ID = 1
 
 OpenWS = Callable[..., Any]
