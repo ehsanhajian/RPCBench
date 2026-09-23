@@ -8,13 +8,21 @@ from pathlib import Path
 from typing import Any, Iterator
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+# Solana system program. Cheap balance / account / signature reads.
+SYSTEM_PROGRAM = "11111111111111111111111111111111"
 FAMILY_EVM = "evm"
+FAMILY_SOLANA = "solana"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("eth_blockNumber", []),
     "chainId": ("eth_chainId", []),
     "balance": ("eth_getBalance", [ZERO_ADDRESS, "latest"]),
+}
+SOLANA_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("getSlot", []),
+    "chainId": ("getGenesisHash", []),
+    "balance": ("getBalance", [SYSTEM_PROGRAM]),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -117,6 +125,40 @@ def _simulate(weight: int = 1) -> CallSpec:
 
 def _logs(weight: int = 1) -> CallSpec:
     return CallSpec("logs", "eth_getLogs", (_LOGS_FILTER,), weight)
+
+
+def _sol_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "getSlot", (), weight)
+
+
+def _sol_genesis(weight: int = 1) -> CallSpec:
+    return CallSpec("genesis", "getGenesisHash", (), weight)
+
+
+def _sol_blockhash(weight: int = 1) -> CallSpec:
+    return CallSpec("blockhash", "getLatestBlockhash", (), weight)
+
+
+def _sol_balance(weight: int = 1) -> CallSpec:
+    return CallSpec("balance", "getBalance", (SYSTEM_PROGRAM,), weight)
+
+
+def _sol_account(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "account",
+        "getAccountInfo",
+        (SYSTEM_PROGRAM, {"encoding": "base64"}),
+        weight,
+    )
+
+
+def _sol_signatures(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "signatures",
+        "getSignaturesForAddress",
+        (SYSTEM_PROGRAM, {"limit": 1}),
+        weight,
+    )
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -236,10 +278,52 @@ _EVM_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
-# Family → named mix. Solana/others are not shipped; resolve errors instead of
-# sending EVM methods at a non-EVM endpoint.
+# Solana catalogs. No eth_*, no Geyser. tracing stays EVM-only.
+_SOLANA_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _sol_head(),
+        _sol_genesis(),
+        _sol_blockhash(),
+        _sol_balance(),
+        _sol_account(),
+        _sol_signatures(),
+    ),
+    "wallet": (
+        _sol_head(),
+        _sol_genesis(),
+        _sol_blockhash(),
+        _sol_balance(4),
+        _sol_account(3),
+        _sol_blockhash(2),
+    ),
+    "indexer": (
+        _sol_head(),
+        _sol_genesis(),
+        _sol_blockhash(3),
+        _sol_account(),
+        _sol_signatures(4),
+    ),
+    "trading": (
+        _sol_head(3),
+        _sol_genesis(),
+        _sol_blockhash(2),
+        _sol_account(4),
+        _sol_balance(2),
+    ),
+    "nft": (
+        _sol_head(),
+        _sol_genesis(),
+        _sol_blockhash(),
+        _sol_balance(),
+        _sol_account(3),
+        _sol_signatures(3),
+    ),
+}
+
+# Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
+    FAMILY_SOLANA: _SOLANA_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -253,6 +337,13 @@ _WRITE_PREFIXES = (
     "miner_",
     "admin_",
     "wallet_",
+)
+_SOLANA_WRITE_METHODS = frozenset(
+    {
+        "sendtransaction",
+        "sendandsigntransaction",
+        "requestairdrop",
+    }
 )
 
 # Privileged namespaces. App mixes must never use these as a probe.
@@ -339,22 +430,25 @@ def resolve_method(
     preset: str | None,
     params_json: str | None,
     allow_writes: bool = False,
+    family: str = FAMILY_EVM,
 ) -> tuple[str, list[Any]]:
     if preset and method:
         raise MethodError("use either --preset or --method, not both")
+    packs = SOLANA_PRESETS if family == FAMILY_SOLANA else PRESETS
     if preset:
         key = preset.strip().lower()
-        matched = next((name for name in PRESETS if name.lower() == key), None)
+        matched = next((name for name in packs if name.lower() == key), None)
         if matched is None:
-            known = ", ".join(sorted(PRESETS))
+            known = ", ".join(sorted(packs))
             raise MethodError(f"unknown preset {preset!r} (try {known})")
-        name, params = PRESETS[matched]
+        name, params = packs[matched]
         if params_json:
             params = parse_params(params_json)
         if not allow_writes:
             _reject_writes(name)
         return name, params
-    name = (method or "eth_blockNumber").strip()
+    default = "getSlot" if family == FAMILY_SOLANA else "eth_blockNumber"
+    name = (method or default).strip()
     if not name:
         raise MethodError("method is required")
     if not allow_writes:
@@ -406,29 +500,39 @@ def resolve_workload(
         preset=preset,
         params_json=params_json,
         allow_writes=allow_writes,
+        family=family,
     )
     step = "call"
     if preset:
+        packs = SOLANA_PRESETS if family == FAMILY_SOLANA else PRESETS
         matched = next(
-            (n for n in PRESETS if n.lower() == preset.strip().lower()), None
+            (n for n in packs if n.lower() == preset.strip().lower()), None
         )
         if matched:
             step = matched
+    elif family == FAMILY_SOLANA and name == "getSlot" and not params:
+        step = "head"
     elif name == "eth_blockNumber" and not params:
         step = "head"
     return WorkloadPlan(label=name, steps=(CallSpec(step, name, tuple(params)),))
 
 
 def family_workload(family: str, name: str) -> tuple[CallSpec, ...]:
-    """Named mix for this RPC family. EVM only today."""
+    """Named mix for this RPC family."""
     catalog = canonical_workload(name)
     if catalog is None:
         known = ", ".join(("mix",) + APP_WORKLOADS)
         raise MethodError(f"unknown --workload {name!r} (try {known})")
     families = WORKLOADS.get(family)
     if families is None:
+        have = ", ".join(sorted(WORKLOADS))
         raise MethodError(
-            f"app workloads are {FAMILY_EVM}-only today (got family {family!r})"
+            f"app workloads have no mix for family {family!r} (have: {have})"
+        )
+    if catalog not in families:
+        have = ", ".join(sorted(families))
+        raise MethodError(
+            f"workload {catalog!r} has no {family} mix yet (have: {have})"
         )
     return families[catalog]
 
@@ -480,7 +584,9 @@ def _pick_mix_label(*, profile: str | None, workload: str | None) -> str | None:
 
 def is_write_method(method: str) -> bool:
     lower = method.lower()
-    return any(lower.startswith(p) for p in _WRITE_PREFIXES)
+    if any(lower.startswith(p) for p in _WRITE_PREFIXES):
+        return True
+    return lower in _SOLANA_WRITE_METHODS
 
 
 def _reject_writes(method: str) -> None:

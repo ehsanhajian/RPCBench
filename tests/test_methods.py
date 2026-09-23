@@ -250,6 +250,11 @@ def test_app_mixes_never_include_debug_recon_or_privileged() -> None:
 
 
 def test_solana_family_is_not_an_evm_fallback() -> None:
-    with pytest.raises(MethodError, match="evm-only"):
-        family_workload("solana", "wallet")
+    steps = family_workload("solana", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "getSlot" in methods
+    assert "getBalance" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no solana mix"):
+        family_workload("solana", "tracing")
 

@@ -12,6 +12,7 @@ from rpcbench.rpc import ProbeResult
 BLOCK_TAGS: tuple[str, ...] = ("latest", "safe", "finalized")
 CLIENT_METHOD = "web3_clientVersion"
 # One clientVersion + one getBlockByNumber per tag. Not mixed into ranking.
+# Prefer family.meta_requests_for for budget math when the family is known.
 META_REQUESTS_PER_ENDPOINT = 1 + len(BLOCK_TAGS)
 
 _HEX_ONLY = re.compile(r"^0x[0-9a-fA-F]+$")
@@ -30,6 +31,12 @@ class TagSnapshot:
 
 def parse_client_label(value: object) -> str | None:
     """Store a volunteered client string. Not a version/CVE check."""
+    if isinstance(value, dict):
+        core = value.get("solana-core")
+        if isinstance(core, str) and core.strip():
+            value = f"solana-core {core.strip()}"
+        else:
+            return None
     if not isinstance(value, str):
         return None
     text = " ".join(value.split())

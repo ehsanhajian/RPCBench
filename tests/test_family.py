@@ -73,15 +73,35 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "sol",
-                        "url": "http://127.0.0.1:8899",
-                        "family": "solana",
+                        "name": "dot",
+                        "url": "http://127.0.0.1:9933",
+                        "family": "substrate",
                     }
                 ]
             }
         )
     with pytest.raises(ConfigError, match="unknown family"):
         normalize_family("nope")
+
+
+def test_solana_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "sol",
+                    "url": "http://127.0.0.1:8899",
+                    "family": "solana",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "solana"
+    assert resolve_benchmark_family(cfg) == "solana"
+    adapter = benchmark_family("solana")
+    assert adapter.head_method == "getSlot"
+    assert adapter.ws_method == "slotSubscribe"
+    assert adapter.block_time_s == 0.4
 
 
 def test_omitted_family_is_evm_and_localhost_stays_allowed() -> None:
@@ -122,7 +142,7 @@ def test_auto_detect_unknown_chain_id_is_evm() -> None:
     )
 
 
-def test_auto_detect_unimplemented_family_is_not_a_finding() -> None:
+def test_auto_detect_solana_resolves() -> None:
     cfg = parse_endpoints(
         {
             "endpoints": [
@@ -155,6 +175,56 @@ def test_auto_detect_unimplemented_family_is_not_a_finding() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
     assert found == "solana"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "solana"
+
+
+def test_auto_detect_unimplemented_family_is_not_a_finding() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:9933",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "eth_chainId" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32601, "message": "method not found"},
+                },
+            )
+        if "getHealth" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32601, "message": "method not found"},
+                },
+            )
+        if "system_health" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"peers": 1, "isSyncing": False, "shouldHavePeers": True},
+                },
+            )
+        raise AssertionError(body)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "substrate"
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
         resolve_benchmark_family(cfg, timeout=1.0, client=client)
     blob = str(exc.value).lower()
@@ -186,7 +256,7 @@ def test_detect_failure_is_a_config_error_not_a_finding() -> None:
         assert word not in blob
 
 
-def test_auto_beside_evm_still_errors_when_detect_is_unimplemented() -> None:
+def test_mixed_evm_and_solana_errors() -> None:
     cfg = parse_endpoints(
         {
             "endpoints": [
@@ -214,7 +284,7 @@ def test_auto_beside_evm_still_errors_when_detect_is_unimplemented() -> None:
         raise AssertionError(body)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    with pytest.raises(ConfigError, match="no benchmark mix") as exc:
+    with pytest.raises(ConfigError, match="more than one family") as exc:
         resolve_benchmark_family(cfg, timeout=1.0, client=client)
     assert "finding" not in str(exc.value).lower()
 

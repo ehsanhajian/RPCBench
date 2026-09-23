@@ -39,26 +39,42 @@ def parse_block_pin(raw: str | None) -> int | None:
 
 def parse_block_hash(value: Any) -> str | None:
     if isinstance(value, dict):
-        value = value.get("hash")
+        value = value.get("hash") or value.get("blockhash")
     if not isinstance(value, str):
         return None
-    text = value.strip().lower()
-    if text.startswith("0x"):
-        hexpart = text[2:]
+    text = value.strip()
+    if not text:
+        return None
+    lower = text.lower()
+    if lower.startswith("0x"):
+        hexpart = lower[2:]
     else:
-        hexpart = text
-    if len(hexpart) != 64:
-        return None
-    try:
-        int(hexpart, 16)
-    except ValueError:
-        return None
-    return "0x" + hexpart
+        hexpart = lower
+    if len(hexpart) == 64:
+        try:
+            int(hexpart, 16)
+        except ValueError:
+            pass
+        else:
+            return "0x" + hexpart
+    # Solana blockhash: base58, typically 32–44 chars.
+    if 32 <= len(text) <= 64 and all(
+        ch in "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" for ch in text
+    ):
+        return text
+    return None
 
 
 def parse_block_number(value: Any) -> int | None:
     if isinstance(value, dict):
-        return parse_block_height(value.get("number"))
+        height = parse_block_height(value.get("number"))
+        if height is not None:
+            return height
+        # Solana getBlock reports blockHeight; parentSlot is the prior slot.
+        height = parse_block_height(value.get("blockHeight"))
+        if height is not None:
+            return height
+        return parse_block_height(value.get("parentSlot"))
     return parse_block_height(value)
 
 

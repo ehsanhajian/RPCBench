@@ -43,7 +43,6 @@ from rpcbench.freshness import (
     DEFAULT_STALE_BLOCKS,
     Freshness,
     assess_freshness,
-    block_time_for_chain,
     cohort_height,
     parse_block_height,
 )
@@ -76,11 +75,9 @@ from rpcbench.rpc import (
     probe_batch,
 )
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
-from rpcbench.family import benchmark_family
+from rpcbench.family import benchmark_family, pin_block_params, resolve_block_time, tag_block_params
 from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
 from rpcbench.tags import (
-    BLOCK_TAGS,
-    CLIENT_METHOD,
     TagSnapshot,
     client_from_hit,
     snapshots_from_hits,
@@ -817,7 +814,9 @@ def _execute_run(
             client=client,
         )
     chain_id = _sample_chain_id(outcomes, adapter.chain_method)
-    resolved_time = block_time_for_chain(chain_id, block_time_s)
+    resolved_time = resolve_block_time(
+        adapter, chain_id=chain_id, override=block_time_s
+    )
     heights = {
         outcome.endpoint.name: _head_height(
             outcome, method, extra_heads, adapter.head_method
@@ -838,7 +837,7 @@ def _execute_run(
         extra_blocks = _probe_wave(
             config,
             method=adapter.block_method,
-            params=[hex(pin), False],
+            params=pin_block_params(adapter, pin),
             timeout=timeout,
             budget=purse,
             deadline=deadline,
@@ -861,7 +860,7 @@ def _execute_run(
     canon = next((row.canonical_hash for row in agreed.values()), None)
     client_hits = _probe_wave(
         config,
-        method=CLIENT_METHOD,
+        method=adapter.client_method,
         params=[],
         timeout=timeout,
         budget=purse,
@@ -872,11 +871,11 @@ def _execute_run(
     tag_rows: dict[str, list[TagSnapshot]] = {
         outcome.endpoint.name: [] for outcome in outcomes
     }
-    for tag in BLOCK_TAGS:
+    for tag in adapter.block_tags:
         hits = _probe_wave(
             config,
             method=adapter.block_method,
-            params=[tag, False],
+            params=tag_block_params(adapter, tag),
             timeout=timeout,
             budget=purse,
             deadline=deadline,

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from rpcbench.rpc import ProbeResult
 
 FAMILY_EVM = "evm"
+FAMILY_SOLANA = "solana"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -35,14 +36,21 @@ KNOWN_FAMILIES = (
     "ton",
     "auto",
 )
-IMPLEMENTED = frozenset({FAMILY_EVM})
+IMPLEMENTED = frozenset({FAMILY_EVM, FAMILY_SOLANA})
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
 _DETECT_PROBES = (
     ("eth_chainId", FAMILY_EVM),
-    ("getHealth", "solana"),
+    ("getHealth", FAMILY_SOLANA),
     ("system_health", "substrate"),
 )
+
+_SOLANA_BLOCK_CONFIG: dict[str, Any] = {
+    "encoding": "json",
+    "transactionDetails": "none",
+    "rewards": False,
+    "maxSupportedTransactionVersion": 0,
+}
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,9 @@ class FamilyAdapter:
     batch_shape: str
     ws_method: str
     ws_params: tuple[Any, ...]
+    client_method: str
+    # Empty means the EVM latest/safe/finalized tag wave is skipped.
+    block_tags: tuple[str, ...] = ()
 
 
 EVM = FamilyAdapter(
@@ -68,6 +79,20 @@ EVM = FamilyAdapter(
     batch_shape="jsonrpc-array",
     ws_method="eth_subscribe",
     ws_params=("newHeads",),
+    client_method="web3_clientVersion",
+    block_tags=("latest", "safe", "finalized"),
+)
+
+SOLANA = FamilyAdapter(
+    name=FAMILY_SOLANA,
+    head_method="getSlot",
+    chain_method="getGenesisHash",
+    block_method="getBlock",
+    block_time_s=0.4,
+    batch_shape="jsonrpc-array",
+    ws_method="slotSubscribe",
+    ws_params=(),
+    client_method="getVersion",
 )
 
 
@@ -99,6 +124,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         raise ConfigError("family auto must be resolved before a benchmark")
     if key == FAMILY_EVM:
         return EVM
+    if key == FAMILY_SOLANA:
+        return SOLANA
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -107,6 +134,41 @@ def benchmark_family(name: str) -> FamilyAdapter:
 
 def head_method_for(family: str) -> str:
     return benchmark_family(family).head_method
+
+
+def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
+    """Params for the consistency pin read. Shape is family-specific."""
+    if adapter.name == FAMILY_SOLANA:
+        return [pin, dict(_SOLANA_BLOCK_CONFIG)]
+    return [hex(pin), False]
+
+
+def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
+    if adapter.name == FAMILY_SOLANA:
+        raise ConfigError("solana has no eth-style block tags")
+    return [tag, False]
+
+
+def resolve_block_time(
+    adapter: FamilyAdapter,
+    *,
+    chain_id: int | None,
+    override: float | None,
+) -> float:
+    """Seconds per head unit. Solana uses slot time; EVM uses chain id tables."""
+    if override is not None:
+        return override
+    if adapter.name == FAMILY_EVM:
+        from rpcbench.freshness import block_time_for_chain
+
+        return block_time_for_chain(chain_id, None)
+    return adapter.block_time_s
+
+
+def meta_requests_for(family: str) -> int:
+    """Client version plus optional EVM tag snapshots. Not ranking samples."""
+    adapter = benchmark_family(family)
+    return 1 + len(adapter.block_tags)
 
 
 def resolve_benchmark_family(
