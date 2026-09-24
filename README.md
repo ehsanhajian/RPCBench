@@ -2,7 +2,7 @@
 
 **Which RPC endpoint is fastest — for this call, from this machine?**
 
-A small CLI that compares **EVM JSON-RPC over HTTP**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node).
+A small CLI that compares **EVM and Solana JSON-RPC over HTTP**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node). Use `--family solana` (or `family: solana` / `auto`) for Solana endpoints.
 
 It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
@@ -221,7 +221,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--family` | `evm` | Benchmark family. `auto` detects from `eth_chainId` / `getHealth` / `system_health`. Unimplemented families error. Not a scan |
+| `--family` | `evm` | Benchmark family: `evm`, `solana`, or `auto` (`eth_chainId` / `getHealth` / `system_health`). Other families error. Not a scan |
 | `--workload` | `general` when omitted | `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix. Omit the flag for general + short. Do not combine with `--method` or `--preset` |
 | `--profile` | | YAML mix file, or alias `mix` = general. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | | Single JSON-RPC method and JSON array of params. Head probe: `--method eth_blockNumber`. Do not combine `--method` with `--preset` |

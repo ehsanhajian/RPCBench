@@ -342,10 +342,41 @@ def test_probe_websocket_family_skip() -> None:
         {"endpoints": [{"name": "x", "url": "http://127.0.0.1:1", "ws": "ws://127.0.0.1:2"}]}
     ).endpoints[0]
     hit = probe_websocket(
-        ep, window=0.05, timeout=1.0, family="solana", open_ws=_open([_ack()])
+        ep, window=0.05, timeout=1.0, family="substrate", open_ws=_open([_ack()])
     )
     assert hit.skip == "family"
     assert websocket_label(hit) == "skip/family"
+
+
+def test_probe_websocket_solana_slot_subscribe() -> None:
+    ep = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "x",
+                    "url": "http://127.0.0.1:1",
+                    "ws": "ws://127.0.0.1:2",
+                    "family": "solana",
+                }
+            ]
+        }
+    ).endpoints[0]
+    slot = {
+        "jsonrpc": "2.0",
+        "method": "slotNotification",
+        "params": {"subscription": 1, "result": {"slot": 10, "parent": 9, "root": 1}},
+    }
+    sock = ScriptedWS([_ack(1), slot])
+
+    def open_ws(url: str, *, headers=(), timeout: float = 10.0):
+        return sock
+
+    hit = probe_websocket(
+        ep, window=0.05, timeout=1.0, family="solana", open_ws=open_ws
+    )
+    assert hit.ok
+    assert hit.n_events >= 1
+    assert json.loads(sock.sent[0])["method"] == "slotSubscribe"
 
 
 def test_websocket_table_is_in_compact_cli() -> None:

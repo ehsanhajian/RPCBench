@@ -24,7 +24,12 @@ from rpcbench.capture import (
     reject_write_calls,
     replay_calls,
 )
-from rpcbench.family import benchmark_family, resolve_benchmark_family
+from rpcbench.family import (
+    FAMILY_EVM,
+    benchmark_family,
+    meta_requests_for,
+    resolve_benchmark_family,
+)
 from rpcbench.diff import (
     DiffError,
     compare_reports,
@@ -63,8 +68,6 @@ from rpcbench.run import (
     run_endpoints,
 )
 from rpcbench.safety import SafetyError, check_budget, kill_switch_reason
-from rpcbench.tags import META_REQUESTS_PER_ENDPOINT
-
 
 SAMPLE_BUDGETS: dict[str, dict[str, int | float]] = {
     # Sample count / duration. Not Nodeprobe Quick|Standard|Deep.
@@ -253,8 +256,8 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         metavar="NAME",
         help=(
             "Benchmark family for every endpoint (overrides the file). "
-            "evm is the default. auto detects from eth_chainId, getHealth, "
-            "or system_health. Unimplemented families error. Not a scan."
+            "evm (default) or solana. auto detects from eth_chainId, getHealth, "
+            "or system_health. Other families error. Not a scan."
         ),
     )
     run.add_argument(
@@ -826,6 +829,21 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     try:
         apply_job(args)
+        config = load_targets(args.endpoints)
+        detect_timeout = (
+            float(args.timeout)
+            if args.timeout is not None
+            else float(SAMPLE_BUDGETS[args.sample_budget]["timeout"])
+        )
+        family_name = resolve_benchmark_family(
+            config, override=args.family, timeout=detect_timeout
+        )
+        if family_name != FAMILY_EVM:
+            # EVM-only extras: skip with a reason in the run path; do not budget them.
+            args.simulate = False
+            args.logs_range = 0
+            args.archive = False
+            args.lookback = 0
         plan = resolve_workload(
             profile=args.profile,
             workload=args.workload,
@@ -833,14 +851,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
             preset=args.preset,
             params_json=args.params,
             allow_writes=args.allow_writes,
+            family=family_name,
         )
         if plan.timeout is not None and args.timeout is None:
             args.timeout = plan.timeout
         apply_sample_budget(args)
-        config = load_targets(args.endpoints)
-        family_name = resolve_benchmark_family(
-            config, override=args.family, timeout=args.timeout
-        )
         head_method = benchmark_family(family_name).head_method
         method, workload = plan.label, plan.steps
         if args.simulate:
@@ -856,7 +871,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if not any(spec.method == head_method for spec in workload):
             needed += len(config.endpoints)
         needed += len(config.endpoints)
-        needed += len(config.endpoints) * META_REQUESTS_PER_ENDPOINT
+        needed += len(config.endpoints) * meta_requests_for(family_name)
         needed += len(config.endpoints) * hint_request_count(workload)
         if args.batch > 0:
             needed += len(config.endpoints) * (1 + args.batch)

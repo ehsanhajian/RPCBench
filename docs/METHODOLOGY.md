@@ -12,7 +12,7 @@ Default CLI is the **general** mix at **short** size when you pass only `--endpo
 
 An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Privileged debug recon (`debug_memStats`, `debug_verbosity`, …) is never in catalogs. `trace_*` and `debug_traceCall` are **`--workload tracing`** (or a YAML mix you write) only.
 
-Family catalogs are **EVM** today. One EVM adapter covers every chain id, including ones RPCBench has not listed. `family: solana` (and the other declared names) is a config error until that mix exists. `family: auto` or `--family auto` sends only `eth_chainId`, then `getHealth`, then `system_health`, and names the family. That handshake is not a finding. Other families error instead of sending `eth_*` at a Solana or Bitcoin URL.
+Family catalogs are **EVM** and **Solana**. One EVM adapter covers every chain id, including ones RPCBench has not listed. Solana uses `getSlot` / `getLatestBlockhash` / `getBalance` / `getAccountInfo` / `getSignaturesForAddress` and `slotSubscribe`. EVM-only extras (logs-range, archive, lookback, eth simulate, tracing) skip with reason `family` on Solana. `family: auto` or `--family auto` sends only `eth_chainId`, then `getHealth`, then `system_health`, and names the family. That handshake is not a finding. Other declared families error instead of sending the wrong methods.
 
 Shared read-only payloads (same on every provider):
 

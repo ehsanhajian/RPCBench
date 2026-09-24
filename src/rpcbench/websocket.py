@@ -7,15 +7,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from rpcbench.config import Endpoint
-from rpcbench.family import EVM
+from rpcbench.config import ConfigError, Endpoint
+from rpcbench.family import FAMILY_EVM, benchmark_family
 from rpcbench.freshness import parse_block_height
-from rpcbench.logs import family_skip_reason
 
 DEFAULT_WEBSOCKET = 3.0
 MAX_WEBSOCKET = 10.0
-SUBSCRIBE_METHOD = EVM.ws_method
-SUBSCRIBE_PARAMS = EVM.ws_params
 _SUBSCRIBE_ID = 1
 
 OpenWS = Callable[..., Any]
@@ -23,7 +20,7 @@ OpenWS = Callable[..., Any]
 
 @dataclass(frozen=True)
 class WebsocketHit:
-    """One connect + newHeads subscribe window. Skip means no WS traffic."""
+    """One connect + subscribe window. Skip means no WS traffic."""
 
     window_s: float
     ok: bool
@@ -121,10 +118,11 @@ def probe_websocket(
     family: str,
     open_ws: OpenWS | None = None,
 ) -> WebsocketHit:
-    """Connect, eth_subscribe newHeads, listen for ``window`` seconds."""
-    reason = family_skip_reason(family)
-    if reason:
-        return skipped_websocket(reason, window_s=window)
+    """Connect, subscribe to head notifications, listen for ``window`` seconds."""
+    try:
+        adapter = benchmark_family(family)
+    except ConfigError:
+        return skipped_websocket("family", window_s=window)
     if deadline is not None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -160,6 +158,8 @@ def probe_websocket(
             window=window,
             timeout=timeout,
             connect_ms=connect_ms,
+            method=adapter.ws_method,
+            params=list(adapter.ws_params),
         )
     finally:
         try:
@@ -174,12 +174,14 @@ def _subscribe_and_listen(
     window: float,
     timeout: float,
     connect_ms: float,
+    method: str,
+    params: list[Any],
 ) -> WebsocketHit:
     request = {
         "jsonrpc": "2.0",
         "id": _SUBSCRIBE_ID,
-        "method": SUBSCRIBE_METHOD,
-        "params": list(SUBSCRIBE_PARAMS),
+        "method": method,
+        "params": params,
     }
     t_sub = time.monotonic()
     try:
@@ -405,7 +407,8 @@ def _is_subscribe_ack(msg: dict[str, Any]) -> bool:
 
 
 def _is_heads(msg: dict[str, Any]) -> bool:
-    if msg.get("method") == "eth_subscription":
+    method = msg.get("method")
+    if method in {"eth_subscription", "slotNotification", "logsNotification"}:
         return True
     params = msg.get("params")
     if isinstance(params, dict) and "result" in params:
@@ -417,7 +420,10 @@ def _head_number(msg: dict[str, Any]) -> int | None:
     params = msg.get("params")
     result = params.get("result") if isinstance(params, dict) else None
     if isinstance(result, dict):
-        return parse_block_height(result.get("number"))
+        height = parse_block_height(result.get("number"))
+        if height is not None:
+            return height
+        return parse_block_height(result.get("slot"))
     return parse_block_height(result)
 
 
@@ -428,3 +434,8 @@ def _error_text(error: Any) -> str:
             return str(message)
         return json.dumps(error, sort_keys=True)
     return str(error)
+
+
+# Back-compat aliases for tests that imported EVM subscribe constants.
+SUBSCRIBE_METHOD = benchmark_family(FAMILY_EVM).ws_method
+SUBSCRIBE_PARAMS = benchmark_family(FAMILY_EVM).ws_params
