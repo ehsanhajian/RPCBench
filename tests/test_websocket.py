@@ -342,10 +342,50 @@ def test_probe_websocket_family_skip() -> None:
         {"endpoints": [{"name": "x", "url": "http://127.0.0.1:1", "ws": "ws://127.0.0.1:2"}]}
     ).endpoints[0]
     hit = probe_websocket(
-        ep, window=0.05, timeout=1.0, family="substrate", open_ws=_open([_ack()])
+        ep, window=0.05, timeout=1.0, family="cosmos", open_ws=_open([_ack()])
     )
     assert hit.skip == "family"
     assert websocket_label(hit) == "skip/family"
+
+
+def test_probe_websocket_substrate_new_heads() -> None:
+    ep = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "x",
+                    "url": "http://127.0.0.1:1",
+                    "ws": "ws://127.0.0.1:2",
+                    "family": "substrate",
+                }
+            ]
+        }
+    ).endpoints[0]
+    head = {
+        "jsonrpc": "2.0",
+        "method": "chain_newHead",
+        "params": {
+            "subscription": "sub1",
+            "result": {
+                "parentHash": "0x" + "11" * 32,
+                "number": "0x10",
+                "stateRoot": "0x" + "22" * 32,
+                "extrinsicsRoot": "0x" + "33" * 32,
+                "digest": {"logs": []},
+            },
+        },
+    }
+    sock = ScriptedWS([_ack("sub1"), head])
+
+    def open_ws(url: str, *, headers=(), timeout: float = 10.0):
+        return sock
+
+    hit = probe_websocket(
+        ep, window=0.05, timeout=1.0, family="substrate", open_ws=open_ws
+    )
+    assert hit.ok
+    assert hit.n_events >= 1
+    assert json.loads(sock.sent[0])["method"] == "chain_subscribeNewHeads"
 
 
 def test_probe_websocket_solana_slot_subscribe() -> None:

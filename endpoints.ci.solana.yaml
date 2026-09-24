@@ -1,0 +1,9 @@
+# Public Solana RPCs for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: publicnode
+    url: https://solana-rpc.publicnode.com
+    family: solana
+  - name: solana-labs
+    url: https://api.mainnet-beta.solana.com
+    family: solana

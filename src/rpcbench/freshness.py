@@ -34,6 +34,9 @@ class Freshness:
 def parse_block_height(value: Any) -> int | None:
     if value is None:
         return None
+    if isinstance(value, dict):
+        # Substrate chain_getHeader / newHead: number is hex inside the header.
+        return parse_block_height(value.get("number"))
     if isinstance(value, bool):
         return None
     if isinstance(value, int):

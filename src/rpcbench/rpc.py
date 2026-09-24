@@ -133,7 +133,7 @@ def make_client(
         headers={
             "User-Agent": USER_AGENT,
             "Accept": "application/json",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate",
             "Content-Type": "application/json",
         },
         transport=TimingTransport(limits=limits, http2=http2),

@@ -61,13 +61,20 @@ def test_load_yaml_and_json(tmp_path: Path) -> None:
 
 def test_ci_endpoints_are_public_https() -> None:
     root = Path(__file__).resolve().parents[1]
-    cfg = load_endpoints(root / "endpoints.ci.yaml")
-    assert len(cfg.endpoints) >= 2
-    for endpoint in cfg.endpoints:
-        assert endpoint.url.startswith("https://")
-        lowered = endpoint.url.lower()
-        assert "127.0.0.1" not in lowered
-        assert "localhost" not in lowered
+    files = (
+        ("endpoints.ci.yaml", "evm"),
+        ("endpoints.ci.solana.yaml", "solana"),
+        ("endpoints.ci.substrate.yaml", "substrate"),
+    )
+    for name, family in files:
+        cfg = load_endpoints(root / name)
+        assert len(cfg.endpoints) >= 1, name
+        for endpoint in cfg.endpoints:
+            assert endpoint.url.startswith("https://"), endpoint.url
+            lowered = endpoint.url.lower()
+            assert "127.0.0.1" not in lowered
+            assert "localhost" not in lowered
+            assert endpoint.family == family, (name, endpoint.name)
 
 
 def test_rfc1918_is_allowed() -> None:

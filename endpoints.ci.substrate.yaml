@@ -1,0 +1,9 @@
+# Public Substrate (Polkadot) RPCs for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: publicnode
+    url: https://polkadot-rpc.publicnode.com
+    family: substrate
+  - name: polkadot-io
+    url: https://rpc.polkadot.io
+    family: substrate

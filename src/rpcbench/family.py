@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
+FAMILY_SUBSTRATE = "substrate"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -36,13 +37,13 @@ KNOWN_FAMILIES = (
     "ton",
     "auto",
 )
-IMPLEMENTED = frozenset({FAMILY_EVM, FAMILY_SOLANA})
+IMPLEMENTED = frozenset({FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE})
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
 _DETECT_PROBES = (
     ("eth_chainId", FAMILY_EVM),
     ("getHealth", FAMILY_SOLANA),
-    ("system_health", "substrate"),
+    ("system_health", FAMILY_SUBSTRATE),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -95,6 +96,18 @@ SOLANA = FamilyAdapter(
     client_method="getVersion",
 )
 
+SUBSTRATE = FamilyAdapter(
+    name=FAMILY_SUBSTRATE,
+    head_method="chain_getHeader",
+    chain_method="system_chain",
+    block_method="chain_getBlockHash",
+    block_time_s=6.0,
+    batch_shape="jsonrpc-array",
+    ws_method="chain_subscribeNewHeads",
+    ws_params=(),
+    client_method="system_version",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -126,6 +139,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return EVM
     if key == FAMILY_SOLANA:
         return SOLANA
+    if key == FAMILY_SUBSTRATE:
+        return SUBSTRATE
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -140,12 +155,14 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
     """Params for the consistency pin read. Shape is family-specific."""
     if adapter.name == FAMILY_SOLANA:
         return [pin, dict(_SOLANA_BLOCK_CONFIG)]
+    if adapter.name == FAMILY_SUBSTRATE:
+        return [hex(pin)]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name == FAMILY_SOLANA:
-        raise ConfigError("solana has no eth-style block tags")
+    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE}:
+        raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
 

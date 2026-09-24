@@ -12,6 +12,7 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 SYSTEM_PROGRAM = "11111111111111111111111111111111"
 FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
+FAMILY_SUBSTRATE = "substrate"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -23,6 +24,11 @@ SOLANA_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("getSlot", []),
     "chainId": ("getGenesisHash", []),
     "balance": ("getBalance", [SYSTEM_PROGRAM]),
+}
+SUBSTRATE_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("chain_getHeader", []),
+    "chainId": ("system_chain", []),
+    "balance": ("state_getRuntimeVersion", []),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -159,6 +165,31 @@ def _sol_signatures(weight: int = 1) -> CallSpec:
         (SYSTEM_PROGRAM, {"limit": 1}),
         weight,
     )
+
+
+def _sub_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "chain_getHeader", (), weight)
+
+
+def _sub_chain(weight: int = 1) -> CallSpec:
+    return CallSpec("chain", "system_chain", (), weight)
+
+
+def _sub_hash(weight: int = 1) -> CallSpec:
+    # null = best/latest finalized-aware tip hash on most nodes.
+    return CallSpec("hash", "chain_getBlockHash", (None,), weight)
+
+
+def _sub_runtime(weight: int = 1) -> CallSpec:
+    return CallSpec("runtime", "state_getRuntimeVersion", (), weight)
+
+
+def _sub_health(weight: int = 1) -> CallSpec:
+    return CallSpec("health", "system_health", (), weight)
+
+
+def _sub_sync(weight: int = 1) -> CallSpec:
+    return CallSpec("sync", "system_syncState", (), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -320,10 +351,53 @@ _SOLANA_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Substrate catalogs. One adapter for Polkadot/Kusama/parachains. No author_*.
+_SUBSTRATE_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _sub_head(),
+        _sub_chain(),
+        _sub_hash(),
+        _sub_runtime(),
+        _sub_health(),
+        _sub_sync(),
+    ),
+    "wallet": (
+        _sub_head(),
+        _sub_chain(),
+        _sub_hash(),
+        _sub_runtime(4),
+        _sub_health(3),
+        _sub_hash(2),
+    ),
+    "indexer": (
+        _sub_head(),
+        _sub_chain(),
+        _sub_hash(3),
+        _sub_runtime(),
+        _sub_sync(4),
+    ),
+    "trading": (
+        _sub_head(3),
+        _sub_chain(),
+        _sub_hash(2),
+        _sub_runtime(4),
+        _sub_health(2),
+    ),
+    "nft": (
+        _sub_head(),
+        _sub_chain(),
+        _sub_hash(),
+        _sub_runtime(),
+        _sub_health(3),
+        _sub_sync(3),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
     FAMILY_SOLANA: _SOLANA_WORKLOADS,
+    FAMILY_SUBSTRATE: _SUBSTRATE_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -343,6 +417,12 @@ _SOLANA_WRITE_METHODS = frozenset(
         "sendtransaction",
         "sendandsigntransaction",
         "requestairdrop",
+    }
+)
+_SUBSTRATE_WRITE_METHODS = frozenset(
+    {
+        "author_submitextrinsic",
+        "author_submitandwatchextrinsic",
     }
 )
 
@@ -424,6 +504,22 @@ def apply_simulate(steps: tuple[CallSpec, ...]) -> tuple[CallSpec, ...]:
     return steps + tuple(extra)
 
 
+def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
+    if family == FAMILY_SOLANA:
+        return SOLANA_PRESETS
+    if family == FAMILY_SUBSTRATE:
+        return SUBSTRATE_PRESETS
+    return PRESETS
+
+
+def _default_method(family: str) -> str:
+    if family == FAMILY_SOLANA:
+        return "getSlot"
+    if family == FAMILY_SUBSTRATE:
+        return "chain_getHeader"
+    return "eth_blockNumber"
+
+
 def resolve_method(
     *,
     method: str | None,
@@ -434,7 +530,7 @@ def resolve_method(
 ) -> tuple[str, list[Any]]:
     if preset and method:
         raise MethodError("use either --preset or --method, not both")
-    packs = SOLANA_PRESETS if family == FAMILY_SOLANA else PRESETS
+    packs = _presets_for(family)
     if preset:
         key = preset.strip().lower()
         matched = next((name for name in packs if name.lower() == key), None)
@@ -447,8 +543,7 @@ def resolve_method(
         if not allow_writes:
             _reject_writes(name)
         return name, params
-    default = "getSlot" if family == FAMILY_SOLANA else "eth_blockNumber"
-    name = (method or default).strip()
+    name = (method or _default_method(family)).strip()
     if not name:
         raise MethodError("method is required")
     if not allow_writes:
@@ -504,15 +599,13 @@ def resolve_workload(
     )
     step = "call"
     if preset:
-        packs = SOLANA_PRESETS if family == FAMILY_SOLANA else PRESETS
+        packs = _presets_for(family)
         matched = next(
             (n for n in packs if n.lower() == preset.strip().lower()), None
         )
         if matched:
             step = matched
-    elif family == FAMILY_SOLANA and name == "getSlot" and not params:
-        step = "head"
-    elif name == "eth_blockNumber" and not params:
+    elif name == _default_method(family) and not params:
         step = "head"
     return WorkloadPlan(label=name, steps=(CallSpec(step, name, tuple(params)),))
 
@@ -586,7 +679,7 @@ def is_write_method(method: str) -> bool:
     lower = method.lower()
     if any(lower.startswith(p) for p in _WRITE_PREFIXES):
         return True
-    return lower in _SOLANA_WRITE_METHODS
+    return lower in _SOLANA_WRITE_METHODS or lower in _SUBSTRATE_WRITE_METHODS
 
 
 def _reject_writes(method: str) -> None:
