@@ -26,6 +26,19 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NO_COLOR: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: evm
+            endpoints: endpoints.ci.yaml
+            method: eth_blockNumber
+          - name: solana
+            endpoints: endpoints.ci.solana.yaml
+            method: getSlot
+          - name: substrate
+            endpoints: endpoints.ci.substrate.yaml
+            method: chain_getHeader
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -33,11 +46,11 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: pip install -e .
-      - name: Live public RPC smoke
+      - name: Live public RPC smoke (${{ matrix.name }})
         run: >
           rpcbench run
-          --endpoints endpoints.ci.yaml
-          --method eth_blockNumber
+          --endpoints ${{ matrix.endpoints }}
+          --method ${{ matrix.method }}
           --samples 1
           --warmup 0
           --max-requests 8

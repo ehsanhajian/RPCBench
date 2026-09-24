@@ -20,7 +20,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-PRs run `pytest`, then a live smoke against PublicNode and dRPC (`--method eth_blockNumber --samples 1 --warmup 0`). No local node in CI; the smoke passes if either public endpoint is ok.
+PRs run `pytest`, then a live smoke per family against public RPCs (`eth_blockNumber`, `getSlot`, `chain_getHeader`; `--samples 1 --warmup 0`). No local node in CI; each family smoke passes if either public endpoint in that file is ok.
 
 ## Start
 
@@ -36,20 +36,18 @@ Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do no
 
 ```yaml
 endpoints:
-  - name: publicnode
+  - name: eth-publicnode
     url: https://ethereum.publicnode.com
-  - name: drpc
-    url: https://eth.drpc.org
-  - name: paid
-    url: https://eth.example/v3/YOUR_KEY
-    ws: wss://eth.example/ws/v3/YOUR_KEY
-    bearer: YOUR_TOKEN
-    headers:
-      X-Api-Key: YOUR_KEY
+    family: evm
+  - name: sol-publicnode
+    url: https://solana-rpc.publicnode.com
+    family: solana
+  - name: dot-publicnode
+    url: https://polkadot-rpc.publicnode.com
+    family: substrate
 ```
 
-`run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
-
+Compare one family at a time (`--family solana` or only that family’s rows in the file). `run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
 ## Report
 
 Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. `--md` is a pasteable GitHub markdown table with aligned columns (ranking, P95, errors, rel, freshness, verdict). `--csv` is one flat row per provider (run, rank, latency, verdict, transport). `-o report.csv` writes that CSV and keeps the CLI table. `rpcbench diff old.json new.json` compares two JSON runs (P95 delta, winner change, new signals) and exits 1 in CI if the previous **primary** got worse beyond the similar-band. `--history DIR` appends a JSON snapshot after a run so diff can use `--history DIR`. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.

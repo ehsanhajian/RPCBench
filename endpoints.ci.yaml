@@ -3,5 +3,7 @@
 endpoints:
   - name: publicnode
     url: https://ethereum.publicnode.com
+    family: evm
   - name: drpc
     url: https://eth.drpc.org
+    family: evm
