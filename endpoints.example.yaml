@@ -6,13 +6,17 @@
 endpoints:
   - name: local
     url: http://127.0.0.1:8545
-    # family: evm   # default. solana and auto also work. others error until shipped.
+    # family: evm   # default. solana, substrate, and auto also work. others error until shipped.
     # Optional. Used only with --websocket.
     # ws: ws://127.0.0.1:8546
   # - name: solana-local
   #   url: http://127.0.0.1:8899
   #   family: solana
   #   ws: ws://127.0.0.1:8900
+  # - name: substrate-local
+  #   url: http://127.0.0.1:9933
+  #   family: substrate
+  #   ws: ws://127.0.0.1:9944
   - name: publicnode
     url: https://ethereum.publicnode.com
     # ws: wss://ethereum.publicnode.com

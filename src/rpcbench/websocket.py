@@ -408,7 +408,13 @@ def _is_subscribe_ack(msg: dict[str, Any]) -> bool:
 
 def _is_heads(msg: dict[str, Any]) -> bool:
     method = msg.get("method")
-    if method in {"eth_subscription", "slotNotification", "logsNotification"}:
+    if method in {
+        "eth_subscription",
+        "slotNotification",
+        "logsNotification",
+        "chain_newHead",
+        "chain_newHeadNotification",
+    }:
         return True
     params = msg.get("params")
     if isinstance(params, dict) and "result" in params:

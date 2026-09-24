@@ -258,3 +258,13 @@ def test_solana_family_is_not_an_evm_fallback() -> None:
     with pytest.raises(MethodError, match="no solana mix"):
         family_workload("solana", "tracing")
 
+
+def test_substrate_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("substrate", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "chain_getHeader" in methods
+    assert "state_getRuntimeVersion" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no substrate mix"):
+        family_workload("substrate", "tracing")
+

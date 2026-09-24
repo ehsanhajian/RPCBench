@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "dot",
-                        "url": "http://127.0.0.1:9933",
-                        "family": "substrate",
+                        "name": "atom",
+                        "url": "http://127.0.0.1:26657",
+                        "family": "cosmos",
                     }
                 ]
             }
@@ -102,6 +102,26 @@ def test_solana_family_loads() -> None:
     assert adapter.head_method == "getSlot"
     assert adapter.ws_method == "slotSubscribe"
     assert adapter.block_time_s == 0.4
+
+
+def test_substrate_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "dot",
+                    "url": "http://127.0.0.1:9933",
+                    "family": "substrate",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "substrate"
+    assert resolve_benchmark_family(cfg) == "substrate"
+    adapter = benchmark_family("substrate")
+    assert adapter.head_method == "chain_getHeader"
+    assert adapter.ws_method == "chain_subscribeNewHeads"
+    assert adapter.block_time_s == 6.0
 
 
 def test_omitted_family_is_evm_and_localhost_stays_allowed() -> None:
@@ -178,7 +198,7 @@ def test_auto_detect_solana_resolves() -> None:
     assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "solana"
 
 
-def test_auto_detect_unimplemented_family_is_not_a_finding() -> None:
+def test_auto_detect_substrate_resolves() -> None:
     cfg = parse_endpoints(
         {
             "endpoints": [
@@ -225,8 +245,12 @@ def test_auto_detect_unimplemented_family_is_not_a_finding() -> None:
     client = httpx.Client(transport=httpx.MockTransport(handler))
     found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
     assert found == "substrate"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "substrate"
+
+
+def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        resolve_benchmark_family(cfg, timeout=1.0, client=client)
+        normalize_family("cosmos")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -298,7 +322,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "substrate", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "cosmos", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()
