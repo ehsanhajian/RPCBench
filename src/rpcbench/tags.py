@@ -36,7 +36,15 @@ def parse_client_label(value: object) -> str | None:
         if isinstance(core, str) and core.strip():
             value = f"solana-core {core.strip()}"
         else:
-            return None
+            resp = value.get("response")
+            if isinstance(resp, dict):
+                data = resp.get("data") or resp.get("version")
+                if isinstance(data, str) and data.strip():
+                    value = data.strip()
+                else:
+                    return None
+            else:
+                return None
     if not isinstance(value, str):
         return None
     text = " ".join(value.split())

@@ -36,7 +36,22 @@ def parse_block_height(value: Any) -> int | None:
         return None
     if isinstance(value, dict):
         # Substrate chain_getHeader / newHead: number is hex inside the header.
-        return parse_block_height(value.get("number"))
+        height = parse_block_height(value.get("number"))
+        if height is not None:
+            return height
+        # CometBFT status: sync_info.latest_block_height
+        sync = value.get("sync_info")
+        if isinstance(sync, dict):
+            height = parse_block_height(sync.get("latest_block_height"))
+            if height is not None:
+                return height
+        # CometBFT block: block.header.height
+        block = value.get("block")
+        if isinstance(block, dict):
+            header = block.get("header")
+            if isinstance(header, dict):
+                return parse_block_height(header.get("height"))
+        return None
     if isinstance(value, bool):
         return None
     if isinstance(value, int):

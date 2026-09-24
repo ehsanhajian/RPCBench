@@ -1,0 +1,9 @@
+# Public Cosmos (CometBFT) RPCs for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: publicnode
+    url: https://cosmos-rpc.publicnode.com
+    family: cosmos
+  - name: polkachu
+    url: https://cosmos-rpc.polkachu.com
+    family: cosmos

@@ -25,6 +25,20 @@ FAMILY_EVM = "evm"
 # src/rpcbench/watermark.py → repo root for an editable checkout; site-packages otherwise.
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
+_CYAN = "36"
+_BOLD = "1"
+
+
+def _paint(text: str, *codes: str, enabled: bool) -> str:
+    if not enabled or not codes:
+        return text
+    return f"\033[{';'.join(codes)}m{text}\033[0m"
+
+
+def family_token(family: str, *, color: bool = False) -> str:
+    """``family=name`` for Cite lines. Cyan when color is on."""
+    return _paint(f"family={family}", _BOLD, _CYAN, enabled=color)
+
 
 def git_sha() -> str | None:
     try:
@@ -99,21 +113,24 @@ def html_footer(result: RunResult) -> str:
     mark = as_dict(result)
     utc = mark["utc"] or "—"
     sha = mark["git_sha"] or "—"
+    family = escape(str(mark["family"]))
     return (
         f'<footer>rpcbench {escape(str(mark["version"]))} · sha={escape(str(sha))} · '
-        f'{escape(str(utc))} · family={escape(str(mark["family"]))} · '
+        f'{escape(str(utc))} · '
+        f'<span style="color:#22d3ee;font-weight:600">family={family}</span> · '
         f'vantage={escape(str(mark["vantage"] or "—"))} · '
         f'<a href="{DOCS_METHODOLOGY}">methodology</a> · '
         f'<a href="{DOCS_BOUNDARY}">boundary</a></footer>'
     )
 
 
-def cite_line(result: RunResult) -> str:
+def cite_line(result: RunResult, *, color: bool = False) -> str:
     mark = as_dict(result)
     sha = mark["git_sha"] or "—"
     vantage = mark["vantage"] or "—"
     utc = mark["utc"] or "—"
+    family = family_token(str(mark["family"]), color=color)
     return (
-        f"Cite      {mark['version']}  sha={sha}  family={mark['family']}  "
+        f"Cite      {mark['version']}  sha={sha}  {family}  "
         f"vantage={vantage}  utc={utc}  ·  methodology · boundary"
     )

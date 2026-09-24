@@ -268,3 +268,12 @@ def test_substrate_family_is_not_an_evm_fallback() -> None:
     with pytest.raises(MethodError, match="no substrate mix"):
         family_workload("substrate", "tracing")
 
+
+def test_cosmos_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("cosmos", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "status" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no cosmos mix"):
+        family_workload("cosmos", "tracing")
+

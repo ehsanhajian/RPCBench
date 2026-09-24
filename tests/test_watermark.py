@@ -73,6 +73,16 @@ def test_cite_line_uses_dashes_when_unset() -> None:
     assert "finding" not in text.lower()
 
 
+def test_cite_line_colors_family_when_enabled() -> None:
+    from rpcbench.watermark import cite_line
+
+    plain = cite_line(_result(family="solana"), color=False)
+    colored = cite_line(_result(family="solana"), color=True)
+    assert "family=solana" in plain
+    assert "\033[" not in plain
+    assert "\033[1;36mfamily=solana\033[0m" in colored
+
+
 def test_verbose_footer_links_docs() -> None:
     full = format_run(_result(), verbose=True, color=False)
     assert DOCS_METHODOLOGY in full

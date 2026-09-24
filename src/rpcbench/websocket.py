@@ -416,6 +416,9 @@ def _is_heads(msg: dict[str, Any]) -> bool:
         "chain_newHeadNotification",
     }:
         return True
+    # CometBFT subscribe delivers method "" or "subscribe" with result.data.value
+    if isinstance(msg.get("result"), dict) and "data" in msg["result"]:
+        return True
     params = msg.get("params")
     if isinstance(params, dict) and "result" in params:
         return True
@@ -429,7 +432,21 @@ def _head_number(msg: dict[str, Any]) -> int | None:
         height = parse_block_height(result.get("number"))
         if height is not None:
             return height
-        return parse_block_height(result.get("slot"))
+        height = parse_block_height(result.get("slot"))
+        if height is not None:
+            return height
+    # CometBFT NewBlock: result.data.value.block.header.height
+    top = msg.get("result")
+    if isinstance(top, dict):
+        data = top.get("data")
+        if isinstance(data, dict):
+            value = data.get("value")
+            if isinstance(value, dict):
+                block = value.get("block")
+                if isinstance(block, dict):
+                    return parse_block_height(block)
+                return parse_block_height(value)
+        return parse_block_height(top)
     return parse_block_height(result)
 
 
