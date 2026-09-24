@@ -13,6 +13,7 @@ SYSTEM_PROGRAM = "11111111111111111111111111111111"
 FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
 FAMILY_SUBSTRATE = "substrate"
+FAMILY_COSMOS = "cosmos"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -29,6 +30,11 @@ SUBSTRATE_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("chain_getHeader", []),
     "chainId": ("system_chain", []),
     "balance": ("state_getRuntimeVersion", []),
+}
+COSMOS_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("status", []),
+    "chainId": ("abci_info", []),
+    "balance": ("num_unconfirmed_txs", []),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -190,6 +196,31 @@ def _sub_health(weight: int = 1) -> CallSpec:
 
 def _sub_sync(weight: int = 1) -> CallSpec:
     return CallSpec("sync", "system_syncState", (), weight)
+
+
+def _cos_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "status", (), weight)
+
+
+def _cos_info(weight: int = 1) -> CallSpec:
+    return CallSpec("info", "abci_info", (), weight)
+
+
+def _cos_block(weight: int = 1) -> CallSpec:
+    # null height = latest tip on CometBFT JSON-RPC.
+    return CallSpec("block", "block", (None,), weight)
+
+
+def _cos_net(weight: int = 1) -> CallSpec:
+    return CallSpec("net", "net_info", (), weight)
+
+
+def _cos_mempool(weight: int = 1) -> CallSpec:
+    return CallSpec("mempool", "num_unconfirmed_txs", (), weight)
+
+
+def _cos_consensus(weight: int = 1) -> CallSpec:
+    return CallSpec("consensus", "consensus_state", (), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -393,11 +424,55 @@ _SUBSTRATE_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Cosmos / CometBFT catalogs. Not Cosmos EVM eth_*. tracing stays EVM-only.
+# abci_query / tx_search need named object params — deferred.
+_COSMOS_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _cos_head(),
+        _cos_info(),
+        _cos_block(),
+        _cos_net(),
+        _cos_mempool(),
+        _cos_consensus(),
+    ),
+    "wallet": (
+        _cos_head(),
+        _cos_info(),
+        _cos_block(),
+        _cos_mempool(4),
+        _cos_net(3),
+        _cos_block(2),
+    ),
+    "indexer": (
+        _cos_head(),
+        _cos_info(),
+        _cos_block(3),
+        _cos_net(),
+        _cos_consensus(4),
+    ),
+    "trading": (
+        _cos_head(3),
+        _cos_info(),
+        _cos_block(2),
+        _cos_mempool(4),
+        _cos_net(2),
+    ),
+    "nft": (
+        _cos_head(),
+        _cos_info(),
+        _cos_block(),
+        _cos_mempool(),
+        _cos_net(3),
+        _cos_consensus(3),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
     FAMILY_SOLANA: _SOLANA_WORKLOADS,
     FAMILY_SUBSTRATE: _SUBSTRATE_WORKLOADS,
+    FAMILY_COSMOS: _COSMOS_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -423,6 +498,14 @@ _SUBSTRATE_WRITE_METHODS = frozenset(
     {
         "author_submitextrinsic",
         "author_submitandwatchextrinsic",
+    }
+)
+_COSMOS_WRITE_METHODS = frozenset(
+    {
+        "broadcast_tx_sync",
+        "broadcast_tx_async",
+        "broadcast_tx_commit",
+        "broadcast_evidence",
     }
 )
 
@@ -509,6 +592,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return SOLANA_PRESETS
     if family == FAMILY_SUBSTRATE:
         return SUBSTRATE_PRESETS
+    if family == FAMILY_COSMOS:
+        return COSMOS_PRESETS
     return PRESETS
 
 
@@ -517,6 +602,8 @@ def _default_method(family: str) -> str:
         return "getSlot"
     if family == FAMILY_SUBSTRATE:
         return "chain_getHeader"
+    if family == FAMILY_COSMOS:
+        return "status"
     return "eth_blockNumber"
 
 
@@ -679,7 +766,11 @@ def is_write_method(method: str) -> bool:
     lower = method.lower()
     if any(lower.startswith(p) for p in _WRITE_PREFIXES):
         return True
-    return lower in _SOLANA_WRITE_METHODS or lower in _SUBSTRATE_WRITE_METHODS
+    return (
+        lower in _SOLANA_WRITE_METHODS
+        or lower in _SUBSTRATE_WRITE_METHODS
+        or lower in _COSMOS_WRITE_METHODS
+    )
 
 
 def _reject_writes(method: str) -> None:

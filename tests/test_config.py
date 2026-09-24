@@ -65,6 +65,7 @@ def test_ci_endpoints_are_public_https() -> None:
         ("endpoints.ci.yaml", "evm"),
         ("endpoints.ci.solana.yaml", "solana"),
         ("endpoints.ci.substrate.yaml", "substrate"),
+        ("endpoints.ci.cosmos.yaml", "cosmos"),
     )
     for name, family in files:
         cfg = load_endpoints(root / name)

@@ -39,6 +39,9 @@ jobs:
           - name: substrate
             endpoints: endpoints.ci.substrate.yaml
             method: chain_getHeader
+          - name: cosmos
+            endpoints: endpoints.ci.cosmos.yaml
+            method: status
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

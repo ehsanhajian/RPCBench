@@ -39,7 +39,16 @@ def parse_block_pin(raw: str | None) -> int | None:
 
 def parse_block_hash(value: Any) -> str | None:
     if isinstance(value, dict):
-        value = value.get("hash") or value.get("blockhash")
+        digest = value.get("hash") or value.get("blockhash")
+        if digest is None:
+            block_id = value.get("block_id")
+            if isinstance(block_id, dict):
+                digest = block_id.get("hash")
+        if digest is None:
+            sync = value.get("sync_info")
+            if isinstance(sync, dict):
+                digest = sync.get("latest_block_hash")
+        value = digest
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -67,10 +76,9 @@ def parse_block_hash(value: Any) -> str | None:
 
 def parse_block_number(value: Any) -> int | None:
     if isinstance(value, dict):
-        height = parse_block_height(value.get("number"))
+        height = parse_block_height(value)
         if height is not None:
             return height
-        # Solana getBlock reports blockHeight; parentSlot is the prior slot.
         height = parse_block_height(value.get("blockHeight"))
         if height is not None:
             return height

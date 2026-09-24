@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "atom",
-                        "url": "http://127.0.0.1:26657",
-                        "family": "cosmos",
+                        "name": "apt",
+                        "url": "http://127.0.0.1:8080",
+                        "family": "aptos",
                     }
                 ]
             }
@@ -121,6 +121,27 @@ def test_substrate_family_loads() -> None:
     adapter = benchmark_family("substrate")
     assert adapter.head_method == "chain_getHeader"
     assert adapter.ws_method == "chain_subscribeNewHeads"
+    assert adapter.block_time_s == 6.0
+
+
+def test_cosmos_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "atom",
+                    "url": "http://127.0.0.1:26657",
+                    "family": "cosmos",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "cosmos"
+    assert resolve_benchmark_family(cfg) == "cosmos"
+    adapter = benchmark_family("cosmos")
+    assert adapter.head_method == "status"
+    assert adapter.ws_method == "subscribe"
+    assert adapter.ws_params == ("tm.event='NewBlock'",)
     assert adapter.block_time_s == 6.0
 
 
@@ -248,9 +269,56 @@ def test_auto_detect_substrate_resolves() -> None:
     assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "substrate"
 
 
+
+def test_auto_detect_cosmos_resolves() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:26657",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "eth_chainId" in body or "getHealth" in body or "system_health" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32601, "message": "method not found"},
+                },
+            )
+        if "status" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "sync_info": {
+                            "latest_block_height": "100",
+                            "latest_block_hash": "AB" * 32,
+                        }
+                    },
+                },
+            )
+        raise AssertionError(body)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "cosmos"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "cosmos"
+
+
 def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        normalize_family("cosmos")
+        normalize_family("aptos")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -322,7 +390,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "cosmos", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "aptos", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()

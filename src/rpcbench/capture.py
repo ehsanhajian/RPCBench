@@ -24,6 +24,7 @@ from rpcbench.watermark import (
     DOCS_BOUNDARY,
     DOCS_METHODOLOGY,
     FAMILY_EVM,
+    family_token,
     git_sha as current_git_sha,
     utc_stamp,
     vantage_label,
@@ -371,8 +372,8 @@ def format_replay(
         f"Timeout {result.timeout:g}s  ·  "
         f"requests {result.budget} ({result.budget_remaining} left)  ·  "
         f"writes={writes}",
-        f"Mode      lockstep  ·  family={result.family}",
-        _cite(result),
+        f"Mode      lockstep  ·  {family_token(result.family, color=color)}",
+        _cite(result, color=color),
         "",
         "Summary",
         f"  Match     {result.n_match}/{n}  (bodies among successes)",
@@ -760,12 +761,13 @@ def _diff_lines(result: ReplayResult) -> list[str]:
     return lines
 
 
-def _cite(result: ReplayResult) -> str:
+def _cite(result: ReplayResult, *, color: bool = False) -> str:
     sha = result.git_sha or "—"
     vantage = result.vantage or "—"
     utc = result.started_at or "—"
+    family = family_token(result.family, color=color)
     return (
-        f"Cite      {__version__}  sha={sha}  family={result.family}  "
+        f"Cite      {__version__}  sha={sha}  {family}  "
         f"vantage={vantage}  utc={utc}  ·  methodology · boundary"
     )
 

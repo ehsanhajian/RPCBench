@@ -523,7 +523,7 @@ def format_run(
         f"{_lookback_mode_suffix(result)}"
         f"{_websocket_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
-        cite_line(result),
+        cite_line(result, color=use_color),
         "",
         "Summary",
     ]

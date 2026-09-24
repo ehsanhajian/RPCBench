@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, or substrate).
+# Compare one family at a time (evm, solana, substrate, or cosmos).
 
 endpoints:
   - name: local
@@ -27,6 +27,11 @@ endpoints:
     url: https://polkadot-rpc.publicnode.com
     family: substrate
     # ws: wss://polkadot-rpc.publicnode.com
+
+  # Cosmos (CometBFT JSON-RPC — not Cosmos EVM eth_*)
+  - name: atom-publicnode
+    url: https://cosmos-rpc.publicnode.com
+    family: cosmos
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY

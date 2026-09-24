@@ -1,6 +1,6 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
-Identity handshakes (eth_chainId, getHealth, system_health) choose a family.
+Identity handshakes (eth_chainId, getHealth, system_health, status) choose a family.
 They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
 FAMILY_SUBSTRATE = "substrate"
+FAMILY_COSMOS = "cosmos"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -37,13 +38,16 @@ KNOWN_FAMILIES = (
     "ton",
     "auto",
 )
-IMPLEMENTED = frozenset({FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE})
+IMPLEMENTED = frozenset(
+    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS}
+)
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
 _DETECT_PROBES = (
     ("eth_chainId", FAMILY_EVM),
     ("getHealth", FAMILY_SOLANA),
     ("system_health", FAMILY_SUBSTRATE),
+    ("status", FAMILY_COSMOS),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -108,6 +112,19 @@ SUBSTRATE = FamilyAdapter(
     client_method="system_version",
 )
 
+# CometBFT / Tendermint JSON-RPC (Cosmos SDK hubs). Not Cosmos EVM eth_*.
+COSMOS = FamilyAdapter(
+    name=FAMILY_COSMOS,
+    head_method="status",
+    chain_method="abci_info",
+    block_method="block",
+    block_time_s=6.0,
+    batch_shape="jsonrpc-array",
+    ws_method="subscribe",
+    ws_params=("tm.event='NewBlock'",),
+    client_method="abci_info",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -141,6 +158,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return SOLANA
     if key == FAMILY_SUBSTRATE:
         return SUBSTRATE
+    if key == FAMILY_COSMOS:
+        return COSMOS
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -157,11 +176,13 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [pin, dict(_SOLANA_BLOCK_CONFIG)]
     if adapter.name == FAMILY_SUBSTRATE:
         return [hex(pin)]
+    if adapter.name == FAMILY_COSMOS:
+        return [str(pin)]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE}:
+    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS}:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
@@ -253,4 +274,10 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
         return hit.result == "ok"
     if method == "system_health":
         return isinstance(hit.result, dict)
+    if method == "status":
+        # CometBFT / Tendermint status (Cosmos SDK hubs).
+        return (
+            isinstance(hit.result, dict)
+            and isinstance(hit.result.get("sync_info"), dict)
+        )
     return False

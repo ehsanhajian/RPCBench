@@ -342,10 +342,56 @@ def test_probe_websocket_family_skip() -> None:
         {"endpoints": [{"name": "x", "url": "http://127.0.0.1:1", "ws": "ws://127.0.0.1:2"}]}
     ).endpoints[0]
     hit = probe_websocket(
-        ep, window=0.05, timeout=1.0, family="cosmos", open_ws=_open([_ack()])
+        ep, window=0.05, timeout=1.0, family="aptos", open_ws=_open([_ack()])
     )
     assert hit.skip == "family"
     assert websocket_label(hit) == "skip/family"
+
+
+def test_probe_websocket_cosmos_new_block() -> None:
+    ep = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "x",
+                    "url": "http://127.0.0.1:1",
+                    "ws": "ws://127.0.0.1:2",
+                    "family": "cosmos",
+                }
+            ]
+        }
+    ).endpoints[0]
+    head = {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {
+            "query": "tm.event='NewBlock'",
+            "data": {
+                "type": "tendermint/event/NewBlock",
+                "value": {
+                    "block": {
+                        "header": {
+                            "height": "42",
+                            "chain_id": "cosmoshub-4",
+                        }
+                    }
+                },
+            },
+        },
+    }
+    sock = ScriptedWS([_ack({}), head])
+
+    def open_ws(url: str, *, headers=(), timeout: float = 10.0):
+        return sock
+
+    hit = probe_websocket(
+        ep, window=0.05, timeout=1.0, family="cosmos", open_ws=open_ws
+    )
+    assert hit.ok
+    assert hit.n_events >= 1
+    sent = json.loads(sock.sent[0])
+    assert sent["method"] == "subscribe"
+    assert sent["params"] == ["tm.event='NewBlock'"]
 
 
 def test_probe_websocket_substrate_new_heads() -> None:
