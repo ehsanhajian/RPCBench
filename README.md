@@ -2,7 +2,7 @@
 
 **Which RPC endpoint is fastest — for this call, from this machine?**
 
-A small CLI that compares **EVM, Solana, Substrate, Cosmos, and Sui JSON-RPC, plus Aptos REST**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node). Use `--family solana`, `--family substrate`, `--family cosmos`, `--family aptos`, or `--family sui` (or `family:` / `auto` in the endpoints file).
+A small CLI that compares **EVM, Solana, Substrate, Cosmos, Sui, and NEAR JSON-RPC, plus Aptos REST**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node). Use `--family solana`, `--family substrate`, `--family cosmos`, `--family aptos`, `--family sui`, or `--family near` (or `family:` / `auto` in the endpoints file).
 
 It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
@@ -20,7 +20,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-PRs run `pytest`, then a live smoke per family against public RPCs (`eth_blockNumber`, `getSlot`, `chain_getHeader`, `status`, ledger GET, `sui_getLatestCheckpointSequenceNumber`; `--samples 1 --warmup 0`). No local node in CI; each family smoke passes if either public endpoint in that file is ok.
+PRs run `pytest`, then a live smoke per family against public RPCs (`eth_blockNumber`, `getSlot`, `chain_getHeader`, `status`, ledger GET, `sui_getLatestCheckpointSequenceNumber`, NEAR `status`; `--samples 1 --warmup 0`). No local node in CI; each family smoke passes if either public endpoint in that file is ok.
 
 ## Start
 
@@ -54,9 +54,12 @@ endpoints:
   - name: sui-publicnode
     url: https://sui-rpc.publicnode.com
     family: sui
+  - name: near-mainnet
+    url: https://rpc.mainnet.near.org
+    family: near
 ```
 
-Compare one family at a time (`--family sui` or only that family’s rows in the file). `run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
+Compare one family at a time (`--family near` or only that family’s rows in the file). `run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
 ## Report
 
 Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. `--md` is a pasteable GitHub markdown table with aligned columns (ranking, P95, errors, rel, freshness, verdict). `--csv` is one flat row per provider (run, rank, latency, verdict, transport). `-o report.csv` writes that CSV and keeps the CLI table. `rpcbench diff old.json new.json` compares two JSON runs (P95 delta, winner change, new signals) and exits 1 in CI if the previous **primary** got worse beyond the similar-band. `--history DIR` appends a JSON snapshot after a run so diff can use `--history DIR`. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
@@ -228,7 +231,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--block-time` | `12` or known chain | Seconds per block for estimated lag time |
 | `--block` | cohort median | Pin the head-hash check (`hex`, decimal, or `latest`) |
 | `--preset` | | `head` (`eth_blockNumber`), `chainId`, or `balance` (`eth_getBalance` of the zero address) |
-| `--family` | `evm` | Benchmark family: `evm`, `solana`, `substrate`, `cosmos`, `aptos`, `sui`, or `auto` (`eth_chainId` / `getHealth` / `system_health` / `status` / sui checkpoint / ledger GET). Other families error. Not a scan |
+| `--family` | `evm` | Benchmark family: `evm`, `solana`, `substrate`, `cosmos`, `aptos`, `sui`, `near`, or `auto` (`eth_chainId` / `getHealth` / `system_health` / `status` / sui checkpoint / `network_info` / ledger GET). Other families error. Not a scan |
 | `--workload` | `general` when omitted | `wallet`, `indexer`, `trading`, `nft`, `tracing`. Weighted mix. Omit the flag for general + short. Do not combine with `--method` or `--preset` |
 | `--profile` | | YAML mix file, or alias `mix` = general. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | | Single JSON-RPC method and JSON array of params. Head probe: `--method eth_blockNumber`. Do not combine `--method` with `--preset` |

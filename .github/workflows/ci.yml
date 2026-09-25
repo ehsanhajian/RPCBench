@@ -48,6 +48,9 @@ jobs:
           - name: sui
             endpoints: endpoints.ci.sui.yaml
             method: sui_getLatestCheckpointSequenceNumber
+          - name: near
+            endpoints: endpoints.ci.near.yaml
+            method: status
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

@@ -295,3 +295,13 @@ def test_sui_family_is_not_an_evm_fallback() -> None:
     assert all(not m.startswith("eth_") for m in methods)
     with pytest.raises(MethodError, match="no sui mix"):
         family_workload("sui", "tracing")
+
+
+def test_near_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("near", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "status" in methods
+    assert "query" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no near mix"):
+        family_workload("near", "tracing")

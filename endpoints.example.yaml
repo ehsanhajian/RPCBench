@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, substrate, cosmos, aptos, or sui).
+# Compare one family at a time (evm, solana, substrate, cosmos, aptos, sui, or near).
 
 endpoints:
   - name: local
@@ -42,6 +42,11 @@ endpoints:
   - name: sui-publicnode
     url: https://sui-rpc.publicnode.com
     family: sui
+
+  # NEAR JSON-RPC
+  - name: near-mainnet
+    url: https://rpc.mainnet.near.org
+    family: near
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY

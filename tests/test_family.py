@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "near",
-                        "url": "http://127.0.0.1:3030",
-                        "family": "near",
+                        "name": "stark",
+                        "url": "http://127.0.0.1:9545",
+                        "family": "starknet",
                     }
                 ]
             }
@@ -186,6 +186,27 @@ def test_sui_family_loads() -> None:
     assert adapter.head_method == "sui_getLatestCheckpointSequenceNumber"
     assert adapter.ws_method == ""
     assert adapter.block_time_s == 0.5
+
+
+
+def test_near_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "near",
+                    "url": "http://127.0.0.1:3030",
+                    "family": "near",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "near"
+    assert resolve_benchmark_family(cfg) == "near"
+    adapter = benchmark_family("near")
+    assert adapter.head_method == "status"
+    assert adapter.ws_method == ""
+    assert adapter.block_time_s == 1.2
 
 
 def test_omitted_family_is_evm_and_localhost_stays_allowed() -> None:
@@ -344,10 +365,11 @@ def test_auto_detect_cosmos_resolves() -> None:
                     "jsonrpc": "2.0",
                     "id": 1,
                     "result": {
+                        "node_info": {"network": "cosmoshub-4"},
                         "sync_info": {
                             "latest_block_height": "100",
                             "latest_block_hash": "AB" * 32,
-                        }
+                        },
                     },
                 },
             )
@@ -434,9 +456,82 @@ def test_auto_detect_sui_resolves() -> None:
     assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "sui"
 
 
+
+def test_auto_detect_near_resolves() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:3030",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "network_info" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"active_peers": [], "num_active_peers": 0},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "method not found"},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "near"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "near"
+
+
+def test_near_status_is_not_cosmos() -> None:
+    from rpcbench.family import _identity_hit
+    from rpcbench.rpc import ProbeResult
+
+    near = ProbeResult(
+        ok=True,
+        reachable=True,
+        latency_ms=1.0,
+        result={
+            "chain_id": "mainnet",
+            "genesis_hash": "abc",
+            "sync_info": {"latest_block_height": 1},
+        },
+        error=None,
+        error_class=None,
+        attempts=1,
+    )
+    assert not _identity_hit("status", near)
+    cosmos = ProbeResult(
+        ok=True,
+        reachable=True,
+        latency_ms=1.0,
+        result={
+            "node_info": {"network": "cosmoshub-4"},
+            "sync_info": {"latest_block_height": "1"},
+        },
+        error=None,
+        error_class=None,
+        attempts=1,
+    )
+    assert _identity_hit("status", cosmos)
+
+
 def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        normalize_family("near")
+        normalize_family("starknet")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -508,7 +603,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "near", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "starknet", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()

@@ -28,6 +28,20 @@ HTTP_1 = "1.1"
 HTTP_2 = "2"
 TRANSPORT_JSONRPC = "jsonrpc"
 TRANSPORT_REST = "rest"
+
+
+class NamedParams(dict):
+    """JSON-RPC named params object (NEAR ``block`` / ``query``)."""
+
+
+def encode_rpc_params(params: list[Any] | None) -> Any:
+    """Array by default; a lone NamedParams becomes a JSON object."""
+    if not params:
+        return []
+    if len(params) == 1 and isinstance(params[0], NamedParams):
+        return dict(params[0])
+    return list(params)
+
 _TRANSPORT = contextvars.ContextVar("rpcbench_transport", default=TRANSPORT_JSONRPC)
 
 
@@ -341,7 +355,7 @@ def _probe_jsonrpc(
                         "jsonrpc": "2.0",
                         "id": attempts,
                         "method": method,
-                        "params": params or [],
+                        "params": encode_rpc_params(params),
                     },
                     headers=extra or None,
                 )
@@ -743,7 +757,7 @@ def probe_batch(
                         "jsonrpc": "2.0",
                         "id": i,
                         "method": method,
-                        "params": params or [],
+                        "params": encode_rpc_params(params),
                     }
                     for i in range(1, size + 1)
                 ],

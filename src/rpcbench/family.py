@@ -1,6 +1,6 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
-Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint, ledger GET) choose a family.
+Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint, network_info, ledger GET) choose a family.
 They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from rpcbench.config import ConfigError
 from rpcbench.freshness import parse_block_height
+from rpcbench.rpc import NamedParams
 
 if TYPE_CHECKING:
     import httpx
@@ -24,6 +25,7 @@ FAMILY_SUBSTRATE = "substrate"
 FAMILY_COSMOS = "cosmos"
 FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
+FAMILY_NEAR = "near"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -41,7 +43,7 @@ KNOWN_FAMILIES = (
     "auto",
 )
 IMPLEMENTED = frozenset(
-    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI}
+    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR}
 )
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
@@ -51,6 +53,7 @@ _DETECT_PROBES = (
     ("system_health", FAMILY_SUBSTRATE),
     ("status", FAMILY_COSMOS),
     ("sui_getLatestCheckpointSequenceNumber", FAMILY_SUI),
+    ("network_info", FAMILY_NEAR),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -157,6 +160,19 @@ SUI = FamilyAdapter(
     client_method="sui_getChainIdentifier",
 )
 
+# NEAR JSON-RPC. status / block / query — not NEAR EVM eth_*.
+NEAR = FamilyAdapter(
+    name=FAMILY_NEAR,
+    head_method="status",
+    chain_method="status",
+    block_method="block",
+    block_time_s=1.2,
+    batch_shape="jsonrpc-array",
+    ws_method="",
+    ws_params=(),
+    client_method="status",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -196,6 +212,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return APTOS
     if key == FAMILY_SUI:
         return SUI
+    if key == FAMILY_NEAR:
+        return NEAR
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -218,11 +236,13 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [str(pin)]
     if adapter.name == FAMILY_SUI:
         return [str(pin)]
+    if adapter.name == FAMILY_NEAR:
+        return [NamedParams(block_id=pin)]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI}:
+    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR}:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
@@ -328,11 +348,15 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
     if method == "system_health":
         return isinstance(hit.result, dict)
     if method == "status":
-        # CometBFT / Tendermint status (Cosmos SDK hubs).
+        # CometBFT / Tendermint (Cosmos). Require node_info so NEAR status does not match.
         return (
             isinstance(hit.result, dict)
+            and isinstance(hit.result.get("node_info"), dict)
             and isinstance(hit.result.get("sync_info"), dict)
         )
+    if method == "network_info":
+        # NEAR network_info.
+        return isinstance(hit.result, dict) and "active_peers" in hit.result
     if method == "sui_getLatestCheckpointSequenceNumber":
         return parse_block_height(hit.result) is not None
     if method == "ledger":
