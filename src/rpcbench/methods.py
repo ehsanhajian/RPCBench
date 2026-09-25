@@ -14,6 +14,7 @@ FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
 FAMILY_SUBSTRATE = "substrate"
 FAMILY_COSMOS = "cosmos"
+FAMILY_APTOS = "aptos"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -35,6 +36,13 @@ COSMOS_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("status", []),
     "chainId": ("abci_info", []),
     "balance": ("num_unconfirmed_txs", []),
+}
+# Aptos REST paths relative to /v1 base. "." is the ledger index.
+APTOS_ACCOUNT = "0x1"
+APTOS_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": (".", []),
+    "chainId": (".", []),
+    "balance": (f"accounts/{APTOS_ACCOUNT}", []),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -221,6 +229,50 @@ def _cos_mempool(weight: int = 1) -> CallSpec:
 
 def _cos_consensus(weight: int = 1) -> CallSpec:
     return CallSpec("consensus", "consensus_state", (), weight)
+
+
+def _apt_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", ".", (), weight)
+
+
+def _apt_account(weight: int = 1) -> CallSpec:
+    return CallSpec("account", f"accounts/{APTOS_ACCOUNT}", (), weight)
+
+
+def _apt_resources(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "resources",
+        f"accounts/{APTOS_ACCOUNT}/resources?limit=5",
+        (),
+        weight,
+    )
+
+
+def _apt_txs(weight: int = 1) -> CallSpec:
+    return CallSpec("txs", "transactions?limit=10", (), weight)
+
+
+def _apt_account_txs(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "account_txs",
+        f"accounts/{APTOS_ACCOUNT}/transactions?limit=5",
+        (),
+        weight,
+    )
+
+
+def _apt_gas(weight: int = 1) -> CallSpec:
+    return CallSpec("gas", "estimate_gas_price", (), weight)
+
+
+def _apt_events(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "events",
+        f"accounts/{APTOS_ACCOUNT}/events/"
+        "0x1::block::BlockResource/new_block_events?limit=5",
+        (),
+        weight,
+    )
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -467,12 +519,53 @@ _COSMOS_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Aptos fullnode REST catalogs. tracing stays EVM-only.
+_APTOS_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _apt_head(),
+        _apt_account(),
+        _apt_resources(),
+        _apt_txs(),
+        _apt_gas(),
+        _apt_events(),
+    ),
+    "wallet": (
+        _apt_head(),
+        _apt_account(),
+        _apt_gas(3),
+        _apt_account_txs(4),
+        _apt_resources(2),
+    ),
+    "indexer": (
+        _apt_head(),
+        _apt_txs(4),
+        _apt_events(3),
+        _apt_resources(2),
+        _apt_account(),
+    ),
+    "trading": (
+        _apt_head(3),
+        _apt_gas(4),
+        _apt_txs(2),
+        _apt_account(),
+        _apt_account_txs(2),
+    ),
+    "nft": (
+        _apt_head(),
+        _apt_account(),
+        _apt_resources(3),
+        _apt_events(3),
+        _apt_txs(2),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
     FAMILY_SOLANA: _SOLANA_WORKLOADS,
     FAMILY_SUBSTRATE: _SUBSTRATE_WORKLOADS,
     FAMILY_COSMOS: _COSMOS_WORKLOADS,
+    FAMILY_APTOS: _APTOS_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -506,6 +599,13 @@ _COSMOS_WRITE_METHODS = frozenset(
         "broadcast_tx_async",
         "broadcast_tx_commit",
         "broadcast_evidence",
+    }
+)
+_APTOS_WRITE_METHODS = frozenset(
+    {
+        "transactions",
+        "transactions/batch",
+        "transactions/encode_submission",
     }
 )
 
@@ -594,6 +694,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return SUBSTRATE_PRESETS
     if family == FAMILY_COSMOS:
         return COSMOS_PRESETS
+    if family == FAMILY_APTOS:
+        return APTOS_PRESETS
     return PRESETS
 
 
@@ -604,6 +706,8 @@ def _default_method(family: str) -> str:
         return "chain_getHeader"
     if family == FAMILY_COSMOS:
         return "status"
+    if family == FAMILY_APTOS:
+        return "."
     return "eth_blockNumber"
 
 
@@ -770,6 +874,7 @@ def is_write_method(method: str) -> bool:
         lower in _SOLANA_WRITE_METHODS
         or lower in _SUBSTRATE_WRITE_METHODS
         or lower in _COSMOS_WRITE_METHODS
+        or lower in _APTOS_WRITE_METHODS
     )
 
 

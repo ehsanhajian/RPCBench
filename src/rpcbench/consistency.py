@@ -39,7 +39,11 @@ def parse_block_pin(raw: str | None) -> int | None:
 
 def parse_block_hash(value: Any) -> str | None:
     if isinstance(value, dict):
-        digest = value.get("hash") or value.get("blockhash")
+        digest = (
+            value.get("hash")
+            or value.get("blockhash")
+            or value.get("block_hash")
+        )
         if digest is None:
             block_id = value.get("block_id")
             if isinstance(block_id, dict):

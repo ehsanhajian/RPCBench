@@ -123,6 +123,8 @@ def probe_websocket(
         adapter = benchmark_family(family)
     except ConfigError:
         return skipped_websocket("family", window_s=window)
+    if not adapter.ws_method:
+        return skipped_websocket("family", window_s=window)
     if deadline is not None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:

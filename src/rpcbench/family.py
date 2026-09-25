@@ -1,6 +1,6 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
-Identity handshakes (eth_chainId, getHealth, system_health, status) choose a family.
+Identity handshakes (eth_chainId, getHealth, system_health, status, ledger GET) choose a family.
 They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
@@ -22,6 +22,7 @@ FAMILY_EVM = "evm"
 FAMILY_SOLANA = "solana"
 FAMILY_SUBSTRATE = "substrate"
 FAMILY_COSMOS = "cosmos"
+FAMILY_APTOS = "aptos"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -39,7 +40,7 @@ KNOWN_FAMILIES = (
     "auto",
 )
 IMPLEMENTED = frozenset(
-    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS}
+    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS}
 )
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
@@ -73,6 +74,8 @@ class FamilyAdapter:
     client_method: str
     # Empty means the EVM latest/safe/finalized tag wave is skipped.
     block_tags: tuple[str, ...] = ()
+    # jsonrpc (POST) or rest (GET). Aptos fullnode is REST.
+    transport: str = "jsonrpc"
 
 
 EVM = FamilyAdapter(
@@ -125,6 +128,20 @@ COSMOS = FamilyAdapter(
     client_method="abci_info",
 )
 
+# Aptos fullnode REST (/v1). Not Move EVM eth_*.
+APTOS = FamilyAdapter(
+    name=FAMILY_APTOS,
+    head_method=".",
+    chain_method=".",
+    block_method="blocks/by_version",
+    block_time_s=0.1,
+    batch_shape="rest-get",
+    ws_method="",
+    ws_params=(),
+    client_method=".",
+    transport="rest",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -160,6 +177,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return SUBSTRATE
     if key == FAMILY_COSMOS:
         return COSMOS
+    if key == FAMILY_APTOS:
+        return APTOS
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -178,11 +197,13 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [hex(pin)]
     if adapter.name == FAMILY_COSMOS:
         return [str(pin)]
+    if adapter.name == FAMILY_APTOS:
+        return [str(pin)]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS}:
+    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS}:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
@@ -243,7 +264,7 @@ def detect_family(
     client: httpx.Client | None = None,
 ) -> str:
     """Cheap identity handshake. A hit names a family. It is not a finding."""
-    from rpcbench.rpc import probe
+    from rpcbench.rpc import TRANSPORT_REST, probe
 
     for method, family in _DETECT_PROBES:
         hit = probe(
@@ -257,7 +278,20 @@ def detect_family(
         )
         if _identity_hit(method, hit):
             return family
-    tried = ", ".join(method for method, _family in _DETECT_PROBES)
+    # Aptos fullnode REST ledger info (GET base /v1).
+    hit = probe(
+        endpoint.url,
+        ".",
+        params=[],
+        timeout=timeout,
+        retries=0,
+        client=client,
+        headers=endpoint.headers,
+        transport=TRANSPORT_REST,
+    )
+    if _identity_hit("ledger", hit):
+        return FAMILY_APTOS
+    tried = ", ".join(method for method, _family in _DETECT_PROBES) + ", ledger"
     raise ConfigError(
         f"could not detect a family for {endpoint.name} (tried {tried}); "
         "set family: evm"
@@ -279,5 +313,12 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
         return (
             isinstance(hit.result, dict)
             and isinstance(hit.result.get("sync_info"), dict)
+        )
+    if method == "ledger":
+        # Aptos fullnode GET /v1 ledger info.
+        return (
+            isinstance(hit.result, dict)
+            and hit.result.get("ledger_version") is not None
+            and hit.result.get("chain_id") is not None
         )
     return False

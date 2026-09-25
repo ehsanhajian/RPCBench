@@ -1,7 +1,8 @@
-"""Budgeted JSON-RPC HTTP client. Localhost and private URLs are allowed."""
+"""Budgeted JSON-RPC / REST HTTP client. Localhost and private URLs are allowed."""
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import threading
@@ -9,7 +10,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -25,6 +26,47 @@ from rpcbench.timing import (
 USER_AGENT = f"RPCBench/{__version__} (+https://github.com/ehsanhajian/RPCBench)"
 HTTP_1 = "1.1"
 HTTP_2 = "2"
+TRANSPORT_JSONRPC = "jsonrpc"
+TRANSPORT_REST = "rest"
+_TRANSPORT = contextvars.ContextVar("rpcbench_transport", default=TRANSPORT_JSONRPC)
+
+
+def set_transport(name: str) -> contextvars.Token[str]:
+    """Scope probe() / probe_batch() style for one run (jsonrpc or rest)."""
+    return _TRANSPORT.set(name)
+
+
+def reset_transport(token: contextvars.Token[str]) -> None:
+    _TRANSPORT.reset(token)
+
+
+def current_transport() -> str:
+    return _TRANSPORT.get()
+
+
+def rest_url(base: str, method: str, params: list[Any] | None = None) -> str:
+    """Join a REST base URL with a path method and optional path segments."""
+    root = base.rstrip("/")
+    raw = (method or "").strip()
+    if raw in {"", "."}:
+        path_part, query = "", ""
+    else:
+        raw = raw.lstrip("/")
+        path_part, _, query = raw.partition("?")
+    segments: list[str] = []
+    if path_part:
+        segments.extend(seg for seg in path_part.split("/") if seg)
+    for item in params or []:
+        if item is None:
+            continue
+        text = str(item).lstrip("/")
+        if text:
+            segments.append(text)
+    quoted = "/".join(quote(seg, safe="") for seg in segments)
+    target = f"{root}/{quoted}" if quoted else root
+    if query:
+        return f"{target}?{query}"
+    return target
 
 # Reliability class, not a security finding. Tight on purpose: "limit" alone is too broad.
 _RATE_LIMIT_MARKERS = (
@@ -198,6 +240,43 @@ def _transport_fields(
 
 
 def probe(
+    url: str,
+    method: str,
+    *,
+    params: list[Any] | None = None,
+    timeout: float = 10.0,
+    retries: int = 2,
+    budget: RequestBudget | None = None,
+    client: httpx.Client | None = None,
+    headers: Sequence[tuple[str, str]] | None = None,
+    transport: str | None = None,
+) -> ProbeResult:
+    """Hit one JSON-RPC method or REST path. Transport failures retry; RPC errors do not."""
+    style = transport or current_transport()
+    if style == TRANSPORT_REST:
+        return _probe_rest(
+            url,
+            method,
+            params=params,
+            timeout=timeout,
+            retries=retries,
+            budget=budget,
+            client=client,
+            headers=headers,
+        )
+    return _probe_jsonrpc(
+        url,
+        method,
+        params=params,
+        timeout=timeout,
+        retries=retries,
+        budget=budget,
+        client=client,
+        headers=headers,
+    )
+
+
+def _probe_jsonrpc(
     url: str,
     method: str,
     *,
@@ -415,6 +494,214 @@ def probe(
             http.close()
 
 
+def _probe_rest(
+    url: str,
+    method: str,
+    *,
+    params: list[Any] | None = None,
+    timeout: float = 10.0,
+    retries: int = 2,
+    budget: RequestBudget | None = None,
+    client: httpx.Client | None = None,
+    headers: Sequence[tuple[str, str]] | None = None,
+) -> ProbeResult:
+    """Hit one REST GET path. Body JSON is the result (Aptos fullnode style)."""
+    owns = client is None
+    reason = _invalid_url_reason(url)
+    if reason:
+        return ProbeResult(
+            ok=False,
+            reachable=False,
+            latency_ms=None,
+            result=None,
+            error=reason,
+            error_class="invalid_url",
+            attempts=0,
+        )
+    target = rest_url(url, method, params)
+    reason = _invalid_url_reason(target)
+    if reason:
+        return ProbeResult(
+            ok=False,
+            reachable=False,
+            latency_ms=None,
+            result=None,
+            error=reason,
+            error_class="invalid_url",
+            attempts=0,
+        )
+    extra = dict(headers or ())
+    http = client or make_client(timeout=timeout)
+    attempts = 0
+    last_error = "unknown error"
+    last_class = "error"
+    last_latency: float | None = None
+    last_timing: HttpTiming | None = None
+    last_transport: dict[str, str | int | None] = {}
+    try:
+        max_tries = max(1, retries + 1)
+        for attempt in range(max_tries):
+            attempts = attempt + 1
+            if budget is not None:
+                try:
+                    budget.consume()
+                except BudgetExceeded as exc:
+                    return ProbeResult(
+                        ok=False,
+                        reachable=False,
+                        latency_ms=None,
+                        result=None,
+                        error=str(exc),
+                        error_class="budget",
+                        attempts=attempts - 1,
+                    )
+            scratch = begin_timing()
+            started = time.monotonic()
+            headers_at: float | None = None
+            body_at: float | None = None
+            parse_ms: float | None = None
+            raw: bytes | None = None
+            request: httpx.Request | None = None
+            response: httpx.Response | None = None
+            try:
+                request = http.build_request("GET", target, headers=extra or None)
+                response = http.send(request, stream=True)
+                headers_at = time.monotonic()
+                raw = response.read()
+                body_at = time.monotonic()
+            except httpx.InvalidURL as exc:
+                end_timing()
+                return ProbeResult(
+                    ok=False,
+                    reachable=False,
+                    latency_ms=None,
+                    result=None,
+                    error=str(exc),
+                    error_class="invalid_url",
+                    attempts=attempts,
+                    **_transport_fields(request, response),
+                )
+            except httpx.TimeoutException as exc:
+                last_error = str(exc) or "timeout"
+                last_class = "timeout"
+                last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                last_transport = _transport_fields(request, response)
+                end_timing()
+                continue
+            except httpx.ConnectError as exc:
+                last_error = str(exc) or "connection failed"
+                last_class = "connection"
+                last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                last_transport = _transport_fields(request, response)
+                end_timing()
+                continue
+            except httpx.RequestError as exc:
+                last_error = str(exc) or "request failed"
+                last_class = "connection"
+                last_latency = (time.monotonic() - started) * 1000
+                last_timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                last_transport = _transport_fields(request, response)
+                end_timing()
+                continue
+            finally:
+                if response is not None:
+                    response.close()
+            assert body_at is not None and raw is not None and response is not None
+            latency_ms = (body_at - started) * 1000
+            transport_fields = _transport_fields(request, response)
+            if response.status_code >= 400:
+                code = response.status_code
+                body_msg = _rest_error_from_bytes(raw)
+                error = body_msg or f"HTTP {code}"
+                timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
+                return ProbeResult(
+                    ok=False,
+                    reachable=True,
+                    latency_ms=latency_ms,
+                    result=None,
+                    error=error,
+                    error_class=_http_error_class(code, error),
+                    attempts=attempts,
+                    timing=timing,
+                    **transport_fields,
+                )
+            parse_started = body_at
+            try:
+                payload = json.loads(raw)
+            except ValueError:
+                parse_ms = (time.monotonic() - parse_started) * 1000
+                timing = snapshot_timing(
+                    scratch, started, headers_at, body_at, parse_ms
+                )
+                end_timing()
+                return ProbeResult(
+                    ok=False,
+                    reachable=True,
+                    latency_ms=latency_ms,
+                    result=None,
+                    error="response is not JSON",
+                    error_class="malformed",
+                    attempts=attempts,
+                    timing=timing,
+                    **transport_fields,
+                )
+            parse_ms = (time.monotonic() - parse_started) * 1000
+            timing = snapshot_timing(scratch, started, headers_at, body_at, parse_ms)
+            end_timing()
+            if isinstance(payload, dict) and payload.get("error_code"):
+                message = str(payload.get("message") or payload.get("error_code"))
+                return ProbeResult(
+                    ok=False,
+                    reachable=True,
+                    latency_ms=latency_ms,
+                    result=None,
+                    error=message,
+                    error_class=(
+                        "rate_limit" if is_rate_limit_message(message) else "jsonrpc"
+                    ),
+                    attempts=attempts,
+                    timing=timing,
+                    **transport_fields,
+                )
+            return ProbeResult(
+                ok=True,
+                reachable=True,
+                latency_ms=latency_ms,
+                result=payload,
+                error=None,
+                error_class=None,
+                attempts=attempts,
+                body_hash=_body_hash(payload),
+                timing=timing,
+                **transport_fields,
+            )
+        return ProbeResult(
+            ok=False,
+            reachable=False,
+            latency_ms=last_latency,
+            result=None,
+            error=last_error,
+            error_class=last_class,
+            attempts=attempts,
+            timing=last_timing,
+            **last_transport,
+        )
+    finally:
+        if owns:
+            http.close()
+
+
 def probe_batch(
     url: str,
     method: str,
@@ -427,6 +714,8 @@ def probe_batch(
     headers: Sequence[tuple[str, str]] | None = None,
 ) -> BatchProbeResult:
     """POST a JSON-RPC array of ``size`` calls. Transport failures do not retry."""
+    if current_transport() == TRANSPORT_REST:
+        return _batch_miss(size, "REST families have no JSON-RPC batch", "family")
     reason = _invalid_url_reason(url)
     if reason:
         return _batch_miss(size, reason, "invalid_url")
@@ -656,6 +945,20 @@ def _jsonrpc_error_from_bytes(raw: bytes) -> str | None:
     if not isinstance(payload, dict) or not payload.get("error"):
         return None
     return _error_message(payload.get("error"))
+
+
+def _rest_error_from_bytes(raw: bytes) -> str | None:
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("error_code") or payload.get("message"):
+        return str(payload.get("message") or payload.get("error_code"))
+    if payload.get("error"):
+        return _error_message(payload.get("error"))
+    return None
 
 
 def _body_hash(value: Any) -> str:

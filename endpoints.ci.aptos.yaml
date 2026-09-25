@@ -1,0 +1,10 @@
+# Public Aptos fullnode REST for GitHub Actions smoke. No localhost. No API keys.
+# Base URL includes /v1 (ledger index).
+
+endpoints:
+  - name: aptoslabs
+    url: https://fullnode.mainnet.aptoslabs.com/v1
+    family: aptos
+  - name: onerpc
+    url: https://1rpc.io/aptos/v1
+    family: aptos

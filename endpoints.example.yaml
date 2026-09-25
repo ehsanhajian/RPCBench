@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, substrate, or cosmos).
+# Compare one family at a time (evm, solana, substrate, cosmos, or aptos).
 
 endpoints:
   - name: local
@@ -32,6 +32,11 @@ endpoints:
   - name: atom-publicnode
     url: https://cosmos-rpc.publicnode.com
     family: cosmos
+
+  # Aptos fullnode REST (URL includes /v1)
+  - name: aptos-labs
+    url: https://fullnode.mainnet.aptoslabs.com/v1
+    family: aptos
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY

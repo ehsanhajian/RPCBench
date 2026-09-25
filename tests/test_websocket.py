@@ -341,11 +341,17 @@ def test_probe_websocket_family_skip() -> None:
     ep = parse_endpoints(
         {"endpoints": [{"name": "x", "url": "http://127.0.0.1:1", "ws": "ws://127.0.0.1:2"}]}
     ).endpoints[0]
+    # Unimplemented family → ConfigError → skip/family
+    hit = probe_websocket(
+        ep, window=0.05, timeout=1.0, family="sui", open_ws=_open([_ack()])
+    )
+    assert hit.skip == "family"
+    assert websocket_label(hit) == "skip/family"
+    # Aptos has no default WS stream in this mix
     hit = probe_websocket(
         ep, window=0.05, timeout=1.0, family="aptos", open_ws=_open([_ack()])
     )
     assert hit.skip == "family"
-    assert websocket_label(hit) == "skip/family"
 
 
 def test_probe_websocket_cosmos_new_block() -> None:
