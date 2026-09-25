@@ -15,6 +15,7 @@ FAMILY_SOLANA = "solana"
 FAMILY_SUBSTRATE = "substrate"
 FAMILY_COSMOS = "cosmos"
 FAMILY_APTOS = "aptos"
+FAMILY_SUI = "sui"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -43,6 +44,22 @@ APTOS_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": (".", []),
     "chainId": (".", []),
     "balance": (f"accounts/{APTOS_ACCOUNT}", []),
+}
+# Sui system / clock objects. Full 32-byte addresses.
+SUI_ACCOUNT = "0x" + "0" * 63 + "1"
+SUI_CLOCK = "0x" + "0" * 63 + "6"
+_SUI_OBJECT_OPTS = {"showType": True, "showOwner": True}
+_SUI_TX_QUERY = (
+    {"filter": None, "options": {"showInput": False, "showEffects": False}},
+    None,
+    5,
+    True,
+)
+_SUI_EVENT_QUERY = ({"All": []}, None, 5, False)
+SUI_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("sui_getLatestCheckpointSequenceNumber", []),
+    "chainId": ("sui_getChainIdentifier", []),
+    "balance": ("suix_getBalance", [SUI_ACCOUNT]),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -273,6 +290,43 @@ def _apt_events(weight: int = 1) -> CallSpec:
         (),
         weight,
     )
+
+
+def _sui_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "sui_getLatestCheckpointSequenceNumber", (), weight)
+
+
+def _sui_chain(weight: int = 1) -> CallSpec:
+    return CallSpec("chain", "sui_getChainIdentifier", (), weight)
+
+
+def _sui_gas(weight: int = 1) -> CallSpec:
+    return CallSpec("gas", "suix_getReferenceGasPrice", (), weight)
+
+
+def _sui_balance(weight: int = 1) -> CallSpec:
+    return CallSpec("balance", "suix_getBalance", (SUI_ACCOUNT,), weight)
+
+
+def _sui_object(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "object",
+        "sui_getObject",
+        (SUI_CLOCK, dict(_SUI_OBJECT_OPTS)),
+        weight,
+    )
+
+
+def _sui_txs(weight: int = 1) -> CallSpec:
+    return CallSpec("txs", "suix_queryTransactionBlocks", _SUI_TX_QUERY, weight)
+
+
+def _sui_events(weight: int = 1) -> CallSpec:
+    return CallSpec("events", "suix_queryEvents", _SUI_EVENT_QUERY, weight)
+
+
+def _sui_system(weight: int = 1) -> CallSpec:
+    return CallSpec("system", "suix_getLatestSuiSystemState", (), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -559,6 +613,48 @@ _APTOS_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Sui JSON-RPC catalogs. tracing stays EVM-only.
+_SUI_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _sui_head(),
+        _sui_chain(),
+        _sui_object(),
+        _sui_balance(),
+        _sui_gas(),
+        _sui_txs(),
+        _sui_events(),
+    ),
+    "wallet": (
+        _sui_head(),
+        _sui_chain(),
+        _sui_balance(4),
+        _sui_gas(3),
+        _sui_object(2),
+        _sui_txs(2),
+    ),
+    "indexer": (
+        _sui_head(),
+        _sui_txs(4),
+        _sui_events(3),
+        _sui_object(2),
+        _sui_system(),
+    ),
+    "trading": (
+        _sui_head(3),
+        _sui_gas(4),
+        _sui_txs(2),
+        _sui_balance(2),
+        _sui_object(),
+    ),
+    "nft": (
+        _sui_head(),
+        _sui_object(4),
+        _sui_events(3),
+        _sui_balance(2),
+        _sui_txs(),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
@@ -566,6 +662,7 @@ WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_SUBSTRATE: _SUBSTRATE_WORKLOADS,
     FAMILY_COSMOS: _COSMOS_WORKLOADS,
     FAMILY_APTOS: _APTOS_WORKLOADS,
+    FAMILY_SUI: _SUI_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -579,6 +676,7 @@ _WRITE_PREFIXES = (
     "miner_",
     "admin_",
     "wallet_",
+    "unsafe_",
 )
 _SOLANA_WRITE_METHODS = frozenset(
     {
@@ -606,6 +704,12 @@ _APTOS_WRITE_METHODS = frozenset(
         "transactions",
         "transactions/batch",
         "transactions/encode_submission",
+    }
+)
+_SUI_WRITE_METHODS = frozenset(
+    {
+        "sui_executetransactionblock",
+        "suix_executetransactionblock",
     }
 )
 
@@ -696,6 +800,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return COSMOS_PRESETS
     if family == FAMILY_APTOS:
         return APTOS_PRESETS
+    if family == FAMILY_SUI:
+        return SUI_PRESETS
     return PRESETS
 
 
@@ -708,6 +814,8 @@ def _default_method(family: str) -> str:
         return "status"
     if family == FAMILY_APTOS:
         return "."
+    if family == FAMILY_SUI:
+        return "sui_getLatestCheckpointSequenceNumber"
     return "eth_blockNumber"
 
 
@@ -875,6 +983,7 @@ def is_write_method(method: str) -> bool:
         or lower in _SUBSTRATE_WRITE_METHODS
         or lower in _COSMOS_WRITE_METHODS
         or lower in _APTOS_WRITE_METHODS
+        or lower in _SUI_WRITE_METHODS
     )
 
 

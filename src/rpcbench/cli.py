@@ -256,9 +256,9 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         metavar="NAME",
         help=(
             "Benchmark family for every endpoint (overrides the file). "
-            "evm (default), solana, substrate, cosmos, or aptos. auto detects from "
-            "eth_chainId, getHealth, system_health, status, or ledger GET. "
-            "Other families error. Not a scan."
+            "evm (default), solana, substrate, cosmos, aptos, or sui. auto detects "
+            "from eth_chainId, getHealth, system_health, status, sui checkpoint, "
+            "or ledger GET. Other families error. Not a scan."
         ),
     )
     run.add_argument(

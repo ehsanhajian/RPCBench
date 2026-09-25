@@ -1,0 +1,10 @@
+# Public Sui JSON-RPC for GitHub Actions smoke. No localhost. No API keys.
+# Foundation fullnode.mainnet.sui.io JSON-RPC is deprecated; use provider RPCs.
+
+endpoints:
+  - name: publicnode
+    url: https://sui-rpc.publicnode.com
+    family: sui
+  - name: blockvision
+    url: https://sui-mainnet-endpoint.blockvision.org
+    family: sui

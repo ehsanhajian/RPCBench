@@ -43,6 +43,7 @@ def parse_block_hash(value: Any) -> str | None:
             value.get("hash")
             or value.get("blockhash")
             or value.get("block_hash")
+            or value.get("digest")
         )
         if digest is None:
             block_id = value.get("block_id")
