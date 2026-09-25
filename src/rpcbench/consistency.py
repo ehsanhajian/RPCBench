@@ -46,6 +46,10 @@ def parse_block_hash(value: Any) -> str | None:
             or value.get("digest")
         )
         if digest is None:
+            header = value.get("header")
+            if isinstance(header, dict):
+                digest = header.get("hash")
+        if digest is None:
             block_id = value.get("block_id")
             if isinstance(block_id, dict):
                 digest = block_id.get("hash")

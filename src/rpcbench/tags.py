@@ -36,25 +36,35 @@ def parse_client_label(value: object) -> str | None:
         if isinstance(core, str) and core.strip():
             value = f"solana-core {core.strip()}"
         else:
-            git = value.get("git_hash")
-            if isinstance(git, str) and git.strip():
-                role = value.get("node_role")
-                prefix = (
-                    f"aptos/{role.strip()}"
-                    if isinstance(role, str) and role.strip()
-                    else "aptos"
-                )
-                value = f"{prefix} {git.strip()[:12]}"
+            near_ver = value.get("version")
+            if isinstance(near_ver, dict):
+                ver = near_ver.get("version") or near_ver.get("build")
+                if isinstance(ver, str) and ver.strip():
+                    value = f"near {ver.strip()}"
+                else:
+                    near_ver = None
             else:
-                resp = value.get("response")
-                if isinstance(resp, dict):
-                    data = resp.get("data") or resp.get("version")
-                    if isinstance(data, str) and data.strip():
-                        value = data.strip()
+                near_ver = None
+            if near_ver is None:
+                git = value.get("git_hash")
+                if isinstance(git, str) and git.strip():
+                    role = value.get("node_role")
+                    prefix = (
+                        f"aptos/{role.strip()}"
+                        if isinstance(role, str) and role.strip()
+                        else "aptos"
+                    )
+                    value = f"{prefix} {git.strip()[:12]}"
+                else:
+                    resp = value.get("response")
+                    if isinstance(resp, dict):
+                        data = resp.get("data") or resp.get("version")
+                        if isinstance(data, str) and data.strip():
+                            value = data.strip()
+                        else:
+                            return None
                     else:
                         return None
-                else:
-                    return None
     if not isinstance(value, str):
         return None
     text = " ".join(value.split())

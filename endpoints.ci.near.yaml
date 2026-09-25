@@ -1,0 +1,9 @@
+# Public NEAR JSON-RPC for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: near-org
+    url: https://rpc.mainnet.near.org
+    family: near
+  - name: near-rpc
+    url: https://rpc.near.org
+    family: near

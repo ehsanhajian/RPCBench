@@ -50,6 +50,12 @@ def parse_block_height(value: Any) -> int | None:
         height = parse_block_height(value.get("sequenceNumber"))
         if height is not None:
             return height
+        # NEAR block: header.height
+        header = value.get("header")
+        if isinstance(header, dict):
+            height = parse_block_height(header.get("height"))
+            if height is not None:
+                return height
         # CometBFT status: sync_info.latest_block_height
         sync = value.get("sync_info")
         if isinstance(sync, dict):

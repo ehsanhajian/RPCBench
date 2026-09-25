@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
 
+from rpcbench.rpc import NamedParams
+
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 # Solana system program. Cheap balance / account / signature reads.
 SYSTEM_PROGRAM = "11111111111111111111111111111111"
@@ -16,6 +18,7 @@ FAMILY_SUBSTRATE = "substrate"
 FAMILY_COSMOS = "cosmos"
 FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
+FAMILY_NEAR = "near"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -60,6 +63,19 @@ SUI_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("sui_getLatestCheckpointSequenceNumber", []),
     "chainId": ("sui_getChainIdentifier", []),
     "balance": ("suix_getBalance", [SUI_ACCOUNT]),
+}
+# NEAR named params (JSON object, not array).
+NEAR_ACCOUNT = "near"
+_NEAR_FINAL_BLOCK = NamedParams(finality="final")
+_NEAR_VIEW_ACCOUNT = NamedParams(
+    request_type="view_account",
+    finality="final",
+    account_id=NEAR_ACCOUNT,
+)
+NEAR_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("status", []),
+    "chainId": ("status", []),
+    "balance": ("query", [_NEAR_VIEW_ACCOUNT]),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -327,6 +343,30 @@ def _sui_events(weight: int = 1) -> CallSpec:
 
 def _sui_system(weight: int = 1) -> CallSpec:
     return CallSpec("system", "suix_getLatestSuiSystemState", (), weight)
+
+
+def _near_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "status", (), weight)
+
+
+def _near_block(weight: int = 1) -> CallSpec:
+    return CallSpec("block", "block", (_NEAR_FINAL_BLOCK,), weight)
+
+
+def _near_gas(weight: int = 1) -> CallSpec:
+    return CallSpec("gas", "gas_price", (None,), weight)
+
+
+def _near_account(weight: int = 1) -> CallSpec:
+    return CallSpec("account", "query", (_NEAR_VIEW_ACCOUNT,), weight)
+
+
+def _near_net(weight: int = 1) -> CallSpec:
+    return CallSpec("net", "network_info", (), weight)
+
+
+def _near_validators(weight: int = 1) -> CallSpec:
+    return CallSpec("validators", "validators", (None,), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -655,6 +695,46 @@ _SUI_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# NEAR JSON-RPC catalogs. tracing stays EVM-only.
+_NEAR_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _near_head(),
+        _near_block(),
+        _near_account(),
+        _near_gas(),
+        _near_net(),
+        _near_validators(),
+    ),
+    "wallet": (
+        _near_head(),
+        _near_account(4),
+        _near_gas(3),
+        _near_block(2),
+        _near_net(),
+    ),
+    "indexer": (
+        _near_head(),
+        _near_block(4),
+        _near_validators(2),
+        _near_net(2),
+        _near_account(),
+    ),
+    "trading": (
+        _near_head(3),
+        _near_gas(4),
+        _near_block(2),
+        _near_account(2),
+        _near_net(),
+    ),
+    "nft": (
+        _near_head(),
+        _near_account(4),
+        _near_block(2),
+        _near_gas(2),
+        _near_validators(),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
@@ -663,6 +743,7 @@ WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_COSMOS: _COSMOS_WORKLOADS,
     FAMILY_APTOS: _APTOS_WORKLOADS,
     FAMILY_SUI: _SUI_WORKLOADS,
+    FAMILY_NEAR: _NEAR_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -710,6 +791,13 @@ _SUI_WRITE_METHODS = frozenset(
     {
         "sui_executetransactionblock",
         "suix_executetransactionblock",
+    }
+)
+_NEAR_WRITE_METHODS = frozenset(
+    {
+        "broadcast_tx_async",
+        "broadcast_tx_commit",
+        "send_tx",
     }
 )
 
@@ -802,6 +890,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return APTOS_PRESETS
     if family == FAMILY_SUI:
         return SUI_PRESETS
+    if family == FAMILY_NEAR:
+        return NEAR_PRESETS
     return PRESETS
 
 
@@ -816,6 +906,8 @@ def _default_method(family: str) -> str:
         return "."
     if family == FAMILY_SUI:
         return "sui_getLatestCheckpointSequenceNumber"
+    if family == FAMILY_NEAR:
+        return "status"
     return "eth_blockNumber"
 
 
@@ -984,6 +1076,7 @@ def is_write_method(method: str) -> bool:
         or lower in _COSMOS_WRITE_METHODS
         or lower in _APTOS_WRITE_METHODS
         or lower in _SUI_WRITE_METHODS
+        or lower in _NEAR_WRITE_METHODS
     )
 
 
