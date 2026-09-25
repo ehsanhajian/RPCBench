@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import math
@@ -73,6 +74,8 @@ from rpcbench.rpc import (
     make_client,
     probe,
     probe_batch,
+    reset_transport,
+    set_transport,
 )
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.family import benchmark_family, pin_block_params, resolve_block_time, tag_block_params
@@ -82,6 +85,16 @@ from rpcbench.tags import (
     client_from_hit,
     snapshots_from_hits,
 )
+
+
+def _submit(pool: ThreadPoolExecutor, fn, *args, **kwargs):
+    """Run fn in a worker with this thread's contextvars (transport, …)."""
+    ctx = contextvars.copy_context()
+
+    def runner():
+        return fn(*args, **kwargs)
+
+    return pool.submit(ctx.run, runner)
 
 
 _CLASS_ORDER = (
@@ -594,6 +607,7 @@ def run_endpoints(
         client = make_client(
             timeout=timeout, new_connection=new_connection, http2=http2
         )
+    transport_token = set_transport(benchmark_family(family).transport)
     try:
         payload = None
         if has_dynamic_source(steps):
@@ -661,6 +675,7 @@ def run_endpoints(
             family=family,
         )
     finally:
+        reset_transport(transport_token)
         if owns_client:
             client.close()
 
@@ -1417,7 +1432,7 @@ def _measure_inflight(
 
     conc_started = time.monotonic()
     with ThreadPoolExecutor(max_workers=max(1, size)) as pool:
-        futs = [pool.submit(one) for _ in range(size)]
+        futs = [_submit(pool, one) for _ in range(size)]
         concurrent = tuple(fut.result() for fut in futs)
     concurrent_ms = (time.monotonic() - conc_started) * 1000
     serial_started = time.monotonic()
@@ -1572,7 +1587,7 @@ def _probe_wave(
         hits[endpoints[0].name] = fire(endpoints[0])
         return hits
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {ep.name: pool.submit(fire, ep) for ep in endpoints}
+        futs = {ep.name: _submit(pool, fire, ep) for ep in endpoints}
         for name, fut in futs.items():
             hits[name] = fut.result()
     return hits
@@ -1797,7 +1812,7 @@ def _run_paired(
             hits[endpoints[0].name] = fire(endpoints[0], spec)
         else:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futs = {ep.name: pool.submit(fire, ep, spec) for ep in endpoints}
+                futs = {ep.name: _submit(pool, fire, ep, spec) for ep in endpoints}
                 for name, fut in futs.items():
                     hits[name] = fut.result()
         record(kind, index, spec, hits)
@@ -1821,7 +1836,7 @@ def _run_paired(
             workers_burst = max(1, len(jobs))
             with ThreadPoolExecutor(max_workers=workers_burst) as pool:
                 futs = {
-                    (index, ep.name): pool.submit(fire, ep, spec)
+                    (index, ep.name): _submit(pool, fire, ep, spec)
                     for kind, index, spec, ep in jobs
                 }
                 for kind, index, spec in still:
@@ -1894,7 +1909,7 @@ def _run_one(
     if not stop and burst_plan:
         with ThreadPoolExecutor(max_workers=max(1, len(burst_plan))) as pool:
             futs = [
-                pool.submit(
+                _submit(pool, 
                     _hit,
                     endpoint,
                     spec=spec,

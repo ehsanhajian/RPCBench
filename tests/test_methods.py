@@ -277,3 +277,12 @@ def test_cosmos_family_is_not_an_evm_fallback() -> None:
     with pytest.raises(MethodError, match="no cosmos mix"):
         family_workload("cosmos", "tracing")
 
+
+
+def test_aptos_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("aptos", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "." in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no aptos mix"):
+        family_workload("aptos", "tracing")
