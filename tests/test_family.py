@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "sui",
-                        "url": "http://127.0.0.1:9000",
-                        "family": "sui",
+                        "name": "near",
+                        "url": "http://127.0.0.1:3030",
+                        "family": "near",
                     }
                 ]
             }
@@ -165,6 +165,27 @@ def test_aptos_family_loads() -> None:
     assert adapter.transport == "rest"
     assert adapter.ws_method == ""
     assert adapter.block_time_s == 0.1
+
+
+
+def test_sui_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "sui",
+                    "url": "http://127.0.0.1:9000",
+                    "family": "sui",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "sui"
+    assert resolve_benchmark_family(cfg) == "sui"
+    adapter = benchmark_family("sui")
+    assert adapter.head_method == "sui_getLatestCheckpointSequenceNumber"
+    assert adapter.ws_method == ""
+    assert adapter.block_time_s == 0.5
 
 
 def test_omitted_family_is_evm_and_localhost_stays_allowed() -> None:
@@ -378,9 +399,44 @@ def test_auto_detect_aptos_resolves() -> None:
     assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "aptos"
 
 
+
+def test_auto_detect_sui_resolves() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:9000",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "sui_getLatestCheckpointSequenceNumber" in body:
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": "100"}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "method not found"},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "sui"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "sui"
+
+
 def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        normalize_family("sui")
+        normalize_family("near")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -452,7 +508,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "sui", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "near", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()

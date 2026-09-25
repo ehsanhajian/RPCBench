@@ -45,6 +45,9 @@ jobs:
           - name: aptos
             endpoints: endpoints.ci.aptos.yaml
             method: "."
+          - name: sui
+            endpoints: endpoints.ci.sui.yaml
+            method: sui_getLatestCheckpointSequenceNumber
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

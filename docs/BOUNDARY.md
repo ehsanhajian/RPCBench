@@ -34,7 +34,7 @@ Three tools, three questions. Do not copy checks across the line.
 
 ## Shared primitives (OK if the purpose differs)
 
-Identity calls (`eth_chainId`, `getHealth`, `system_health`, `status`, ledger GET) to pick a family and confirm the network. Same JSON-RPC, different question.
+Identity calls (`eth_chainId`, `getHealth`, `system_health`, `status`, sui checkpoint, ledger GET) to pick a family and confirm the network. Same JSON-RPC, different question.
 
 ## Profile names
 

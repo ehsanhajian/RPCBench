@@ -286,3 +286,12 @@ def test_aptos_family_is_not_an_evm_fallback() -> None:
     assert all(not m.startswith("eth_") for m in methods)
     with pytest.raises(MethodError, match="no aptos mix"):
         family_workload("aptos", "tracing")
+
+
+def test_sui_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("sui", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "sui_getLatestCheckpointSequenceNumber" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no sui mix"):
+        family_workload("sui", "tracing")

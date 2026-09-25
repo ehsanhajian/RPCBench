@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, substrate, cosmos, or aptos).
+# Compare one family at a time (evm, solana, substrate, cosmos, aptos, or sui).
 
 endpoints:
   - name: local
@@ -37,6 +37,11 @@ endpoints:
   - name: aptos-labs
     url: https://fullnode.mainnet.aptoslabs.com/v1
     family: aptos
+
+  # Sui JSON-RPC (provider endpoints; Foundation mainnet JSON-RPC is deprecated)
+  - name: sui-publicnode
+    url: https://sui-rpc.publicnode.com
+    family: sui
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY
