@@ -51,6 +51,9 @@ jobs:
           - name: near
             endpoints: endpoints.ci.near.yaml
             method: status
+          - name: starknet
+            endpoints: endpoints.ci.starknet.yaml
+            method: starknet_blockNumber
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

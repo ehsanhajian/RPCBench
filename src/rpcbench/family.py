@@ -1,6 +1,6 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
-Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint, network_info, ledger GET) choose a family.
+Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint, network_info, starknet_blockNumber, ledger GET) choose a family.
 They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
@@ -26,6 +26,7 @@ FAMILY_COSMOS = "cosmos"
 FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
+FAMILY_STARKNET = "starknet"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -43,7 +44,7 @@ KNOWN_FAMILIES = (
     "auto",
 )
 IMPLEMENTED = frozenset(
-    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR}
+    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR, FAMILY_STARKNET}
 )
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
@@ -54,6 +55,7 @@ _DETECT_PROBES = (
     ("status", FAMILY_COSMOS),
     ("sui_getLatestCheckpointSequenceNumber", FAMILY_SUI),
     ("network_info", FAMILY_NEAR),
+    ("starknet_blockNumber", FAMILY_STARKNET),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -173,6 +175,19 @@ NEAR = FamilyAdapter(
     client_method="status",
 )
 
+# Starknet JSON-RPC. Not Starknet EVM eth_*.
+STARKNET = FamilyAdapter(
+    name=FAMILY_STARKNET,
+    head_method="starknet_blockNumber",
+    chain_method="starknet_chainId",
+    block_method="starknet_getBlockWithTxHashes",
+    block_time_s=5.0,
+    batch_shape="jsonrpc-array",
+    ws_method="",
+    ws_params=(),
+    client_method="starknet_specVersion",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -214,6 +229,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return SUI
     if key == FAMILY_NEAR:
         return NEAR
+    if key == FAMILY_STARKNET:
+        return STARKNET
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -238,11 +255,13 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [str(pin)]
     if adapter.name == FAMILY_NEAR:
         return [NamedParams(block_id=pin)]
+    if adapter.name == FAMILY_STARKNET:
+        return [{"block_number": pin}]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR}:
+    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR, FAMILY_STARKNET}:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
@@ -357,6 +376,8 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
     if method == "network_info":
         # NEAR network_info.
         return isinstance(hit.result, dict) and "active_peers" in hit.result
+    if method == "starknet_blockNumber":
+        return parse_block_height(hit.result) is not None
     if method == "sui_getLatestCheckpointSequenceNumber":
         return parse_block_height(hit.result) is not None
     if method == "ledger":
