@@ -7,6 +7,7 @@ choose a family. They are not findings. Unknown EVM chain IDs still use the one 
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -362,6 +363,12 @@ def meta_requests_for(family: str) -> int:
     return 1 + len(adapter.block_tags)
 
 
+# Public toncenter-style hosts often allow ~1 RPS without a key.
+_DETECT_RATE_LIMIT_SLEEP_S = 1.05
+
+_IDENTITY_METHOD_BY_FAMILY = {family: method for method, family in _DETECT_PROBES}
+
+
 def resolve_benchmark_family(
     config: BenchConfig,
     *,
@@ -372,10 +379,14 @@ def resolve_benchmark_family(
     """One implemented family for the run. ``--family`` overrides the file."""
     forced = normalize_family(override) if override else None
     resolved: list[str] = []
+    known: str | None = None
     for endpoint in config.endpoints:
         name = forced if forced is not None else endpoint.family
         if name == FAMILY_AUTO:
-            name = detect_family(endpoint, timeout=timeout, client=client)
+            name = detect_family(
+                endpoint, timeout=timeout, client=client, prefer=known
+            )
+            known = name
         if name not in IMPLEMENTED:
             have = ", ".join(sorted(IMPLEMENTED))
             raise ConfigError(
@@ -394,43 +405,80 @@ def detect_family(
     *,
     timeout: float,
     client: httpx.Client | None = None,
+    prefer: str | None = None,
 ) -> str:
     """Cheap identity handshake. A hit names a family. It is not a finding."""
-    from rpcbench.rpc import TRANSPORT_REST, probe
-
+    if prefer is not None and prefer in IMPLEMENTED:
+        if _try_identity(endpoint, prefer, timeout=timeout, client=client):
+            return prefer
     for method, family in _DETECT_PROBES:
-        params: list[Any] = []
-        if method == "getMasterchainInfo":
-            params = [NamedParams()]
-        hit = probe(
-            endpoint.url,
-            method,
-            params=params,
-            timeout=timeout,
-            retries=0,
-            client=client,
-            headers=endpoint.headers,
+        hit = _probe_identity(
+            endpoint, method, timeout=timeout, client=client
         )
         if _identity_hit(method, hit):
             return family
-    # Aptos fullnode REST ledger info (GET base /v1).
-    hit = probe(
-        endpoint.url,
-        ".",
-        params=[],
-        timeout=timeout,
-        retries=0,
-        client=client,
-        headers=endpoint.headers,
-        transport=TRANSPORT_REST,
-    )
-    if _identity_hit("ledger", hit):
+    if _try_identity(endpoint, FAMILY_APTOS, timeout=timeout, client=client):
         return FAMILY_APTOS
     tried = ", ".join(method for method, _family in _DETECT_PROBES) + ", ledger"
     raise ConfigError(
         f"could not detect a family for {endpoint.name} (tried {tried}); "
         "set family: evm"
     )
+
+
+def _try_identity(
+    endpoint: Endpoint,
+    family: str,
+    *,
+    timeout: float,
+    client: httpx.Client | None,
+) -> bool:
+    """One identity probe for a known family (with a single rate-limit retry)."""
+    from rpcbench.rpc import TRANSPORT_REST
+
+    if family == FAMILY_APTOS:
+        hit = _probe_identity(
+            endpoint,
+            ".",
+            timeout=timeout,
+            client=client,
+            transport=TRANSPORT_REST,
+        )
+        return _identity_hit("ledger", hit)
+    method = _IDENTITY_METHOD_BY_FAMILY.get(family)
+    if method is None:
+        return False
+    hit = _probe_identity(endpoint, method, timeout=timeout, client=client)
+    return _identity_hit(method, hit)
+
+
+def _probe_identity(
+    endpoint: Endpoint,
+    method: str,
+    *,
+    timeout: float,
+    client: httpx.Client | None,
+    transport: str | None = None,
+):
+    """Identity probe. Retry once after a short sleep on rate_limit."""
+    from rpcbench.rpc import probe
+
+    params: list[Any] = []
+    if method == "getMasterchainInfo":
+        params = [NamedParams()]
+    kwargs: dict[str, Any] = {
+        "timeout": timeout,
+        "retries": 0,
+        "client": client,
+        "headers": endpoint.headers,
+    }
+    if transport is not None:
+        kwargs["transport"] = transport
+    hit = probe(endpoint.url, method, params=params, **kwargs)
+    if hit.error_class == "rate_limit":
+        time.sleep(_DETECT_RATE_LIMIT_SLEEP_S)
+        hit = probe(endpoint.url, method, params=params, **kwargs)
+    return hit
 
 
 def _identity_hit(method: str, hit: ProbeResult) -> bool:
