@@ -1,0 +1,8 @@
+# Public Bitcoin JSON-RPC. No localhost. No API keys.
+endpoints:
+  - name: publicnode
+    url: https://bitcoin-rpc.publicnode.com
+    family: bitcoin
+  - name: drpc
+    url: https://bitcoin.drpc.org
+    family: bitcoin

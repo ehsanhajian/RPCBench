@@ -1,6 +1,7 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
-Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint, network_info, starknet_blockNumber, ledger GET) choose a family.
+Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint,
+network_info, starknet_blockNumber, getblockchaininfo, ledger GET) choose a family.
 They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
@@ -27,6 +28,7 @@ FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
 FAMILY_STARKNET = "starknet"
+FAMILY_BITCOIN = "bitcoin"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -44,7 +46,17 @@ KNOWN_FAMILIES = (
     "auto",
 )
 IMPLEMENTED = frozenset(
-    {FAMILY_EVM, FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR, FAMILY_STARKNET}
+    {
+        FAMILY_EVM,
+        FAMILY_SOLANA,
+        FAMILY_SUBSTRATE,
+        FAMILY_COSMOS,
+        FAMILY_APTOS,
+        FAMILY_SUI,
+        FAMILY_NEAR,
+        FAMILY_STARKNET,
+        FAMILY_BITCOIN,
+    }
 )
 
 # Identity only. No admin/personal/engine/txpool and no method inventory.
@@ -56,6 +68,7 @@ _DETECT_PROBES = (
     ("sui_getLatestCheckpointSequenceNumber", FAMILY_SUI),
     ("network_info", FAMILY_NEAR),
     ("starknet_blockNumber", FAMILY_STARKNET),
+    ("getblockchaininfo", FAMILY_BITCOIN),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -188,6 +201,19 @@ STARKNET = FamilyAdapter(
     client_method="starknet_specVersion",
 )
 
+# Bitcoin Core JSON-RPC. ~10m blocks; not Bitcoin EVM eth_*.
+BITCOIN = FamilyAdapter(
+    name=FAMILY_BITCOIN,
+    head_method="getblockchaininfo",
+    chain_method="getblockchaininfo",
+    block_method="getblockhash",
+    block_time_s=600.0,
+    batch_shape="jsonrpc-array",
+    ws_method="",
+    ws_params=(),
+    client_method="getnetworkinfo",
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -231,6 +257,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return NEAR
     if key == FAMILY_STARKNET:
         return STARKNET
+    if key == FAMILY_BITCOIN:
+        return BITCOIN
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -257,11 +285,22 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [NamedParams(block_id=pin)]
     if adapter.name == FAMILY_STARKNET:
         return [{"block_number": pin}]
+    if adapter.name == FAMILY_BITCOIN:
+        return [pin]
     return [hex(pin), False]
 
 
 def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
-    if adapter.name in {FAMILY_SOLANA, FAMILY_SUBSTRATE, FAMILY_COSMOS, FAMILY_APTOS, FAMILY_SUI, FAMILY_NEAR, FAMILY_STARKNET}:
+    if adapter.name in {
+        FAMILY_SOLANA,
+        FAMILY_SUBSTRATE,
+        FAMILY_COSMOS,
+        FAMILY_APTOS,
+        FAMILY_SUI,
+        FAMILY_NEAR,
+        FAMILY_STARKNET,
+        FAMILY_BITCOIN,
+    }:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
 
@@ -378,6 +417,13 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
         return isinstance(hit.result, dict) and "active_peers" in hit.result
     if method == "starknet_blockNumber":
         return parse_block_height(hit.result) is not None
+    if method == "getblockchaininfo":
+        # Bitcoin Core. Require chain + blocks so a bare height int does not match.
+        return (
+            isinstance(hit.result, dict)
+            and isinstance(hit.result.get("chain"), str)
+            and hit.result.get("blocks") is not None
+        )
     if method == "sui_getLatestCheckpointSequenceNumber":
         return parse_block_height(hit.result) is not None
     if method == "ledger":

@@ -54,6 +54,9 @@ jobs:
           - name: starknet
             endpoints: endpoints.ci.starknet.yaml
             method: starknet_blockNumber
+          - name: bitcoin
+            endpoints: endpoints.ci.bitcoin.yaml
+            method: getblockchaininfo
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

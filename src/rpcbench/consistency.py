@@ -43,6 +43,7 @@ def parse_block_hash(value: Any) -> str | None:
             value.get("hash")
             or value.get("blockhash")
             or value.get("block_hash")
+            or value.get("bestblockhash")
             or value.get("digest")
         )
         if digest is None:
@@ -69,6 +70,7 @@ def parse_block_hash(value: Any) -> str | None:
     else:
         hexpart = lower
     # EVM 32-byte hashes are 64 hex chars; Starknet felts can be shorter.
+    # Bitcoin block hashes are 64 hex chars without a 0x prefix.
     if 32 <= len(hexpart) <= 64:
         try:
             int(hexpart, 16)

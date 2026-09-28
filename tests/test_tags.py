@@ -30,6 +30,7 @@ def test_parse_client_label_is_metadata_only() -> None:
     assert parse_client_label("Geth/v1.14.12-stable") == "Geth/v1.14.12-stable"
     assert parse_client_label("  erigon/2.60.0  ") == "erigon/2.60.0"
     assert parse_client_label("0.10.2") == "0.10.2"
+    assert parse_client_label({"subversion": "/Satoshi:29.3.0/"}) == "/Satoshi:29.3.0/"
     assert parse_client_label("0x2a") is None
     assert parse_client_label("123") is None
     assert parse_client_label(None) is None

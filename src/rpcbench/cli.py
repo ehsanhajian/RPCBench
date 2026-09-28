@@ -256,10 +256,11 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         metavar="NAME",
         help=(
             "Benchmark family for every endpoint (overrides the file). "
-            "evm (default), solana, substrate, cosmos, aptos, sui, near, or "
-            "starknet. auto detects from eth_chainId, getHealth, system_health, "
-            "status, sui checkpoint, network_info, starknet_blockNumber, or "
-            "ledger GET. Other families error. Not a scan."
+            "evm (default), solana, substrate, cosmos, aptos, sui, near, "
+            "starknet, or bitcoin. auto detects from eth_chainId, getHealth, "
+            "system_health, status, sui checkpoint, network_info, "
+            "starknet_blockNumber, getblockchaininfo, or ledger GET. "
+            "Other families error. Not a scan."
         ),
     )
     run.add_argument(

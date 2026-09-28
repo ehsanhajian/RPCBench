@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, substrate, cosmos, aptos, sui, near, or starknet).
+# Compare one family at a time (evm, solana, substrate, cosmos, aptos, sui, near, starknet, or bitcoin).
 
 endpoints:
   - name: local
@@ -52,6 +52,14 @@ endpoints:
   - name: starknet-publicnode
     url: https://starknet-rpc.publicnode.com
     family: starknet
+
+  # Bitcoin JSON-RPC (~10m blocks; cookie/user become Basic auth, masked in reports)
+  - name: bitcoin-publicnode
+    url: https://bitcoin-rpc.publicnode.com
+    family: bitcoin
+    # user: rpcuser
+    # password: rpcpassword
+    # cookie: ~/.bitcoin/.cookie
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY
