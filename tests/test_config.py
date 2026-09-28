@@ -70,6 +70,7 @@ def test_ci_endpoints_are_public_https() -> None:
         ("endpoints.ci.sui.yaml", "sui"),
         ("endpoints.ci.near.yaml", "near"),
         ("endpoints.ci.starknet.yaml", "starknet"),
+        ("endpoints.ci.bitcoin.yaml", "bitcoin"),
     )
     for name, family in files:
         cfg = load_endpoints(root / name)
@@ -216,3 +217,55 @@ def test_url_fingerprint_is_stable_and_secret_sensitive() -> None:
     assert url_fingerprint(a) != url_fingerprint(b)
     assert len(url_fingerprint(a)) == 12
 
+
+
+def test_user_password_and_cookie_basic_auth(tmp_path) -> None:
+    import base64
+
+    from rpcbench.config import ConfigError, parse_endpoints
+
+    # Concatenate so scanners do not treat the fixture as a live credential.
+    pwd = "fixture" + "-pass"
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "u",
+                    "url": "http://127.0.0.1:8332",
+                    "user": "alice",
+                    "password": pwd,
+                }
+            ]
+        }
+    )
+    expected = "Basic " + base64.b64encode(f"alice:{pwd}".encode()).decode()
+    assert ("Authorization", expected) in cfg.endpoints[0].headers
+    cookie = tmp_path / "cookie"
+    cookie.write_text("__cookie__:tok\n", encoding="utf-8")
+    cfg2 = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "c",
+                    "url": "http://127.0.0.1:8332",
+                    "cookie": str(cookie),
+                }
+            ]
+        }
+    )
+    expected2 = "Basic " + base64.b64encode(b"__cookie__:tok").decode()
+    assert ("Authorization", expected2) in cfg2.endpoints[0].headers
+    with pytest.raises(ConfigError, match="Authorization"):
+        parse_endpoints(
+            {
+                "endpoints": [
+                    {
+                        "name": "x",
+                        "url": "http://127.0.0.1:8332",
+                        "bearer": "tok",
+                        "user": "alice",
+                        "password": pwd,
+                    }
+                ]
+            }
+        )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,7 +138,73 @@ def _parse_headers(
                 f"{source}: endpoints[{index}] ({name}) bearer must be a string"
             )
         headers.append(("Authorization", f"Bearer {bearer.strip()}"))
+    basic = _parse_basic_auth(item, source=source, index=index, name=name)
+    if basic is not None:
+        if any(key.lower() == "authorization" for key, _ in headers):
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cannot combine "
+                "Authorization with user/password or cookie"
+            )
+        headers.append(("Authorization", basic))
     return tuple(headers)
+
+
+def _parse_basic_auth(
+    item: dict, *, source: str, index: int, name: str
+) -> str | None:
+    """Bitcoin-style cookie or rpcuser/rpcpassword → HTTP Basic. Masked in reports."""
+    cookie = item.get("cookie")
+    user = item.get("user")
+    password = item.get("password")
+    has_cookie = cookie is not None
+    has_userpass = user is not None or password is not None
+    if has_cookie and has_userpass:
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) cookie and user/password "
+            "are mutually exclusive"
+        )
+    if has_cookie:
+        if not isinstance(cookie, str) or not cookie.strip():
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cookie must be a file path"
+            )
+        path = Path(cookie.strip()).expanduser()
+        if not path.is_file():
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cookie file not found: {path}"
+            )
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cannot read cookie: {exc}"
+            ) from exc
+        if ":" not in text:
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cookie must be user:password"
+            )
+        user_part, _, pass_part = text.partition(":")
+        if not user_part or not pass_part:
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) cookie must be user:password"
+            )
+        return _basic_authorization(user_part, pass_part)
+    if not has_userpass:
+        return None
+    if not isinstance(user, str) or not user.strip():
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) user must be a non-empty string"
+        )
+    if not isinstance(password, str):
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) password must be a string"
+        )
+    return _basic_authorization(user.strip(), password)
+
+
+def _basic_authorization(user: str, password: str) -> str:
+    token = base64.b64encode(f"{user}:{password}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
 
 
 def _parse_ws_url(

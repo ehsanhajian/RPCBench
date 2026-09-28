@@ -20,6 +20,7 @@ FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
 FAMILY_STARKNET = "starknet"
+FAMILY_BITCOIN = "bitcoin"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -91,6 +92,18 @@ STARKNET_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("starknet_blockNumber", []),
     "chainId": ("starknet_chainId", []),
     "balance": ("starknet_getNonce", ["latest", STARKNET_ETH]),
+}
+# Bitcoin genesis block and first non-coinbase tx (block 170). Cheap fixed reads.
+BITCOIN_GENESIS = (
+    "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+)
+BITCOIN_FIRST_TX = (
+    "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16"
+)
+BITCOIN_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("getblockchaininfo", []),
+    "chainId": ("getblockchaininfo", []),
+    "balance": ("getmempoolinfo", []),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -440,6 +453,34 @@ def _sn_events(weight: int = 1) -> CallSpec:
         (dict(_STARKNET_EVENTS),),
         weight,
     )
+
+
+def _btc_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "getblockchaininfo", (), weight)
+
+
+def _btc_count(weight: int = 1) -> CallSpec:
+    return CallSpec("count", "getblockcount", (), weight)
+
+
+def _btc_net(weight: int = 1) -> CallSpec:
+    return CallSpec("net", "getnetworkinfo", (), weight)
+
+
+def _btc_best(weight: int = 1) -> CallSpec:
+    return CallSpec("best", "getbestblockhash", (), weight)
+
+
+def _btc_block(weight: int = 1) -> CallSpec:
+    return CallSpec("block", "getblock", (BITCOIN_GENESIS, 1), weight)
+
+
+def _btc_mempool(weight: int = 1) -> CallSpec:
+    return CallSpec("mempool", "getmempoolinfo", (), weight)
+
+
+def _btc_rawtx(weight: int = 1) -> CallSpec:
+    return CallSpec("rawtx", "getrawtransaction", (BITCOIN_FIRST_TX,), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -850,6 +891,49 @@ _STARKNET_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Bitcoin Core JSON-RPC catalogs. tracing stays EVM-only.
+_BITCOIN_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _btc_head(),
+        _btc_count(),
+        _btc_net(),
+        _btc_best(),
+        _btc_block(),
+        _btc_mempool(),
+        _btc_rawtx(),
+    ),
+    "wallet": (
+        _btc_head(),
+        _btc_count(),
+        _btc_mempool(4),
+        _btc_block(3),
+        _btc_rawtx(2),
+        _btc_best(),
+    ),
+    "indexer": (
+        _btc_head(),
+        _btc_block(4),
+        _btc_rawtx(3),
+        _btc_best(2),
+        _btc_mempool(),
+        _btc_count(),
+    ),
+    "trading": (
+        _btc_head(3),
+        _btc_mempool(4),
+        _btc_count(2),
+        _btc_best(2),
+        _btc_block(),
+    ),
+    "nft": (
+        _btc_head(),
+        _btc_block(4),
+        _btc_rawtx(3),
+        _btc_net(2),
+        _btc_best(),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
@@ -860,6 +944,7 @@ WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_SUI: _SUI_WORKLOADS,
     FAMILY_NEAR: _NEAR_WORKLOADS,
     FAMILY_STARKNET: _STARKNET_WORKLOADS,
+    FAMILY_BITCOIN: _BITCOIN_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -921,6 +1006,20 @@ _STARKNET_WRITE_METHODS = frozenset(
         "starknet_addinvoketransaction",
         "starknet_adddeclaretransaction",
         "starknet_adddeployaccounttransaction",
+    }
+)
+_BITCOIN_WRITE_METHODS = frozenset(
+    {
+        "sendrawtransaction",
+        "sendtoaddress",
+        "sendmany",
+        "sendfrom",
+        "submitblock",
+        "submitheader",
+        "fundrawtransaction",
+        "walletpassphrase",
+        "dumpprivkey",
+        "importprivkey",
     }
 )
 
@@ -1017,6 +1116,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return NEAR_PRESETS
     if family == FAMILY_STARKNET:
         return STARKNET_PRESETS
+    if family == FAMILY_BITCOIN:
+        return BITCOIN_PRESETS
     return PRESETS
 
 
@@ -1035,6 +1136,8 @@ def _default_method(family: str) -> str:
         return "status"
     if family == FAMILY_STARKNET:
         return "starknet_blockNumber"
+    if family == FAMILY_BITCOIN:
+        return "getblockchaininfo"
     return "eth_blockNumber"
 
 
@@ -1205,6 +1308,7 @@ def is_write_method(method: str) -> bool:
         or lower in _SUI_WRITE_METHODS
         or lower in _NEAR_WRITE_METHODS
         or lower in _STARKNET_WRITE_METHODS
+        or lower in _BITCOIN_WRITE_METHODS
     )
 
 

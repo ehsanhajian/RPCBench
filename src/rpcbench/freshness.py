@@ -60,6 +60,13 @@ def parse_block_height(value: Any) -> int | None:
         height = parse_block_height(value.get("block_number"))
         if height is not None:
             return height
+        # Bitcoin getblockchaininfo: blocks; getblock: height
+        height = parse_block_height(value.get("blocks"))
+        if height is not None:
+            return height
+        height = parse_block_height(value.get("height"))
+        if height is not None:
+            return height
         # CometBFT status: sync_info.latest_block_height
         sync = value.get("sync_info")
         if isinstance(sync, dict):

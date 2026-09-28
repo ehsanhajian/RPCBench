@@ -314,3 +314,12 @@ def test_starknet_family_is_not_an_evm_fallback() -> None:
     assert all(not m.startswith("eth_") for m in methods)
     with pytest.raises(MethodError, match="no starknet mix"):
         family_workload("starknet", "tracing")
+
+
+def test_bitcoin_family_is_not_an_evm_fallback() -> None:
+    steps = family_workload("bitcoin", "wallet")
+    methods = {spec.method for spec in steps}
+    assert "getblockchaininfo" in methods
+    assert all(not m.startswith("eth_") for m in methods)
+    with pytest.raises(MethodError, match="no bitcoin mix"):
+        family_workload("bitcoin", "tracing")
