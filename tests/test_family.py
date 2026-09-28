@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "stark",
-                        "url": "http://127.0.0.1:9545",
-                        "family": "starknet",
+                        "name": "btc",
+                        "url": "http://127.0.0.1:8332",
+                        "family": "bitcoin",
                     }
                 ]
             }
@@ -207,6 +207,27 @@ def test_near_family_loads() -> None:
     assert adapter.head_method == "status"
     assert adapter.ws_method == ""
     assert adapter.block_time_s == 1.2
+
+
+
+def test_starknet_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "sn",
+                    "url": "http://127.0.0.1:9545",
+                    "family": "starknet",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "starknet"
+    assert resolve_benchmark_family(cfg) == "starknet"
+    adapter = benchmark_family("starknet")
+    assert adapter.head_method == "starknet_blockNumber"
+    assert adapter.ws_method == ""
+    assert adapter.block_time_s == 5.0
 
 
 def test_omitted_family_is_evm_and_localhost_stays_allowed() -> None:
@@ -529,9 +550,44 @@ def test_near_status_is_not_cosmos() -> None:
     assert _identity_hit("status", cosmos)
 
 
+
+def test_auto_detect_starknet_resolves() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:9545",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "starknet_blockNumber" in body:
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": 1, "result": 100}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32601, "message": "method not found"},
+            },
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "starknet"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "starknet"
+
+
 def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        normalize_family("starknet")
+        normalize_family("bitcoin")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -603,7 +659,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "starknet", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "bitcoin", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()

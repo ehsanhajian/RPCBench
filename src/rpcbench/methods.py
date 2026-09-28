@@ -19,6 +19,7 @@ FAMILY_COSMOS = "cosmos"
 FAMILY_APTOS = "aptos"
 FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
+FAMILY_STARKNET = "starknet"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -76,6 +77,20 @@ NEAR_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("status", []),
     "chainId": ("status", []),
     "balance": ("query", [_NEAR_VIEW_ACCOUNT]),
+}
+# Starknet ETH token (STRK/ETH bridging contract used for cheap reads).
+STARKNET_ETH = (
+    "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+)
+_STARKNET_EVENTS = {
+    "from_block": "latest",
+    "to_block": "latest",
+    "chunk_size": 5,
+}
+STARKNET_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("starknet_blockNumber", []),
+    "chainId": ("starknet_chainId", []),
+    "balance": ("starknet_getNonce", ["latest", STARKNET_ETH]),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -367,6 +382,64 @@ def _near_net(weight: int = 1) -> CallSpec:
 
 def _near_validators(weight: int = 1) -> CallSpec:
     return CallSpec("validators", "validators", (None,), weight)
+
+
+def _sn_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "starknet_blockNumber", (), weight)
+
+
+def _sn_chain(weight: int = 1) -> CallSpec:
+    return CallSpec("chain", "starknet_chainId", (), weight)
+
+
+def _sn_spec(weight: int = 1) -> CallSpec:
+    return CallSpec("spec", "starknet_specVersion", (), weight)
+
+
+def _sn_block(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "block", "starknet_getBlockWithTxHashes", ("latest",), weight
+    )
+
+
+def _sn_sync(weight: int = 1) -> CallSpec:
+    return CallSpec("sync", "starknet_syncing", (), weight)
+
+
+def _sn_class(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "class",
+        "starknet_getClassHashAt",
+        ("latest", STARKNET_ETH),
+        weight,
+    )
+
+
+def _sn_nonce(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "nonce",
+        "starknet_getNonce",
+        ("latest", STARKNET_ETH),
+        weight,
+    )
+
+
+def _sn_storage(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "storage",
+        "starknet_getStorageAt",
+        (STARKNET_ETH, "0x0", "latest"),
+        weight,
+    )
+
+
+def _sn_events(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "events",
+        "starknet_getEvents",
+        (dict(_STARKNET_EVENTS),),
+        weight,
+    )
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -735,6 +808,48 @@ _NEAR_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# Starknet JSON-RPC catalogs. tracing stays EVM-only.
+_STARKNET_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _sn_head(),
+        _sn_chain(),
+        _sn_spec(),
+        _sn_block(),
+        _sn_sync(),
+        _sn_class(),
+        _sn_events(),
+    ),
+    "wallet": (
+        _sn_head(),
+        _sn_chain(),
+        _sn_nonce(4),
+        _sn_class(3),
+        _sn_block(2),
+        _sn_storage(),
+    ),
+    "indexer": (
+        _sn_head(),
+        _sn_events(4),
+        _sn_block(3),
+        _sn_class(2),
+        _sn_sync(),
+    ),
+    "trading": (
+        _sn_head(3),
+        _sn_nonce(4),
+        _sn_block(2),
+        _sn_storage(2),
+        _sn_class(),
+    ),
+    "nft": (
+        _sn_head(),
+        _sn_class(4),
+        _sn_events(3),
+        _sn_nonce(2),
+        _sn_block(),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
@@ -744,6 +859,7 @@ WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_APTOS: _APTOS_WORKLOADS,
     FAMILY_SUI: _SUI_WORKLOADS,
     FAMILY_NEAR: _NEAR_WORKLOADS,
+    FAMILY_STARKNET: _STARKNET_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -798,6 +914,13 @@ _NEAR_WRITE_METHODS = frozenset(
         "broadcast_tx_async",
         "broadcast_tx_commit",
         "send_tx",
+    }
+)
+_STARKNET_WRITE_METHODS = frozenset(
+    {
+        "starknet_addinvoketransaction",
+        "starknet_adddeclaretransaction",
+        "starknet_adddeployaccounttransaction",
     }
 )
 
@@ -892,6 +1015,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return SUI_PRESETS
     if family == FAMILY_NEAR:
         return NEAR_PRESETS
+    if family == FAMILY_STARKNET:
+        return STARKNET_PRESETS
     return PRESETS
 
 
@@ -908,6 +1033,8 @@ def _default_method(family: str) -> str:
         return "sui_getLatestCheckpointSequenceNumber"
     if family == FAMILY_NEAR:
         return "status"
+    if family == FAMILY_STARKNET:
+        return "starknet_blockNumber"
     return "eth_blockNumber"
 
 
@@ -1077,6 +1204,7 @@ def is_write_method(method: str) -> bool:
         or lower in _APTOS_WRITE_METHODS
         or lower in _SUI_WRITE_METHODS
         or lower in _NEAR_WRITE_METHODS
+        or lower in _STARKNET_WRITE_METHODS
     )
 
 

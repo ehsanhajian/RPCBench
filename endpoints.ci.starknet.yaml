@@ -1,0 +1,9 @@
+# Public Starknet JSON-RPC for GitHub Actions smoke. No localhost. No API keys.
+
+endpoints:
+  - name: publicnode
+    url: https://starknet-rpc.publicnode.com
+    family: starknet
+  - name: cartridge
+    url: https://api.cartridge.gg/x/starknet/mainnet
+    family: starknet

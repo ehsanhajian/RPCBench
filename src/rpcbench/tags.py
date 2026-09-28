@@ -16,6 +16,7 @@ CLIENT_METHOD = "web3_clientVersion"
 META_REQUESTS_PER_ENDPOINT = 1 + len(BLOCK_TAGS)
 
 _HEX_ONLY = re.compile(r"^0x[0-9a-fA-F]+$")
+_VERSION = re.compile(r"^\d+(\.\d+)+([-+][0-9A-Za-z.-]+)?$")
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,9 @@ def parse_client_label(value: object) -> str | None:
     if _HEX_ONLY.fullmatch(text):
         return None
     if not any(ch.isalpha() for ch in text):
+        # Starknet starknet_specVersion is a dotted version string.
+        if _VERSION.fullmatch(text):
+            return text
         return None
     if len(text) > 200:
         return text[:200]

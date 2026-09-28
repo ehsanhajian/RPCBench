@@ -68,7 +68,8 @@ def parse_block_hash(value: Any) -> str | None:
         hexpart = lower[2:]
     else:
         hexpart = lower
-    if len(hexpart) == 64:
+    # EVM 32-byte hashes are 64 hex chars; Starknet felts can be shorter.
+    if 32 <= len(hexpart) <= 64:
         try:
             int(hexpart, 16)
         except ValueError:
