@@ -57,6 +57,9 @@ jobs:
           - name: bitcoin
             endpoints: endpoints.ci.bitcoin.yaml
             method: getblockchaininfo
+          - name: ton
+            endpoints: endpoints.ci.ton.yaml
+            method: getMasterchainInfo
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

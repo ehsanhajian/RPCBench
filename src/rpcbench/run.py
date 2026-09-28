@@ -623,6 +623,7 @@ def run_endpoints(
                 client=client,
                 head_method=adapter.head_method,
                 chain_method=adapter.chain_method,
+                empty_params=list(adapter.empty_params),
             )
             if len(steps) == 1:
                 rpc_params = list(steps[0].params)
@@ -692,16 +693,18 @@ def _bind_from_chain(
     client,
     head_method: str,
     chain_method: str,
+    empty_params: list | None = None,
 ) -> tuple[tuple[CallSpec, ...], PayloadMeta]:
     """Paired extra reads to fill YAML sources. Not mixed into ranking."""
     need_head, need_chain = hint_needs(steps)
     head = None
     chain_id = None
+    meta_params = list(empty_params or ())
     if need_head:
         hits = _probe_wave(
             config,
             method=head_method,
-            params=[],
+            params=meta_params,
             timeout=timeout,
             budget=purse,
             deadline=deadline,
@@ -720,7 +723,7 @@ def _bind_from_chain(
         hits = _probe_wave(
             config,
             method=chain_method,
-            params=[],
+            params=meta_params,
             timeout=timeout,
             budget=purse,
             deadline=deadline,
@@ -821,7 +824,7 @@ def _execute_run(
         extra_heads = _probe_wave(
             config,
             method=adapter.head_method,
-            params=[],
+            params=list(adapter.empty_params),
             timeout=timeout,
             budget=purse,
             deadline=deadline,
@@ -876,7 +879,7 @@ def _execute_run(
     client_hits = _probe_wave(
         config,
         method=adapter.client_method,
-        params=[],
+        params=list(adapter.empty_params),
         timeout=timeout,
         budget=purse,
         deadline=deadline,

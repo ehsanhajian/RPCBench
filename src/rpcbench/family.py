@@ -1,8 +1,8 @@
 """Benchmark family adapter. Picks a mix, not a scan ruleset.
 
 Identity handshakes (eth_chainId, getHealth, system_health, status, sui checkpoint,
-network_info, starknet_blockNumber, getblockchaininfo, ledger GET) choose a family.
-They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
+network_info, starknet_blockNumber, getblockchaininfo, getMasterchainInfo, ledger GET)
+choose a family. They are not findings. Unknown EVM chain IDs still use the one EVM adapter.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
 FAMILY_STARKNET = "starknet"
 FAMILY_BITCOIN = "bitcoin"
+FAMILY_TON = "ton"
 FAMILY_AUTO = "auto"
 
 # Declared so a typo and a future family fail differently.
@@ -43,6 +44,7 @@ KNOWN_FAMILIES = (
     "starknet",
     "bitcoin",
     "ton",
+    "cardano",
     "auto",
 )
 IMPLEMENTED = frozenset(
@@ -56,6 +58,7 @@ IMPLEMENTED = frozenset(
         FAMILY_NEAR,
         FAMILY_STARKNET,
         FAMILY_BITCOIN,
+        FAMILY_TON,
     }
 )
 
@@ -69,6 +72,7 @@ _DETECT_PROBES = (
     ("network_info", FAMILY_NEAR),
     ("starknet_blockNumber", FAMILY_STARKNET),
     ("getblockchaininfo", FAMILY_BITCOIN),
+    ("getMasterchainInfo", FAMILY_TON),
 )
 
 _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
@@ -77,6 +81,9 @@ _SOLANA_BLOCK_CONFIG: dict[str, Any] = {
     "rewards": False,
     "maxSupportedTransactionVersion": 0,
 }
+
+# TON masterchain shard id (toncenter / lite-server).
+_TON_MASTER_SHARD = "-9223372036854775808"
 
 
 @dataclass(frozen=True)
@@ -96,6 +103,9 @@ class FamilyAdapter:
     block_tags: tuple[str, ...] = ()
     # jsonrpc (POST) or rest (GET). Aptos fullnode is REST.
     transport: str = "jsonrpc"
+    # Params for head/chain/client meta probes when the method takes no args.
+    # TON Center methods want {} (NamedParams), not [].
+    empty_params: tuple[Any, ...] = ()
 
 
 EVM = FamilyAdapter(
@@ -214,6 +224,20 @@ BITCOIN = FamilyAdapter(
     client_method="getnetworkinfo",
 )
 
+# TON Center-style JSON-RPC (masterchain seqno). Not TON EVM eth_*.
+TON = FamilyAdapter(
+    name=FAMILY_TON,
+    head_method="getMasterchainInfo",
+    chain_method="getMasterchainInfo",
+    block_method="getBlockHeader",
+    block_time_s=5.0,
+    batch_shape="jsonrpc-array",
+    ws_method="",
+    ws_params=(),
+    client_method="getMasterchainInfo",
+    empty_params=(NamedParams(),),
+)
+
 
 def normalize_family(raw: object) -> str:
     """Config value. Omitted means evm. ``auto`` detects. Others must be known."""
@@ -259,6 +283,8 @@ def benchmark_family(name: str) -> FamilyAdapter:
         return STARKNET
     if key == FAMILY_BITCOIN:
         return BITCOIN
+    if key == FAMILY_TON:
+        return TON
     have = ", ".join(sorted(IMPLEMENTED))
     raise ConfigError(
         f"family {key!r} has no benchmark mix yet (implemented: {have})"
@@ -287,6 +313,14 @@ def pin_block_params(adapter: FamilyAdapter, pin: int) -> list[Any]:
         return [{"block_number": pin}]
     if adapter.name == FAMILY_BITCOIN:
         return [pin]
+    if adapter.name == FAMILY_TON:
+        return [
+            NamedParams(
+                workchain=-1,
+                shard=_TON_MASTER_SHARD,
+                seqno=pin,
+            )
+        ]
     return [hex(pin), False]
 
 
@@ -300,6 +334,7 @@ def tag_block_params(adapter: FamilyAdapter, tag: str) -> list[Any]:
         FAMILY_NEAR,
         FAMILY_STARKNET,
         FAMILY_BITCOIN,
+        FAMILY_TON,
     }:
         raise ConfigError(f"{adapter.name} has no eth-style block tags")
     return [tag, False]
@@ -364,10 +399,13 @@ def detect_family(
     from rpcbench.rpc import TRANSPORT_REST, probe
 
     for method, family in _DETECT_PROBES:
+        params: list[Any] = []
+        if method == "getMasterchainInfo":
+            params = [NamedParams()]
         hit = probe(
             endpoint.url,
             method,
-            params=[],
+            params=params,
             timeout=timeout,
             retries=0,
             client=client,
@@ -423,6 +461,14 @@ def _identity_hit(method: str, hit: ProbeResult) -> bool:
             isinstance(hit.result, dict)
             and isinstance(hit.result.get("chain"), str)
             and hit.result.get("blocks") is not None
+        )
+    if method == "getMasterchainInfo":
+        # TON Center / lite-server HTTP. Masterchain tip in last.seqno.
+        last = hit.result.get("last") if isinstance(hit.result, dict) else None
+        return (
+            isinstance(last, dict)
+            and last.get("workchain") == -1
+            and last.get("seqno") is not None
         )
     if method == "sui_getLatestCheckpointSequenceNumber":
         return parse_block_height(hit.result) is not None
