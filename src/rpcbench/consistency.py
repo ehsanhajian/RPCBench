@@ -44,8 +44,13 @@ def parse_block_hash(value: Any) -> str | None:
             or value.get("blockhash")
             or value.get("block_hash")
             or value.get("bestblockhash")
+            or value.get("root_hash")
             or value.get("digest")
         )
+        if digest is None:
+            last = value.get("last")
+            if isinstance(last, dict):
+                digest = last.get("root_hash") or last.get("file_hash")
         if digest is None:
             header = value.get("header")
             if isinstance(header, dict):
@@ -54,6 +59,14 @@ def parse_block_hash(value: Any) -> str | None:
             block_id = value.get("block_id")
             if isinstance(block_id, dict):
                 digest = block_id.get("hash")
+        if digest is None:
+            block_id = value.get("id")
+            if isinstance(block_id, dict):
+                digest = (
+                    block_id.get("root_hash")
+                    or block_id.get("file_hash")
+                    or block_id.get("hash")
+                )
         if digest is None:
             sync = value.get("sync_info")
             if isinstance(sync, dict):
@@ -81,6 +94,16 @@ def parse_block_hash(value: Any) -> str | None:
     # Solana blockhash: base58, typically 32–44 chars.
     if 32 <= len(text) <= 64 and all(
         ch in "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz" for ch in text
+    ):
+        return text
+    # TON root_hash / file_hash: base64 (often 44 chars with padding).
+    if (
+        40 <= len(text) <= 64
+        and ("+" in text or "/" in text or text.endswith("="))
+        and all(
+            ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+            for ch in text
+        )
     ):
         return text
     return None

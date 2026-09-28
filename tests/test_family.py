@@ -73,9 +73,9 @@ def test_unimplemented_family_is_a_config_error() -> None:
             {
                 "endpoints": [
                     {
-                        "name": "ton",
-                        "url": "http://127.0.0.1:8081",
-                        "family": "ton",
+                        "name": "ada",
+                        "url": "http://127.0.0.1:8090",
+                        "family": "cardano",
                     }
                 ]
             }
@@ -209,6 +209,27 @@ def test_near_family_loads() -> None:
     assert adapter.block_time_s == 1.2
 
 
+
+
+
+def test_ton_family_loads() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "ton",
+                    "url": "http://127.0.0.1:8081",
+                    "family": "ton",
+                }
+            ]
+        }
+    )
+    assert cfg.endpoints[0].family == "ton"
+    assert resolve_benchmark_family(cfg) == "ton"
+    adapter = benchmark_family("ton")
+    assert adapter.head_method == "getMasterchainInfo"
+    assert adapter.ws_method == ""
+    assert adapter.block_time_s == 5.0
 
 
 def test_bitcoin_family_loads() -> None:
@@ -573,6 +594,136 @@ def test_near_status_is_not_cosmos() -> None:
 
 
 
+
+def test_auto_detect_ton_resolves() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "local",
+                    "url": "http://127.0.0.1:8081",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "getMasterchainInfo" in body:
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "last": {"workchain": -1, "seqno": 100, "root_hash": "x"},
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "method not found", "code": 404},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    found = detect_family(cfg.endpoints[0], timeout=1.0, client=client)
+    assert found == "ton"
+    assert resolve_benchmark_family(cfg, timeout=1.0, client=client) == "ton"
+
+
+def test_auto_detect_retries_rate_limit_on_ton_identity(monkeypatch) -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "a",
+                    "url": "http://127.0.0.1:8081",
+                    "family": "auto",
+                }
+            ]
+        }
+    )
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "getMasterchainInfo" in body:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(429, text="Too Many Requests")
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "last": {"workchain": -1, "seqno": 100, "root_hash": "x"},
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "method not found", "code": 404},
+        )
+
+    monkeypatch.setattr("rpcbench.family.time.sleep", sleeps.append)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert detect_family(cfg.endpoints[0], timeout=1.0, client=client) == "ton"
+    assert calls["n"] == 2
+    assert sleeps == [1.05]
+
+
+def test_auto_detect_prefers_sibling_family_before_full_cascade() -> None:
+    cfg = parse_endpoints(
+        {
+            "endpoints": [
+                {
+                    "name": "a",
+                    "url": "http://127.0.0.1:8081/a",
+                    "family": "auto",
+                },
+                {
+                    "name": "b",
+                    "url": "http://127.0.0.1:8081/b",
+                    "family": "auto",
+                },
+            ]
+        }
+    )
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        host = request.url.path
+        if "getMasterchainInfo" in body:
+            seen.append(f"{host}:ton")
+            return httpx.Response(
+                200,
+                json={
+                    "ok": True,
+                    "result": {
+                        "last": {"workchain": -1, "seqno": 100, "root_hash": "x"},
+                    },
+                },
+            )
+        # Second endpoint must not need the full cascade if prefer works.
+        if host.endswith("/b") and "eth_chainId" in body:
+            seen.append(f"{host}:eth")
+        return httpx.Response(
+            200,
+            json={"ok": False, "error": "method not found", "code": 404},
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    assert (
+        resolve_benchmark_family(cfg, override="auto", timeout=1.0, client=client)
+        == "ton"
+    )
+    assert seen.count("/a:ton") >= 1
+    assert seen.count("/b:ton") >= 1
+    assert "/b:eth" not in seen
+
+
 def test_auto_detect_bitcoin_resolves() -> None:
     cfg = parse_endpoints(
         {
@@ -648,7 +799,7 @@ def test_auto_detect_starknet_resolves() -> None:
 
 def test_unimplemented_family_error_is_not_a_finding() -> None:
     with pytest.raises(ConfigError, match="no benchmark mix") as exc:
-        normalize_family("ton")
+        normalize_family("cardano")
     blob = str(exc.value).lower()
     for word in ("finding", "severity", "cve", "disclosure", "vulnerability"):
         assert word not in blob
@@ -720,7 +871,7 @@ def test_cli_family_override_is_a_config_error(tmp_path, capsys) -> None:
         encoding="utf-8",
     )
     code = main(
-        ["run", "--endpoints", str(cfg), "--family", "ton", "--samples", "1"]
+        ["run", "--endpoints", str(cfg), "--family", "cardano", "--samples", "1"]
     )
     assert code == 2
     err = capsys.readouterr().err.lower()

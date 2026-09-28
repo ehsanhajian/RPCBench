@@ -71,6 +71,7 @@ def test_ci_endpoints_are_public_https() -> None:
         ("endpoints.ci.near.yaml", "near"),
         ("endpoints.ci.starknet.yaml", "starknet"),
         ("endpoints.ci.bitcoin.yaml", "bitcoin"),
+        ("endpoints.ci.ton.yaml", "ton"),
     )
     for name, family in files:
         cfg = load_endpoints(root / name)

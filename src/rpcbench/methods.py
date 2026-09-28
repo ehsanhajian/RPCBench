@@ -21,6 +21,7 @@ FAMILY_SUI = "sui"
 FAMILY_NEAR = "near"
 FAMILY_STARKNET = "starknet"
 FAMILY_BITCOIN = "bitcoin"
+FAMILY_TON = "ton"
 
 # Presets: chain head, identity, and a cheap account read.
 PRESETS: dict[str, tuple[str, list[Any]]] = {
@@ -104,6 +105,16 @@ BITCOIN_PRESETS: dict[str, tuple[str, list[Any]]] = {
     "head": ("getblockchaininfo", []),
     "chainId": ("getblockchaininfo", []),
     "balance": ("getmempoolinfo", []),
+}
+# TON Center named params. Masterchain shard; system/zero address for cheap reads.
+TON_MASTER_SHARD = "-9223372036854775808"
+TON_ACCOUNT = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c"
+_TON_EMPTY = NamedParams()
+_TON_ACCOUNT_PARAMS = NamedParams(address=TON_ACCOUNT)
+TON_PRESETS: dict[str, tuple[str, list[Any]]] = {
+    "head": ("getMasterchainInfo", [_TON_EMPTY]),
+    "chainId": ("getMasterchainInfo", [_TON_EMPTY]),
+    "balance": ("getAddressBalance", [_TON_ACCOUNT_PARAMS]),
 }
 
 # Named app mixes. --profile mix is the old name for general.
@@ -481,6 +492,58 @@ def _btc_mempool(weight: int = 1) -> CallSpec:
 
 def _btc_rawtx(weight: int = 1) -> CallSpec:
     return CallSpec("rawtx", "getrawtransaction", (BITCOIN_FIRST_TX,), weight)
+
+
+def _ton_head(weight: int = 1) -> CallSpec:
+    return CallSpec("head", "getMasterchainInfo", (_TON_EMPTY,), weight)
+
+
+def _ton_consensus(weight: int = 1) -> CallSpec:
+    return CallSpec("consensus", "getConsensusBlock", (_TON_EMPTY,), weight)
+
+
+def _ton_shards(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "shards",
+        "getShards",
+        (NamedParams(seqno=1_000_000),),
+        weight,
+    )
+
+
+def _ton_block(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "block",
+        "getBlockHeader",
+        (
+            NamedParams(
+                workchain=-1,
+                shard=TON_MASTER_SHARD,
+                seqno=1_000_000,
+            ),
+        ),
+        weight,
+    )
+
+
+def _ton_account(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "account", "getAddressInformation", (_TON_ACCOUNT_PARAMS,), weight
+    )
+
+
+def _ton_balance(weight: int = 1) -> CallSpec:
+    return CallSpec("balance", "getAddressBalance", (_TON_ACCOUNT_PARAMS,), weight)
+
+
+def _ton_wallet(weight: int = 1) -> CallSpec:
+    return CallSpec(
+        "wallet", "getWalletInformation", (_TON_ACCOUNT_PARAMS,), weight
+    )
+
+
+def _ton_config(weight: int = 1) -> CallSpec:
+    return CallSpec("config", "getConfigParam", (NamedParams(config_id=0),), weight)
 
 
 # Cheap one-block trace. ["trace"] only — not vmTrace / stateDiff / trace_filter.
@@ -934,6 +997,47 @@ _BITCOIN_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
     ),
 }
 
+# TON Center JSON-RPC catalogs. tracing stays EVM-only.
+_TON_WORKLOADS: dict[str, tuple[CallSpec, ...]] = {
+    "general": (
+        _ton_head(),
+        _ton_consensus(),
+        _ton_block(),
+        _ton_shards(),
+        _ton_account(),
+        _ton_balance(),
+        _ton_config(),
+    ),
+    "wallet": (
+        _ton_head(),
+        _ton_balance(4),
+        _ton_wallet(3),
+        _ton_account(2),
+        _ton_block(),
+    ),
+    "indexer": (
+        _ton_head(),
+        _ton_block(4),
+        _ton_shards(3),
+        _ton_account(2),
+        _ton_consensus(),
+    ),
+    "trading": (
+        _ton_head(3),
+        _ton_balance(4),
+        _ton_consensus(2),
+        _ton_block(2),
+        _ton_wallet(),
+    ),
+    "nft": (
+        _ton_head(),
+        _ton_account(4),
+        _ton_wallet(3),
+        _ton_balance(2),
+        _ton_block(),
+    ),
+}
+
 # Family → named mix. Missing catalogs error instead of sending eth_* elsewhere.
 WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_EVM: _EVM_WORKLOADS,
@@ -945,6 +1049,7 @@ WORKLOADS: dict[str, dict[str, tuple[CallSpec, ...]]] = {
     FAMILY_NEAR: _NEAR_WORKLOADS,
     FAMILY_STARKNET: _STARKNET_WORKLOADS,
     FAMILY_BITCOIN: _BITCOIN_WORKLOADS,
+    FAMILY_TON: _TON_WORKLOADS,
 }
 
 # Default mix: head, identity, block fetch, state, call, bounded logs.
@@ -1020,6 +1125,14 @@ _BITCOIN_WRITE_METHODS = frozenset(
         "walletpassphrase",
         "dumpprivkey",
         "importprivkey",
+    }
+)
+_TON_WRITE_METHODS = frozenset(
+    {
+        "sendboc",
+        "sendbocreturnhash",
+        "sendquery",
+        "sendrawmessage",
     }
 )
 
@@ -1118,6 +1231,8 @@ def _presets_for(family: str) -> dict[str, tuple[str, list[Any]]]:
         return STARKNET_PRESETS
     if family == FAMILY_BITCOIN:
         return BITCOIN_PRESETS
+    if family == FAMILY_TON:
+        return TON_PRESETS
     return PRESETS
 
 
@@ -1138,6 +1253,8 @@ def _default_method(family: str) -> str:
         return "starknet_blockNumber"
     if family == FAMILY_BITCOIN:
         return "getblockchaininfo"
+    if family == FAMILY_TON:
+        return "getMasterchainInfo"
     return "eth_blockNumber"
 
 
@@ -1169,7 +1286,12 @@ def resolve_method(
         raise MethodError("method is required")
     if not allow_writes:
         _reject_writes(name)
-    params = parse_params(params_json) if params_json else []
+    if params_json:
+        params = parse_params(params_json)
+    elif family == FAMILY_TON:
+        params = [NamedParams()]
+    else:
+        params = []
     return name, params
 
 
@@ -1309,6 +1431,7 @@ def is_write_method(method: str) -> bool:
         or lower in _NEAR_WRITE_METHODS
         or lower in _STARKNET_WRITE_METHODS
         or lower in _BITCOIN_WRITE_METHODS
+        or lower in _TON_WRITE_METHODS
     )
 
 

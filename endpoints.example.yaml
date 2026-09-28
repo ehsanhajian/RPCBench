@@ -2,7 +2,7 @@
 # Copy to endpoints.yaml and edit. JSON with the same shape also works.
 # Secrets in query strings, path tokens, userinfo, bearer, and headers
 # are stripped from reports; a short hash of the raw URL is kept instead.
-# Compare one family at a time (evm, solana, substrate, cosmos, aptos, sui, near, starknet, or bitcoin).
+# Compare one family at a time (evm, solana, substrate, cosmos, aptos, sui, near, starknet, bitcoin, or ton).
 
 endpoints:
   - name: local
@@ -60,6 +60,13 @@ endpoints:
     # user: rpcuser
     # password: rpcpassword
     # cookie: ~/.bitcoin/.cookie
+
+  # TON Center-style JSON-RPC (masterchain seqno; api_key / X-API-Key masked in reports)
+  - name: toncenter
+    url: https://toncenter.com/api/v2/jsonRPC
+    family: ton
+    # headers:
+    #   X-API-Key: YOUR_KEY
 
   # - name: paid
   #   url: https://eth.example/v3/YOUR_KEY

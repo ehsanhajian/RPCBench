@@ -67,6 +67,20 @@ def parse_block_height(value: Any) -> int | None:
         height = parse_block_height(value.get("height"))
         if height is not None:
             return height
+        # TON getMasterchainInfo: last.seqno; getBlockHeader: id.seqno
+        last = value.get("last")
+        if isinstance(last, dict):
+            height = parse_block_height(last.get("seqno"))
+            if height is not None:
+                return height
+        block_id = value.get("id")
+        if isinstance(block_id, dict) and block_id.get("@type") == "ton.blockIdExt":
+            height = parse_block_height(block_id.get("seqno"))
+            if height is not None:
+                return height
+        height = parse_block_height(value.get("seqno"))
+        if height is not None:
+            return height
         # CometBFT status: sync_info.latest_block_height
         sync = value.get("sync_info")
         if isinstance(sync, dict):

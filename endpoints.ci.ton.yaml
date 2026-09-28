@@ -1,0 +1,8 @@
+# Public TON Center-style JSON-RPC. No localhost. No API keys.
+endpoints:
+  - name: toncenter
+    url: https://toncenter.com/api/v2/jsonRPC
+    family: ton
+  - name: onfinality
+    url: https://ton.api.onfinality.io/public
+    family: ton

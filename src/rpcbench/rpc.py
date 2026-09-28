@@ -480,6 +480,22 @@ def _probe_jsonrpc(
                     timing=timing,
                     **transport,
                 )
+            # TON Center-style: {ok: false, error: "..."} without JSON-RPC error object.
+            if payload.get("ok") is False:
+                message = _error_message(payload.get("error") or "ok=false")
+                return ProbeResult(
+                    ok=False,
+                    reachable=True,
+                    latency_ms=latency_ms,
+                    result=None,
+                    error=message,
+                    error_class=(
+                        "rate_limit" if is_rate_limit_message(message) else "jsonrpc"
+                    ),
+                    attempts=attempts,
+                    timing=timing,
+                    **transport,
+                )
             return ProbeResult(
                 ok=True,
                 reachable=True,

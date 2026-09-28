@@ -343,12 +343,12 @@ def test_probe_websocket_family_skip() -> None:
     ).endpoints[0]
     # Unimplemented family → ConfigError → skip/family
     hit = probe_websocket(
-        ep, window=0.05, timeout=1.0, family="ton", open_ws=_open([_ack()])
+        ep, window=0.05, timeout=1.0, family="cardano", open_ws=_open([_ack()])
     )
     assert hit.skip == "family"
     assert websocket_label(hit) == "skip/family"
-    # Aptos / Sui / NEAR / Starknet / Bitcoin have no default WS stream in this mix
-    for family in ("aptos", "sui", "near", "starknet", "bitcoin"):
+    # Aptos / Sui / NEAR / Starknet / Bitcoin / TON have no default WS stream in this mix
+    for family in ("aptos", "sui", "near", "starknet", "bitcoin", "ton"):
         hit = probe_websocket(
             ep, window=0.05, timeout=1.0, family=family, open_ws=_open([_ack()])
         )
