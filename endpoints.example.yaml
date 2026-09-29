@@ -21,6 +21,7 @@ endpoints:
     url: https://solana-rpc.publicnode.com
     family: solana
     # ws: wss://solana-rpc.publicnode.com
+    # grpc: https://solana-yellowstone.example:443   # Yellowstone/gRPC; --yellowstone
 
   # Substrate (Polkadot — same adapter for Kusama / parachains)
   - name: dot-publicnode

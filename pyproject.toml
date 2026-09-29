@@ -34,6 +34,10 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+yellowstone = [
+  "grpcio>=1.60",
+  "protobuf>=4.25",
+]
 
 [project.scripts]
 rpcbench = "rpcbench.cli:main"

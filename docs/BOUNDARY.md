@@ -26,6 +26,7 @@ Three tools, three questions. Do not copy checks across the line.
 - Head freshness / lag vs cohort; `latest` vs `safe` vs `finalized` **latency**
 - Archive / historical **read performance** (can this indexer finish, and how slow)
 - WebSocket **subscribe latency** and missed slots — Nodeprobe is HTTP-only
+- Yellowstone/gRPC **first-seen race** (Solana slots; geography caveat; not tx landing) — Nodeprobe is HTTP-only
 - Rate limits as **reliability under a budgeted burst**, not “abuse posture”
 - Workload coverage: of the methods **this mix needs**, which ones succeeded and how fast
 - Optional **trace/debug timing** only when the user opts into a tracing/indexer mix — skip if missing, never a vulnerability

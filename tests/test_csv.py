@@ -106,7 +106,7 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "rank_by",
         "rank",
     ]
-    assert COLUMNS[-7:] == (
+    assert COLUMNS[-13:] == (
         "websocket_connect_ms",
         "websocket_subscribe_ms",
         "websocket_first_ms",
@@ -114,6 +114,12 @@ def test_csv_has_header_and_one_row_per_provider() -> None:
         "websocket_missed",
         "websocket_disconnects",
         "websocket_status",
+        "yellowstone_connect_ms",
+        "yellowstone_n",
+        "yellowstone_wins",
+        "yellowstone_lag_p50_ms",
+        "yellowstone_lag_p95_ms",
+        "yellowstone_status",
     )
     assert "batch_ratio" in COLUMNS
     assert "inflight_p50_ms" in COLUMNS

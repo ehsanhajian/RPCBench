@@ -23,6 +23,7 @@ class Endpoint:
     url: str
     headers: tuple[tuple[str, str], ...] = ()
     ws_url: str | None = None
+    grpc_url: str | None = None
     family: str = "evm"
 
     @property
@@ -34,6 +35,12 @@ class Endpoint:
         if not self.ws_url:
             return None
         return display_url(self.ws_url)
+
+    @property
+    def display_grpc_url(self) -> str | None:
+        if not self.grpc_url:
+            return None
+        return display_url(self.grpc_url)
 
     @property
     def url_id(self) -> str:
@@ -100,6 +107,7 @@ def parse_endpoints(data: object, *, source: str = "config") -> BenchConfig:
             )
         headers = _parse_headers(item, source=source, index=i, name=name)
         ws_url = _parse_ws_url(item, source=source, index=i, name=name)
+        grpc_url = _parse_grpc_url(item, source=source, index=i, name=name)
         family = _parse_family(item, source=source, index=i, name=name)
         seen.add(name)
         endpoints.append(
@@ -108,6 +116,7 @@ def parse_endpoints(data: object, *, source: str = "config") -> BenchConfig:
                 url=url,
                 headers=headers,
                 ws_url=ws_url,
+                grpc_url=grpc_url,
                 family=family,
             )
         )
@@ -234,6 +243,43 @@ def _parse_ws_url(
             f"{source}: endpoints[{index}] ({name}) WS URL must be ws or wss"
         )
     return ws_url
+
+
+def _parse_grpc_url(
+    item: dict, *, source: str, index: int, name: str
+) -> str | None:
+    raw_grpc = item.get("grpc")
+    raw_yellowstone = item.get("yellowstone")
+    raw_grpc_url = item.get("grpc_url")
+    present = [v for v in (raw_grpc, raw_yellowstone, raw_grpc_url) if v is not None]
+    if len(present) > 1:
+        values = {str(v).strip() for v in present}
+        if len(values) > 1:
+            raise ConfigError(
+                f"{source}: endpoints[{index}] ({name}) has conflicting "
+                "grpc / yellowstone / grpc_url"
+            )
+    raw = raw_grpc if raw_grpc is not None else (
+        raw_yellowstone if raw_yellowstone is not None else raw_grpc_url
+    )
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) grpc must be a "
+            "grpc, grpcs, http, or https URL"
+        )
+    grpc_url = raw.strip()
+    if "://" not in grpc_url:
+        # host:port form accepted by Yellowstone clients
+        return grpc_url
+    scheme = grpc_url.split(":", 1)[0].lower()
+    if scheme not in {"grpc", "grpcs", "http", "https"}:
+        raise ConfigError(
+            f"{source}: endpoints[{index}] ({name}) gRPC URL must be "
+            "grpc, grpcs, http, or https"
+        )
+    return grpc_url
 
 
 def _parse_family(item: dict, *, source: str, index: int, name: str) -> str:

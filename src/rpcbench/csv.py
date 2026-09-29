@@ -109,6 +109,12 @@ COLUMNS = (
     "websocket_missed",
     "websocket_disconnects",
     "websocket_status",
+    "yellowstone_connect_ms",
+    "yellowstone_n",
+    "yellowstone_wins",
+    "yellowstone_lag_p50_ms",
+    "yellowstone_lag_p95_ms",
+    "yellowstone_status",
 )
 
 
@@ -184,6 +190,7 @@ def format_csv_dict(data: dict[str, Any]) -> str:
                 **_archive_cols(row.get("archive")),
                 **_history_cols(row.get("history")),
                 **_websocket_cols(row.get("websocket")),
+                **_yellowstone_cols(row.get("yellowstone")),
             }
         )
     return buf.getvalue()
@@ -388,6 +395,18 @@ def _websocket_cols(raw: Any) -> dict[str, str]:
         "websocket_missed": _num(hit.get("missed")),
         "websocket_disconnects": _num(hit.get("disconnects")),
         "websocket_status": str(hit.get("status") or ""),
+    }
+
+
+def _yellowstone_cols(raw: Any) -> dict[str, str]:
+    hit = raw if isinstance(raw, dict) else {}
+    return {
+        "yellowstone_connect_ms": _num(hit.get("connect_ms")),
+        "yellowstone_n": _num(hit.get("n_events")),
+        "yellowstone_wins": _num(hit.get("wins")),
+        "yellowstone_lag_p50_ms": _num(hit.get("lag_p50_ms")),
+        "yellowstone_lag_p95_ms": _num(hit.get("lag_p95_ms")),
+        "yellowstone_status": str(hit.get("status") or ""),
     }
 
 

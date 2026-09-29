@@ -61,6 +61,7 @@ def test_cli_defaults() -> None:
     assert ns.rps == 0.0
     assert ns.throughput == 0
     assert ns.websocket == 0.0
+    assert ns.yellowstone == 0.0
     assert ns.new_connection is False
     assert ns.http2 is False
     assert ns.http1 is False
@@ -78,6 +79,7 @@ def test_job_bare_compare_is_general_short() -> None:
     assert ns.logs_range == 0
     assert ns.lookback == 0
     assert ns.websocket == 0.0
+    assert ns.yellowstone == 0.0
 
 
 def test_job_wallet_and_trading_enable_simulate() -> None:
@@ -108,6 +110,7 @@ def test_job_indexer_enables_history_extras() -> None:
     assert ns.logs_range == DEFAULT_LOGS_RANGE
     assert ns.lookback == DEFAULT_LOOKBACK
     assert ns.websocket == 0.0
+    assert ns.yellowstone == 0.0
 
 
 def test_job_budget_long_does_not_enable_extras() -> None:
@@ -123,6 +126,7 @@ def test_job_budget_long_does_not_enable_extras() -> None:
     assert ns.logs_range == 0
     assert ns.lookback == 0
     assert ns.websocket == 0.0
+    assert ns.yellowstone == 0.0
     assert ns.simulate is False
 
 
@@ -233,6 +237,7 @@ def test_compare_help_hides_lab_flags(capsys) -> None:
     assert "--batch" in full
     assert "--method" in full
     assert "--websocket" in full
+    assert "--yellowstone" in full
     assert "record" in main_help(capsys)
 
 
@@ -898,6 +903,15 @@ def test_cli_websocket_flag_defaults_to_three() -> None:
     assert ns.websocket == 2.0
 
 
+def test_cli_yellowstone_flag_defaults_to_three() -> None:
+    ns = build_parser().parse_args(["run", "--endpoints", "x.yaml", "--yellowstone"])
+    assert ns.yellowstone == 3.0
+    ns = build_parser().parse_args(
+        ["run", "--endpoints", "x.yaml", "--yellowstone", "2"]
+    )
+    assert ns.yellowstone == 2.0
+
+
 def test_cli_rejects_throughput_above_cap(tmp_path: Path, capsys) -> None:
     cfg = tmp_path / "e.yaml"
     cfg.write_text(
@@ -924,6 +938,20 @@ def test_cli_rejects_websocket_above_cap(tmp_path: Path, capsys) -> None:
     assert code == 2
     err = capsys.readouterr().err
     assert "--websocket" in err
+
+
+def test_cli_rejects_yellowstone_above_cap(tmp_path: Path, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:8545\n",
+        encoding="utf-8",
+    )
+    code = main(
+        ["run", "--endpoints", str(cfg), "--yellowstone", "11", "--samples", "1"]
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "--yellowstone" in err
 
 
 def test_cli_rejects_invalid_block_pin(tmp_path: Path, capsys) -> None:
