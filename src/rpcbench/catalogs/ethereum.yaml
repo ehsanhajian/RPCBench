@@ -1,0 +1,36 @@
+# Bundled public RPC catalog for zero-setup compare.
+# Reviewed and versioned with the package. Not a live Chainlist mirror.
+#
+# rate-limit: public endpoints throttle; default catalog budget is short
+# (not long / "Deep"). Prefer your own node or a paid key for heavy runs.
+#
+# source: curated keyless HTTPS mainnet URLs (Chainlist / provider docs).
+# refresh: see docs/CATALOG.md
+
+version: 1
+chain_id: 1
+family: evm
+reviewed: "2026-09-29"
+notes: >
+  Ethereum mainnet (chain id 1). Keyless public HTTPS only.
+  Expect 429 / rate_limit under load.
+
+endpoints:
+  - name: publicnode
+    url: https://ethereum.publicnode.com
+    family: evm
+  - name: drpc
+    url: https://eth.drpc.org
+    family: evm
+  - name: llamarpc
+    url: https://eth.llamarpc.com
+    family: evm
+  - name: 1rpc
+    url: https://1rpc.io/eth
+    family: evm
+  - name: meowrpc
+    url: https://eth.meowrpc.com
+    family: evm
+  - name: merkle
+    url: https://eth.merkle.io
+    family: evm

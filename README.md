@@ -4,7 +4,7 @@
 
 A small CLI that compares **EVM, Solana, Substrate, Cosmos, Sui, NEAR, Starknet, Bitcoin, and TON JSON-RPC, plus Aptos REST**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node). Use `--family solana`, `--family substrate`, `--family cosmos`, `--family aptos`, `--family sui`, `--family near`, `--family starknet`, `--family bitcoin`, or `--family ton` (or `family:` / `auto` in the endpoints file).
 
-It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
+It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Public catalog: [docs/CATALOG.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/CATALOG.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
 ## Install
 
@@ -12,7 +12,13 @@ It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nod
 pip install rpcbench
 ```
 
-Python 3.10+. `rpcbench --version` prints `0.5.0`.
+Python 3.10+. `rpcbench --version` prints `0.5.0`. `rpcbench --help` works from the PyPI package. Zero-setup public compare:
+
+```bash
+rpcbench compare --chain ethereum
+```
+
+That uses a **bundled, reviewed** Ethereum public RPC catalog (short budget by default — public RPCs rate-limit; not `long` / “Deep”). Add extras with `--endpoint URL`. Catalog source and refresh: [docs/CATALOG.md](docs/CATALOG.md).
 
 ```bash
 python3 -m venv .venv
@@ -25,12 +31,14 @@ PRs run `pytest`, then a live smoke per family against public RPCs (`eth_blockNu
 ## Start
 
 ```bash
+rpcbench compare --chain ethereum
+rpcbench compare --chain ethereum --endpoint http://127.0.0.1:8545
 rpcbench compare --endpoints endpoints.yaml
 rpcbench compare --endpoints endpoints.yaml --workload wallet
 rpcbench compare --endpoints endpoints.yaml --html -o report.html
 ```
 
-The first command is the **general** mix at **short** size (verdict and route). `--workload wallet` or `trading` also runs simulate. `--workload indexer` also runs logs-range, archive, and lookback. `--budget` only changes how long to sample. A single call is `--method eth_blockNumber`. Lab flags (`--batch`, `--websocket`, `--yellowstone`, `--rank-by`, …) are in `rpcbench compare --help-all`.
+The first commands use the **catalog** or a YAML of named endpoints. Bare compare is the **general** mix at **short** size (verdict and route). `--workload wallet` or `trading` also runs simulate. `--workload indexer` also runs logs-range, archive, and lookback. `--budget` only changes how long to sample. A single call is `--method eth_blockNumber`. Lab flags (`--batch`, `--websocket`, `--yellowstone`, `--rank-by`, …) are in `rpcbench compare --help-all`.
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
 
@@ -210,7 +218,7 @@ These are not mixed into latency stats or Fastest.
 
 ## Flags
 
-Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extras on: wallet and trading add simulate; indexer adds logs-range, archive, and lookback. `--budget long` does not. Overrides (`--no-simulate`, `--no-archive`, `--logs-range 0`, `--lookback 0`, `--websocket 0`) and the rest of the lab flags are `rpcbench compare --help-all`. `--profile FILE.yaml` is a custom mix. `--preset`, `--profile mix`, and `run` still work.
+Happy path is `compare --chain ethereum` or `compare --endpoints FILE` (general, short). Named jobs turn extras on: wallet and trading add simulate; indexer adds logs-range, archive, and lookback. `--budget long` does not. Overrides (`--no-simulate`, `--no-archive`, `--logs-range 0`, `--lookback 0`, `--websocket 0`) and the rest of the lab flags are `rpcbench compare --help-all`. `--profile FILE.yaml` is a custom mix. `--preset`, `--profile mix`, and `run` still work.
 
 `--budget` is a **named size** (how long to sample). `--max-requests` is the **HTTP cap**. `--samples` / `--warmup` override the named size.
 
@@ -222,7 +230,10 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--budget` | `short` with no other flags; else `standard` | Named size in the table above. Does not enable archive, WebSocket, or tracing |
+| `--chain` | | Bundled public catalog (`ethereum`). Rate-limited; default budget short. See [docs/CATALOG.md](docs/CATALOG.md) |
+| `--endpoint` | | Extra http(s) URL (repeatable); combines with `--chain` / `--endpoints` |
+| `--endpoints` | | YAML/JSON file or single URL. Optional when `--chain` or `--endpoint` is set |
+| `--budget` | `short` with no other flags or with `--chain`; else `standard` | Named size in the table above. Does not enable archive, WebSocket, or tracing |
 | `--samples` | 10 | Timed mix rounds after warmup (overrides `--budget`). Each round sends `sum(weights)` calls |
 | `--warmup` | 1 | Requests excluded from stats (overrides `--budget`) |
 | `--timeout` | 10s | Per-request timeout (overrides `--budget`) |

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from rpcbench import __version__
+from rpcbench.catalog import catalog_banner, list_chains, merge_targets
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
@@ -191,9 +192,33 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
     )
     run.add_argument(
         "--endpoints",
-        required=True,
+        default=None,
         metavar="FILE|URL",
-        help="YAML/JSON file, or a single http(s) URL (localhost is allowed)",
+        help=(
+            "YAML/JSON file, or a single http(s) URL (localhost is allowed). "
+            "Optional when --chain or --endpoint is set."
+        ),
+    )
+    run.add_argument(
+        "--chain",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Bundled public catalog (e.g. ethereum). Compares reviewed keyless "
+            "RPCs; public endpoints rate-limit. Default budget is short, not long. "
+            f"Available: {', '.join(list_chains()) or 'none'}. "
+            "Combine with --endpoint / --endpoints. See docs/CATALOG.md."
+        ),
+    )
+    run.add_argument(
+        "--endpoint",
+        action="append",
+        default=None,
+        metavar="URL",
+        help=(
+            "Extra http(s) URL to include (repeatable). Combined with --chain "
+            "catalog and/or --endpoints file."
+        ),
     )
     run.add_argument(
         "--method",
@@ -765,12 +790,17 @@ def apply_job(args: argparse.Namespace) -> argparse.Namespace:
 
     Unset extra-read flags stay None until here, so an explicit 0 / --no-* wins.
     --budget long does not turn extras on.
+    Catalog (--chain) defaults to short even with --method (public RPCs rate-limit).
     """
     bare = not any((args.method, args.preset, args.profile, args.workload))
     if bare:
         args.workload = "general"
     if args.sample_budget is None:
-        args.sample_budget = "short" if bare else "standard"
+        # Catalog / public compare: short is the default (not long / "Deep").
+        if getattr(args, "chain", None) or bare:
+            args.sample_budget = "short"
+        else:
+            args.sample_budget = "standard"
     job = _named_job(args)
     if args.logs_range is None:
         args.logs_range = DEFAULT_LOGS_RANGE if job == "indexer" else 0
@@ -850,7 +880,22 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     try:
         apply_job(args)
-        config = load_targets(args.endpoints)
+        if not args.endpoints and not args.chain and not args.endpoint:
+            print(
+                "rpcbench: pass --chain, --endpoints, or --endpoint",
+                file=sys.stderr,
+            )
+            return 2
+        if args.chain or args.endpoint:
+            config = merge_targets(
+                chain=args.chain,
+                endpoints_file=args.endpoints,
+                extra_urls=tuple(args.endpoint or ()),
+            )
+        else:
+            config = load_targets(args.endpoints)
+        if args.chain:
+            print(catalog_banner(args.chain, config), file=sys.stderr)
         detect_timeout = (
             float(args.timeout)
             if args.timeout is not None
