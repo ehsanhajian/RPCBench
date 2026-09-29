@@ -73,6 +73,7 @@ def format_html(
         _archive_table(data),
         _history_table(data),
         _websocket_table(data),
+        _yellowstone_table(data),
         _size_scatter(data),
         _capabilities(data["capabilities"], ranking),
         _errors(ranking),
@@ -972,6 +973,57 @@ def _websocket_table(data: dict[str, Any]) -> str:
         '<th class="num">connect</th><th class="num">sub</th>'
         '<th class="num">first</th><th class="num">n</th>'
         '<th class="num">missed</th><th class="num">disc</th><th>status</th>'
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+        "</section>"
+    )
+
+
+def _yellowstone_table(data: dict[str, Any]) -> str:
+    if not float(data.get("yellowstone") or 0):
+        return ""
+    window = data.get("yellowstone")
+    race = data.get("yellowstone_race") or {}
+    n_slots = race.get("n_slots")
+    rows = []
+    for row in data.get("ranking") or []:
+        hit = row.get("yellowstone")
+        if not hit:
+            continue
+        status = str(hit.get("status") or "—")
+        if hit.get("ok"):
+            tone = "ok"
+        elif hit.get("skip"):
+            tone = "dim"
+        else:
+            tone = "bad"
+        rows.append(
+            "<tr>"
+            f'<td class="{tone}">{escape(str(row.get("name") or "—"))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("connect_ms")))}</td>'
+            f'<td class="num">{escape(str(hit.get("n_events") if hit.get("n_events") is not None else "—"))}</td>'
+            f'<td class="num">{escape(str(hit.get("wins") if hit.get("wins") is not None else "—"))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("lag_p50_ms")))}</td>'
+            f'<td class="num">{escape(_ms(hit.get("lag_p95_ms")))}</td>'
+            f'<td class="{tone}">{escape(status)}</td>'
+            "</tr>"
+        )
+    if not rows:
+        return ""
+    slots = f" {escape(str(n_slots))} slots;" if n_slots is not None else ""
+    return (
+        '<section aria-label="yellowstone">'
+        "<h2>Yellowstone</h2>"
+        f'<p class="meta">gRPC first-seen race for {escape(str(window))}s;'
+        f"{slots} geography dominates; not tx landing; "
+        "extra read; not mixed into ranking. Missing gRPC URL is not configured.</p>"
+        "<table>"
+        "<thead><tr>"
+        "<th>name</th>"
+        '<th class="num">connect</th><th class="num">n</th>'
+        '<th class="num">wins</th><th class="num">lag p50</th>'
+        '<th class="num">lag p95</th><th>status</th>'
         "</tr></thead>"
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"

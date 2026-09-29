@@ -58,11 +58,13 @@ from rpcbench.run import (
     DEFAULT_INFLIGHT,
     DEFAULT_THROUGHPUT,
     DEFAULT_WEBSOCKET,
+    DEFAULT_YELLOWSTONE,
     MAX_BATCH,
     MAX_BURST,
     MAX_INFLIGHT,
     MAX_THROUGHPUT,
     MAX_WEBSOCKET,
+    MAX_YELLOWSTONE,
     MODE_PAIRED,
     MODE_SEQUENTIAL,
     run_endpoints,
@@ -113,6 +115,7 @@ _LAB_DESTS = frozenset(
         "rps",
         "throughput",
         "websocket",
+        "yellowstone",
         "batch",
         "logs_range",
         "simulate",
@@ -352,6 +355,21 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
             f"(0=off, omit SEC for {DEFAULT_WEBSOCKET:g}s, max {MAX_WEBSOCKET:g}s). "
             "Needs a ws/wss URL on the endpoint. Missing WS is not configured. "
             "Not mixed into ranking. Does not consume --max-requests."
+        ),
+    )
+    run.add_argument(
+        "--yellowstone",
+        type=float,
+        nargs="?",
+        const=DEFAULT_YELLOWSTONE,
+        default=0.0,
+        metavar="SEC",
+        help=(
+            "Solana Yellowstone/gRPC first-seen race across endpoints "
+            f"(0=off, omit SEC for {DEFAULT_YELLOWSTONE:g}s, max {MAX_YELLOWSTONE:g}s). "
+            "Needs a grpc/yellowstone URL per endpoint. Missing gRPC is not configured. "
+            "Geography dominates; not tx landing. Not mixed into ranking. "
+            "Requires optional deps: pip install 'rpcbench[yellowstone]'."
         ),
     )
     run.add_argument(
@@ -969,6 +987,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         or args.lookback < 0
         or args.websocket < 0
         or args.websocket > MAX_WEBSOCKET
+        or args.yellowstone < 0
+        or args.yellowstone > MAX_YELLOWSTONE
         or (args.block_time is not None and args.block_time <= 0)
     ):
         print(
@@ -977,6 +997,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
             f"--concurrency 0–{MAX_INFLIGHT}, --burst 0–{MAX_BURST}, --batch 0–{MAX_BATCH}, "
             f"--throughput 0–{MAX_THROUGHPUT}, "
             f"--websocket 0–{MAX_WEBSOCKET:g}, "
+            f"--yellowstone 0–{MAX_YELLOWSTONE:g}, "
             "--rps >= 0, --lookback >= 0, "
             "--stale-blocks >= 0, --block-time > 0",
             file=sys.stderr,
@@ -1031,6 +1052,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         archive=args.archive,
         lookback=args.lookback,
         websocket=args.websocket,
+        yellowstone=args.yellowstone,
         family=family_name,
     )
     json_blob = None

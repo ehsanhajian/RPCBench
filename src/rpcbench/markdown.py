@@ -334,6 +334,28 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    yellowstone = _yellowstone_rows(data)
+    if yellowstone:
+        window = data.get("yellowstone")
+        race = data.get("yellowstone_race") or {}
+        n_slots = race.get("n_slots")
+        lines.extend(
+            [
+                "## Yellowstone",
+                "",
+                f"gRPC first-seen race for {window}s"
+                + (f" ({n_slots} slots)." if n_slots is not None else ".")
+                + " Geography dominates; not tx landing. "
+                "Missing gRPC URL is not configured. Not mixed into ranking.",
+                "",
+                *_md_table(
+                    ["name", "connect", "n", "wins", "lag p50", "lag p95", "status"],
+                    yellowstone,
+                    right=(False, True, True, True, True, True, False),
+                ),
+                "",
+            ]
+        )
     return lines
 
 
@@ -617,6 +639,28 @@ def _websocket_rows(data: dict[str, Any]) -> list[list[str]]:
                 "—" if hit.get("n_events") is None else str(hit.get("n_events")),
                 "—" if hit.get("missed") is None else str(hit.get("missed")),
                 "—" if hit.get("disconnects") is None else str(hit.get("disconnects")),
+                str(hit.get("status") or "—"),
+            ]
+        )
+    return rows
+
+
+def _yellowstone_rows(data: dict[str, Any]) -> list[list[str]]:
+    if not float(data.get("yellowstone") or 0):
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        hit = row.get("yellowstone")
+        if not hit:
+            continue
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                _ms(hit.get("connect_ms")),
+                "—" if hit.get("n_events") is None else str(hit.get("n_events")),
+                "—" if hit.get("wins") is None else str(hit.get("wins")),
+                _ms(hit.get("lag_p50_ms")),
+                _ms(hit.get("lag_p95_ms")),
                 str(hit.get("status") or "—"),
             ]
         )

@@ -14,6 +14,11 @@ from rpcbench import __version__
 from rpcbench.archive import ArchiveHit, archive_label, archive_status, as_dict as archive_dict
 from rpcbench.history import HistoryHit, history_label, as_dict as history_dict
 from rpcbench.websocket import WebsocketHit, websocket_label, as_dict as websocket_dict
+from rpcbench.yellowstone import (
+    YellowstoneEndpointHit,
+    yellowstone_label,
+    as_dict as yellowstone_race_dict,
+)
 from rpcbench.coverage import (
     as_dict as coverage_dict,
     cell_for,
@@ -458,6 +463,10 @@ def run_to_dict(
         blob["lookback"] = result.lookback
     if result.websocket:
         blob["websocket"] = result.websocket
+    if result.yellowstone:
+        blob["yellowstone"] = result.yellowstone
+        if result.yellowstone_race is not None:
+            blob["yellowstone_race"] = yellowstone_race_dict(result.yellowstone_race)
     return blob
 
 
@@ -522,6 +531,7 @@ def format_run(
         f"{_archive_mode_suffix(result)}"
         f"{_lookback_mode_suffix(result)}"
         f"{_websocket_mode_suffix(result)}"
+        f"{_yellowstone_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result, color=use_color),
         "",
@@ -588,6 +598,8 @@ def format_run(
             lines.extend(_history_section(result, use_color))
         if result.websocket > 0:
             lines.extend(_websocket_section(result, use_color))
+        if result.yellowstone > 0:
+            lines.extend(_yellowstone_section(result, use_color))
     extra_p99 = ""
     if any(not row.p99_reliable and row.outcome.stats.n_ok for row in placed):
         extra_p99 = f"  ·  P99 is the slowest sample until n≥{P99_MIN_N}; need ≥{P99_MIN_N}"
@@ -696,6 +708,8 @@ def _verbose_sections(
         lines.extend(_history_section(result, use_color))
     if result.websocket > 0:
         lines.extend(_websocket_section(result, use_color))
+    if result.yellowstone > 0:
+        lines.extend(_yellowstone_section(result, use_color))
     if any(outcome.tags for outcome in result.outcomes):
         lines.extend(
             ["", "Tags  (latest / safe / finalized snapshot; not mixed into ranking)"]
@@ -1410,7 +1424,24 @@ def _extra_read_json(outcome: EndpointOutcome) -> dict[str, Any]:
         blob["history"] = history_dict(outcome.history)
     if outcome.websocket is not None:
         blob["websocket"] = websocket_dict(outcome.websocket)
+    if outcome.yellowstone is not None:
+        blob["yellowstone"] = _yellowstone_hit_dict(outcome.yellowstone)
     return blob
+
+
+def _yellowstone_hit_dict(hit: YellowstoneEndpointHit) -> dict[str, Any]:
+    return {
+        "ok": hit.ok,
+        "connect_ms": hit.connect_ms,
+        "n_events": hit.n_events,
+        "wins": hit.wins,
+        "lag_p50_ms": hit.lag_p50_ms,
+        "lag_p95_ms": hit.lag_p95_ms,
+        "error": hit.error,
+        "error_class": hit.error_class,
+        "skip": hit.skip,
+        "status": yellowstone_label(hit),
+    }
 
 
 def _archive_section(result: RunResult, use_color: bool) -> list[str]:
@@ -1540,6 +1571,59 @@ def _websocket_lines(result: RunResult, use_color: bool) -> list[str]:
 
 def _websocket_status_cell(hit: WebsocketHit, use_color: bool) -> str:
     label = websocket_label(hit)
+    if hit.skip:
+        return label
+    if hit.ok:
+        return _paint(label, _GREEN, enabled=use_color)
+    return _paint(label, _RED, enabled=use_color)
+
+
+def _yellowstone_section(result: RunResult, use_color: bool) -> list[str]:
+    race = result.yellowstone_race
+    hist = ""
+    if race is not None and race.histogram:
+        parts = [f"{name}={n}" for name, n in race.histogram if n]
+        if parts:
+            hist = "  ·  lag " + " ".join(parts)
+    n_slots = race.n_slots if race is not None else 0
+    return [
+        "",
+        "Yellowstone  ("
+        f"gRPC first-seen race for {result.yellowstone:g}s; "
+        f"{n_slots} slots{hist}; geography dominates; not tx landing; "
+        "not mixed into ranking)",
+        *_yellowstone_lines(result, use_color),
+    ]
+
+
+def _yellowstone_lines(result: RunResult, use_color: bool) -> list[str]:
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        name = _name_cell(outcome, use_color)
+        hit = outcome.yellowstone
+        if hit is None:
+            rows.append([name, "—", "—", "—", "—", "—", "—"])
+            continue
+        rows.append(
+            [
+                name,
+                _cell_ms(hit.connect_ms) if hit.connect_ms is not None else "—",
+                str(hit.n_events),
+                str(hit.wins),
+                _cell_ms(hit.lag_p50_ms) if hit.lag_p50_ms is not None else "—",
+                _cell_ms(hit.lag_p95_ms) if hit.lag_p95_ms is not None else "—",
+                _yellowstone_status_cell(hit, use_color),
+            ]
+        )
+    return _grid(
+        ["name", "connect", "n", "wins", "lag p50", "lag p95", "status"],
+        rows,
+        right=(False, True, True, True, True, True, False),
+    )
+
+
+def _yellowstone_status_cell(hit: YellowstoneEndpointHit, use_color: bool) -> str:
+    label = yellowstone_label(hit)
     if hit.skip:
         return label
     if hit.ok:
@@ -2394,6 +2478,12 @@ def _websocket_mode_suffix(result: RunResult) -> str:
     if result.websocket <= 0:
         return ""
     return f"  ·  websocket={result.websocket:g}"
+
+
+def _yellowstone_mode_suffix(result: RunResult) -> str:
+    if result.yellowstone <= 0:
+        return ""
+    return f"  ·  yellowstone={result.yellowstone:g}"
 
 
 def _batch_summary_json(summary: Any) -> dict[str, Any] | None:

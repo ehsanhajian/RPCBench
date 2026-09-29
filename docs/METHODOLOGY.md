@@ -229,6 +229,14 @@ The HTTP `url` stays `http`/`https`. A missing WS URL is **not configured** (ski
 
 Reported per endpoint: `connect_ms` (TCP/TLS + upgrade), `subscribe_ms` (subscribe send until subscription id), `first_event_ms` (ack until first `newHeads`), event count, **missed** block-number gaps in the window, and **disconnects**. These samples are **not** mixed into ranking, reliability, or Fastest. Not a WS origin/auth check.
 
+## Yellowstone / gRPC first-seen
+
+HTTP `getSlot` is not the same as a live gRPC slot stream. **`--yellowstone SEC`** (default 0 = off, omit SEC for 3s, max 10s) is an extra read after timed samples: open optional per-endpoint `grpc` / `yellowstone` / `grpc_url` streams (`grpc://`, `grpcs://`, `http://`, `https://`, or `host:port`), subscribe to Yellowstone Geyser **slots**, and race which endpoint sees each slot first for that window.
+
+The HTTP `url` stays `http`/`https` and still drives Solana ranking. A missing gRPC URL is **not configured** (skip, not a crash). Non-Solana families skip with `family`. Optional deps: `pip install 'rpcbench[yellowstone]'` (skip/`deps` without them). Does **not** replace the HTTP Solana family. gRPC frames do **not** consume `--max-requests`.
+
+Reported: first-seen **wins** per endpoint, lag vs the winner (p50/p95), a lag histogram, and connect time. **Geography dominates** first-seen — measure from the trading vantage. This is **not** transaction landing, shred inclusion, or an HTTP `getSlot` substitute. These samples are **not** mixed into ranking, reliability, or Fastest.
+
 ## Traffic capture and replay
 
 Versus + ethspam-style integrity, plus a dataset you can replay. **`rpcbench record`** writes a JSONL file: one JSON object per line with `method` and `params` (full JSON-RPC requests are accepted on read). The sequence is the same mix `run` would send (`--workload` / `--method` / `--profile`, `--samples` rounds, no warmup). YAML `source` fields bind from chain when `--endpoints` is set.
@@ -314,7 +322,7 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
 
 ## Report watermark
 

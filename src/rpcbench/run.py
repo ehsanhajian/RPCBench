@@ -32,6 +32,13 @@ from rpcbench.websocket import (
     WebsocketHit,
     probe_websocket,
 )
+from rpcbench.yellowstone import (
+    DEFAULT_YELLOWSTONE,
+    MAX_YELLOWSTONE,
+    YellowstoneEndpointHit,
+    YellowstoneRace,
+    run_yellowstone_race,
+)
 from rpcbench.config import BenchConfig, Endpoint
 from rpcbench.consistency import (
     Consistency,
@@ -250,6 +257,7 @@ class EndpointOutcome:
     archive: ArchiveHit | None = None
     history: HistoryHit | None = None
     websocket: WebsocketHit | None = None
+    yellowstone: YellowstoneEndpointHit | None = None
 
 
 @dataclass(frozen=True)
@@ -295,6 +303,8 @@ class RunResult:
     archive: bool = False
     lookback: int = 0
     websocket: float = 0.0
+    yellowstone: float = 0.0
+    yellowstone_race: YellowstoneRace | None = None
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -568,6 +578,8 @@ def run_endpoints(
     lookback: int = 0,
     websocket: float = 0.0,
     open_ws=None,
+    yellowstone: float = 0.0,
+    open_yellowstone=None,
     family: str = FAMILY_EVM,
 ) -> RunResult:
     if samples < 1:
@@ -592,6 +604,8 @@ def run_endpoints(
         raise ValueError("lookback must be >= 0")
     if websocket < 0 or websocket > MAX_WEBSOCKET:
         raise ValueError(f"websocket must be 0–{MAX_WEBSOCKET:g}")
+    if yellowstone < 0 or yellowstone > MAX_YELLOWSTONE:
+        raise ValueError(f"yellowstone must be 0–{MAX_YELLOWSTONE:g}")
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -673,6 +687,8 @@ def run_endpoints(
             lookback=lookback,
             websocket=websocket,
             open_ws=open_ws,
+            yellowstone=yellowstone,
+            open_yellowstone=open_yellowstone,
             family=family,
         )
     finally:
@@ -788,6 +804,8 @@ def _execute_run(
     lookback: int,
     websocket: float,
     open_ws,
+    yellowstone: float,
+    open_yellowstone,
     family: str,
 ) -> RunResult:
     adapter = benchmark_family(family)
@@ -1043,6 +1061,21 @@ def _execute_run(
             replace(outcome, websocket=measured_ws.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    race: YellowstoneRace | None = None
+    if yellowstone > 0:
+        race = run_yellowstone_race(
+            tuple(outcome.endpoint for outcome in outcomes),
+            window=yellowstone,
+            timeout=timeout,
+            deadline=deadline,
+            family=family,
+            open_stream=open_yellowstone,
+        )
+        by_name = {hit.name: hit for hit in race.endpoints}
+        outcomes = [
+            replace(outcome, yellowstone=by_name.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -1077,6 +1110,8 @@ def _execute_run(
         archive=archive,
         lookback=lookback,
         websocket=websocket,
+        yellowstone=yellowstone,
+        yellowstone_race=race,
         family=family,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),

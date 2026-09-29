@@ -30,7 +30,7 @@ rpcbench compare --endpoints endpoints.yaml --workload wallet
 rpcbench compare --endpoints endpoints.yaml --html -o report.html
 ```
 
-The first command is the **general** mix at **short** size (verdict and route). `--workload wallet` or `trading` also runs simulate. `--workload indexer` also runs logs-range, archive, and lookback. `--budget` only changes how long to sample. A single call is `--method eth_blockNumber`. Lab flags (`--batch`, `--websocket`, `--rank-by`, …) are in `rpcbench compare --help-all`.
+The first command is the **general** mix at **short** size (verdict and route). `--workload wallet` or `trading` also runs simulate. `--workload indexer` also runs logs-range, archive, and lookback. `--budget` only changes how long to sample. A single call is `--method eth_blockNumber`. Lab flags (`--batch`, `--websocket`, `--yellowstone`, `--rank-by`, …) are in `rpcbench compare --help-all`.
 
 Or a YAML/JSON file of named endpoints (keep API keys in a **local** file; do not commit it):
 
@@ -121,20 +121,21 @@ The default CLI prints, in order:
 10. **Archive** — when `--archive` is set: `eth_getBalance` at genesis, classified yes / no / unknown / rate-limited. Missing archive is a capability result, not a crash. Not mixed into ranking.
 11. **History** — when `--lookback N` is set: timed `eth_getBalance` at pin−N vs latest (latency, error rate, ratio). Endpoints without archive/history skip with a reason. Not mixed into ranking.
 12. **WebSocket** — when `--websocket` is set: connect time, `eth_subscribe` `newHeads` latency, first-event delivery, missed heads, and disconnects over a bounded window. Missing `ws`/`websocket` URL is **not configured**. Not mixed into ranking.
+13. **Yellowstone** — when `--yellowstone` is set (Solana): gRPC first-seen race across endpoints with a `grpc`/`yellowstone` URL, wins, lag histogram. Geography dominates; not tx landing. Missing gRPC is **not configured**. Not mixed into ranking.
 
 `--verbose` adds the rest (same numbers, no data loss):
 
-13. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
-14. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
-15. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
-16. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
-17. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
-18. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
-19. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
-20. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
-21. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
-22. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
-23. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
+14. **Comparison** — YAML order (failed rows stay in place; head / lag / fresh / hash / match; **rel**)
+15. **Reliability** — breakdown of `rel` (errors, timeouts, tail, mix coverage). Not an SLA. Not a security score.
+16. **Signals** — each problem / why / next (routing and config: raise `--timeout`, pick another endpoint, pin `--block`). Not CVE language, not hardening.
+17. **Coverage** — active mix only: each required method is `ok`, an error class, or `skip` if not offered (`skip/unsupported` / `skip/restricted` / `skip/timeout` for optional trace/simulate). A miss is product fit (indexer `eth_getLogs` 404s), not a vuln. Compact `--workload` / `--profile mix` prints this table; JSON is `coverage`.
+18. **Methods** — per-method P50/P95/P99 and errors when a mix is active (ranking still uses the whole mix)
+19. **Timing** — handshake (DNS+TCP+TLS) vs server wait vs payload (body+parse). Not mixed into ranking. Default is keep-alive; `--new-connection` is a cold handshake every request
+20. **Transport** — negotiated HTTP proto (`1.1` / `2`), content-encoding, request/response bytes. Size vs latency is in HTML (log bytes, colored by method). Not mixed into ranking. `--http2` asks for HTTP/2; `--http1` forces 1.1
+21. **Tags** — one paired `latest` / `safe` / `finalized` snapshot (skipped with a reason if the tag is missing)
+22. **Burst** — burst vs steady error rate and recovered rps when `--burst` is set (same request budget). Extra tag 429s show as `tags=N`, not in timed `n`/`err`.
+23. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
+24. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
 On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
 
@@ -157,6 +158,7 @@ Numbers and caveats: [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
 - **`--archive`** probes historical state with one `eth_getBalance` of the zero address at genesis. **indexer** turns this on. `--no-archive` turns it off. Classified yes / no / unknown / rate-limited. Chains shorter than 128 blocks skip with `head`. Missing archive is a capability result, not a crash, and does not change ranking. Details: [Archive / historical state](docs/METHODOLOGY.md#archive--historical-state).
 - **`--lookback N`** times `eth_getBalance` at `pin−N` vs `latest` (indexer uses 1000; otherwise omit N for 1000, `0` off). Reuses `--archive` to skip when the node has no history. Not mixed into ranking. Details: [Historical queries](docs/METHODOLOGY.md#historical-queries).
 - **`--websocket SEC`** times WebSocket connect, `eth_subscribe` `newHeads`, and first-event delivery over a bounded window (omit SEC for 3s, max 10s). Needs an optional `ws` / `websocket` URL on the endpoint (`ws://` or `wss://`). Missing WS is **not configured**. Disconnects and missed block-number gaps are counted in that window. Does not consume `--max-requests`. Not mixed into ranking. Details: [WebSocket subscribe](docs/METHODOLOGY.md#websocket-subscribe).
+- **`--yellowstone SEC`** races Solana Yellowstone/gRPC slot streams across endpoints (omit SEC for 3s, max 10s). Needs an optional `grpc` / `yellowstone` URL per endpoint. Missing gRPC is **not configured**. Reports first-seen wins and lag. Geography dominates; not tx landing. Does not replace HTTP Solana. Optional deps: `pip install 'rpcbench[yellowstone]'`. Not mixed into ranking. Details: [Yellowstone / gRPC first-seen](docs/METHODOLOGY.md#yellowstone--grpc-first-seen).
 
 ### Stats
 
@@ -194,6 +196,7 @@ These are not mixed into latency stats or Fastest.
 - **Archive** is opt-in (`--archive`). After the pin is known, one `eth_getBalance` of the zero address at genesis classifies the endpoint yes / no / unknown / rate-limited. Too-short chains skip with `head`. Not mixed into ranking. Adds 1 request per endpoint.
 - **History** is opt-in (`--lookback N`, omit N for 1000). Timed `eth_getBalance` at pin−N vs latest. `--lookback` turns on archive detection; a pruned node skips with `archive`. Not mixed into ranking. Adds up to 2 requests per endpoint.
 - **WebSocket** is opt-in (`--websocket SEC`, omit SEC for 3s, max 10s). Connect + `eth_subscribe` `newHeads` on the optional `ws` / `websocket` URL. Missing WS is **not configured**. Reports connect, subscribe, first-event, missed heads, and disconnects. Does not consume `--max-requests`. Not mixed into ranking.
+- **Yellowstone** is opt-in (`--yellowstone SEC`, omit SEC for 3s, max 10s). Solana gRPC first-seen race on optional `grpc` / `yellowstone` URLs. Missing gRPC is **not configured**. Geography dominates; not tx landing. Does not replace HTTP Solana. Not mixed into ranking.
 
 ### Capture and replay
 
@@ -201,9 +204,9 @@ These are not mixed into latency stats or Fastest.
 
 ### JSON
 
-`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), `websocket` (connect / subscribe / first-event ms, n, missed heads, disconnects), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
+`--json` or `-o FILE` includes `mode`, `seed`, `sequence_id`, `connection` (`keepalive` or `new`), `http` (`1.1` or `2`), a `watermark` (version, git sha, UTC, budget, workload, seed, family, vantage, sample counts, plus [methodology](docs/METHODOLOGY.md) and [boundary](docs/BOUNDARY.md) URLs), `coverage` (active mix steps only), `reliability` (0–100 this-run score plus breakdown; not success rate alone), `verdict` (ready / risky / not_ready plus `kind` and problem/why/next `signals`), `route` (primary / fallback / why), per-provider `id` (URL fingerprint, not printed in the CLI table), per-sample `pairs` (body hashes), `jitter_ms`, `histogram`, `freshness`, `consistency`, `client`, `tags`, `burst`, `batch` (size, supported, wall-clock vs serial), `inflight` (overlapping extra POSTs vs serial: percentiles, ratio, errors), `throughput` (serial extra-read: successful req/s, duration, completed count), `logs_range` (pinned getLogs windows: latency, bytes, n, truncation), `archive` (genesis-state yes / no / unknown / rate-limited), `history` (pin−N vs latest latency, error rate, ratio), `websocket` (connect / subscribe / first-event ms, n, missed heads, disconnects), `yellowstone` / `yellowstone_race` (gRPC first-seen wins, lag, histogram), HTTP `timing` percentiles, `transport` (proto, encoding, bytes), and burst `phases`.
 
-`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Throughput, Logs range, Simulation, Trace, Debug, Archive, History, and WebSocket tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, throughput, logs-range, simulate, trace, debug, archive, history, and websocket fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
+`--md` is GitHub-flavored markdown with the same ranking numbers as JSON (P95, err, rel, fresh, match, verdict), plus Transport, Batch, Concurrency, Throughput, Logs range, Simulation, Trace, Debug, Archive, History, WebSocket, and Yellowstone tables when that run measured them. `--csv` is one row per provider with the same ranking, verdict, transport, batch, inflight, throughput, logs-range, simulate, trace, debug, archive, history, websocket, and yellowstone fields. `rpcbench diff` reads two of these JSON files. Not a security finding.
 
 ## Flags
 
@@ -235,6 +238,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--archive` | on for indexer | Probe `eth_getBalance` at genesis. yes / no / unknown / rate-limited. `--no-archive` turns it off. Not mixed into ranking |
 | `--lookback` | 0 (1000 on indexer) | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
 | `--websocket` | 0 | Connect + `eth_subscribe` `newHeads` (`0`=off, omit SEC for 3s, max 10s). Missing WS is not configured |
+| `--yellowstone` | 0 | Solana gRPC first-seen race (`0`=off, omit SEC for 3s, max 10s). Missing gRPC is not configured. Needs `rpcbench[yellowstone]` |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |
@@ -250,11 +254,11 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--profile` | | YAML mix file, or alias `mix` = general. Schema: [Custom YAML profiles](docs/METHODOLOGY.md#custom-yaml-profiles) |
 | `--method` / `--params` | | Single JSON-RPC method and JSON array of params. Head probe: `--method eth_blockNumber`. Do not combine `--method` with `--preset` |
 | `--allow-writes` | off | Required for write methods (`eth_send*`, `personal_*`, …) |
-| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, History, and WebSocket are already in the compact report when those flags are set. Replay prints body diffs |
+| `--verbose` | off | Full CLI report (Comparison, Reliability, Signals, Coverage, Timing, Tags, Burst, Providers, per-sample). Batch, Concurrency, Throughput, Logs range, simulate Methods, Archive, History, WebSocket, and Yellowstone are already in the compact report when those flags are set. Replay prints body diffs |
 | `--json` / `-o FILE` | | JSON to stdout, and/or write JSON to a file (table still prints unless `--json`, `--md`, or `--csv`) |
 | `--html` | off | Standalone HTML to `-o FILE` (inline CSS/SVG, heatmap, signals, print CSS). Table still prints unless `--json` |
-| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Throughput, Logs range, Archive, History, Trace, Debug, WebSocket when measured). `-o FILE` writes the same markdown |
-| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, throughput, logs-range, archive, history, trace, debug, websocket). `-o FILE` or `-o report.csv` writes CSV |
+| `--md` | off | GitHub-flavored markdown (ranking + match; Transport, Batch, Concurrency, Throughput, Logs range, Archive, History, Trace, Debug, WebSocket, Yellowstone when measured). `-o FILE` writes the same markdown |
+| `--csv` | off | Flat CSV (one row per provider; run, rank, latency, verdict, transport, batch, inflight, throughput, logs-range, archive, history, trace, debug, websocket, yellowstone). `-o FILE` or `-o report.csv` writes CSV |
 | `--history DIR` | | Append a JSON snapshot to DIR after the run |
 | `--sequential` | off | Run endpoints back-to-back instead of paired |
 | `record -o FILE` | | Write a JSONL capture of the mix (`method` + `params` per line) |
