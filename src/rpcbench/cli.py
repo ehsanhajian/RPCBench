@@ -7,7 +7,12 @@ import sys
 from pathlib import Path
 
 from rpcbench import __version__
-from rpcbench.catalog import catalog_banner, list_chains, merge_targets
+from rpcbench.catalog import (
+    DEFAULT_CHAIN_LIMIT,
+    catalog_banner,
+    list_chains,
+    merge_targets,
+)
 from rpcbench.config import ConfigError, load_targets
 from rpcbench.consistency import BlockPinError, parse_block_pin
 from rpcbench.freshness import DEFAULT_BLOCK_TIME_S, DEFAULT_STALE_BLOCKS
@@ -204,10 +209,21 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         default=None,
         metavar="NAME",
         help=(
-            "Bundled public catalog (e.g. ethereum). Compares reviewed keyless "
-            "RPCs; public endpoints rate-limit. Default budget is short, not long. "
-            f"Available: {', '.join(list_chains()) or 'none'}. "
+            "Fetch keyless public RPCs from Chainlist for this chain "
+            f"(e.g. ethereum). Supported: {', '.join(list_chains()) or 'none'}. "
+            "No RPC URLs are hardcoded — live fetch each run. "
+            "Public endpoints rate-limit; default budget is short, not long. "
             "Combine with --endpoint / --endpoints. See docs/CATALOG.md."
+        ),
+    )
+    run.add_argument(
+        "--chain-limit",
+        type=int,
+        default=DEFAULT_CHAIN_LIMIT,
+        metavar="N",
+        help=(
+            f"Max keyless HTTPS RPCs from Chainlist when using --chain "
+            f"(default {DEFAULT_CHAIN_LIMIT}; 0 = all matching)."
         ),
     )
     run.add_argument(
@@ -217,7 +233,7 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         metavar="URL",
         help=(
             "Extra http(s) URL to include (repeatable). Combined with --chain "
-            "catalog and/or --endpoints file."
+            "and/or --endpoints file."
         ),
     )
     run.add_argument(
@@ -886,11 +902,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
+        if args.chain_limit < 0:
+            print("rpcbench: --chain-limit must be >= 0", file=sys.stderr)
+            return 2
         if args.chain or args.endpoint:
             config = merge_targets(
                 chain=args.chain,
                 endpoints_file=args.endpoints,
                 extra_urls=tuple(args.endpoint or ()),
+                limit=args.chain_limit,
             )
         else:
             config = load_targets(args.endpoints)

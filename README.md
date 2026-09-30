@@ -18,7 +18,7 @@ Python 3.10+. `rpcbench --version` prints `0.5.0`. `rpcbench --help` works from 
 rpcbench compare --chain ethereum
 ```
 
-That uses a **bundled, reviewed** Ethereum public RPC catalog (short budget by default — public RPCs rate-limit; not `long` / “Deep”). Add extras with `--endpoint URL`. Catalog source and refresh: [docs/CATALOG.md](docs/CATALOG.md).
+That fetches **live** Ethereum public RPCs from [Chainlist](https://chainlist.org) (short budget by default — public RPCs rate-limit; not `long` / “Deep”). No RPC URLs are hardcoded in the package. Add extras with `--endpoint URL`. Details: [docs/CATALOG.md](docs/CATALOG.md).
 
 ```bash
 python3 -m venv .venv
@@ -230,7 +230,8 @@ Happy path is `compare --chain ethereum` or `compare --endpoints FILE` (general,
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--chain` | | Bundled public catalog (`ethereum`). Rate-limited; default budget short. See [docs/CATALOG.md](docs/CATALOG.md) |
+| `--chain` | | Live Chainlist public RPCs (`ethereum`). No hardcoded URLs; rate-limited; default budget short. See [docs/CATALOG.md](docs/CATALOG.md) |
+| `--chain-limit` | 12 | Max keyless HTTPS RPCs from Chainlist (`0` = all) |
 | `--endpoint` | | Extra http(s) URL (repeatable); combines with `--chain` / `--endpoints` |
 | `--endpoints` | | YAML/JSON file or single URL. Optional when `--chain` or `--endpoint` is set |
 | `--budget` | `short` with no other flags or with `--chain`; else `standard` | Named size in the table above. Does not enable archive, WebSocket, or tracing |

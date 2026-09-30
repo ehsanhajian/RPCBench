@@ -50,9 +50,6 @@ Issues = "https://github.com/ehsanhajian/RPCBench/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-rpcbench = ["catalogs/*.yaml"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
