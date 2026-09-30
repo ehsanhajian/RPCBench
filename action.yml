@@ -49,7 +49,7 @@ inputs:
     required: false
     default: ""
   output-dir:
-    description: Directory for report.json / report.html / report.md
+    description: Directory for report.json / report.html / report.md / metrics.prom
     required: false
     default: rpcbench-out
   args:

@@ -1295,7 +1295,7 @@ def test_cli_md_rejects_json(tmp_path: Path, capsys) -> None:
     )
     code = main(["run", "--endpoints", str(cfg), "--md", "--json"])
     assert code == 2
-    assert "pick --json, --md, or --csv" in capsys.readouterr().err
+    assert "pick --json, --md, --csv, or --prometheus" in capsys.readouterr().err
 
 
 def test_cli_csv_stdout(tmp_path: Path, monkeypatch, capsys) -> None:
