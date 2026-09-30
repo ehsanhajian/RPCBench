@@ -4,7 +4,7 @@
 
 A small CLI that compares **EVM, Solana, Substrate, Cosmos, Sui, NEAR, Starknet, Bitcoin, and TON JSON-RPC, plus Aptos REST**: latency, P50/P95/P99, error rate, a ranked table, and JSON. Read-only by default. No accounts. No telemetry. Localhost and RFC1918 are allowed (that is how you bench your own node). Use `--family solana`, `--family substrate`, `--family cosmos`, `--family aptos`, `--family sui`, `--family near`, `--family starknet`, `--family bitcoin`, or `--family ton` (or `family:` / `auto` in the endpoints file).
 
-It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
+It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). Split: [docs/BOUNDARY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md). How the numbers are computed: [docs/METHODOLOGY.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md). CI / Docker / Action: [docs/CI.md](https://github.com/ehsanhajian/RPCBench/blob/main/docs/CI.md). Roadmap: [issues](https://github.com/ehsanhajian/RPCBench/issues) · epic [#19](https://github.com/ehsanhajian/RPCBench/issues/19).
 
 ## Install
 
@@ -19,6 +19,43 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
+
+### Docker
+
+```bash
+docker pull ghcr.io/ehsanhajian/rpcbench:latest
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/ehsanhajian/rpcbench:latest \
+  compare --endpoints endpoints.yaml --out-dir out --ci --max-p95 500
+```
+
+Image tags publish on `v*` releases (`ghcr.io/ehsanhajian/rpcbench`). Local build: `docker build -t rpcbench .`
+
+### GitHub Action
+
+```yaml
+name: rpcbench
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  pull_request:
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ehsanhajian/RPCBench@main
+        with:
+          endpoints: endpoints.yaml
+          budget: short
+          max-p95: "500"
+          max-error-rate: "0.05"
+          output-dir: rpcbench-out
+      # HTML/JSON/MD are uploaded as artifact rpcbench-report
+```
+
+Pin a release tag (e.g. `@v0.6.0`) once published. Until then `@main` installs from the action checkout.
+
+The Action runs `compare --ci` with your SLO inputs, writes `report.html` / `report.json` / `report.md` under `output-dir`, uploads them as `rpcbench-report`, and **fails the job** when a budget is missed. Open `report.html` from the artifact locally. Details: [docs/CI.md](docs/CI.md).
 
 PRs run `pytest`, then a live smoke per family against public RPCs (`eth_blockNumber`, `getSlot`, `chain_getHeader`, `status`, ledger GET, `sui_getLatestCheckpointSequenceNumber`, NEAR `status`, `starknet_blockNumber`, `getblockchaininfo`, `getMasterchainInfo`; `--samples 1 --warmup 0`). No local node in CI; each family smoke passes if either public endpoint in that file is ok.
 
@@ -239,6 +276,12 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--lookback` | 0 (1000 on indexer) | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
 | `--websocket` | 0 | Connect + `eth_subscribe` `newHeads` (`0`=off, omit SEC for 3s, max 10s). Missing WS is not configured |
 | `--yellowstone` | 0 | Solana gRPC first-seen race (`0`=off, omit SEC for 3s, max 10s). Missing gRPC is not configured. Needs `rpcbench[yellowstone]` |
+| `--ci` / `--strict` | off | Exit 1 when an SLO budget misses (needs `--max-p95` / `--max-error-rate` / `--max-lag`). Reports still write |
+| `--max-p95` | | SLO: max P95 latency (ms) |
+| `--max-error-rate` | | SLO: max error rate (`0`–`1`) |
+| `--max-lag` | | SLO: max head lag (blocks) |
+| `--slo-endpoint` | | Check budgets for this endpoint only |
+| `--out-dir` | | Write `report.json` / `report.html` / `report.md` (Action artifacts) |
 | `--new-connection` | off | Fresh TCP/TLS every request. Default is keep-alive |
 | `--http2` | off | Prefer HTTP/2 via ALPN (falls back to 1.1). Not mixed into ranking |
 | `--http1` | off | Force HTTP/1.1 (default) |

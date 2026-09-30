@@ -1,0 +1,136 @@
+name: RPCBench
+description: >
+  Compare RPC endpoints, write HTML/JSON/MD artifacts, and fail the job when
+  SLO budgets (--max-p95 / --max-error-rate / --max-lag) are missed.
+author: Ehsan Hajian
+
+branding:
+  icon: activity
+  color: blue
+
+inputs:
+  endpoints:
+    description: Path to endpoints YAML/JSON (relative to the workspace)
+    required: true
+  workload:
+    description: Job mix (general, wallet, indexer, trading, nft, tracing). Empty = general.
+    required: false
+    default: ""
+  method:
+    description: Single JSON-RPC method (overrides workload when set)
+    required: false
+    default: ""
+  family:
+    description: Benchmark family (evm, solana, …). Empty = file / default.
+    required: false
+    default: ""
+  budget:
+    description: Sample size short|standard|long
+    required: false
+    default: short
+  samples:
+    description: Override sample count (empty = budget default)
+    required: false
+    default: ""
+  max-p95:
+    description: Fail when any checked endpoint P95 (ms) exceeds this (--ci)
+    required: false
+    default: ""
+  max-error-rate:
+    description: Fail when error rate exceeds this fraction 0–1 (--ci)
+    required: false
+    default: ""
+  max-lag:
+    description: Fail when head lag (blocks) exceeds this (--ci)
+    required: false
+    default: ""
+  slo-endpoint:
+    description: Check only this endpoint name (default = every endpoint)
+    required: false
+    default: ""
+  output-dir:
+    description: Directory for report.json / report.html / report.md
+    required: false
+    default: rpcbench-out
+  args:
+    description: Extra rpcbench compare flags (shell-split)
+    required: false
+    default: ""
+  version:
+    description: pip install rpcbench==VERSION (empty = latest from PyPI)
+    required: false
+    default: ""
+
+outputs:
+  output-dir:
+    description: Directory containing report artifacts
+    value: ${{ inputs.output-dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install rpcbench
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -n "${{ inputs.version }}" ]]; then
+          pip install "rpcbench==${{ inputs.version }}"
+        elif [[ -f "${{ github.action_path }}/pyproject.toml" ]]; then
+          pip install "${{ github.action_path }}"
+        else
+          pip install rpcbench
+        fi
+        rpcbench --version
+
+    - name: Compare
+      id: compare
+      shell: bash
+      run: |
+        set -euo pipefail
+        OUT="${{ inputs.output-dir }}"
+        mkdir -p "$OUT"
+        cmd=(rpcbench compare --endpoints "${{ inputs.endpoints }}" --budget "${{ inputs.budget }}" --out-dir "$OUT" --ci)
+        if [[ -n "${{ inputs.workload }}" ]]; then
+          cmd+=(--workload "${{ inputs.workload }}")
+        fi
+        if [[ -n "${{ inputs.method }}" ]]; then
+          cmd+=(--method "${{ inputs.method }}")
+        fi
+        if [[ -n "${{ inputs.family }}" ]]; then
+          cmd+=(--family "${{ inputs.family }}")
+        fi
+        if [[ -n "${{ inputs.samples }}" ]]; then
+          cmd+=(--samples "${{ inputs.samples }}")
+        fi
+        if [[ -n "${{ inputs.max-p95 }}" ]]; then
+          cmd+=(--max-p95 "${{ inputs.max-p95 }}")
+        fi
+        if [[ -n "${{ inputs.max-error-rate }}" ]]; then
+          cmd+=(--max-error-rate "${{ inputs.max-error-rate }}")
+        fi
+        if [[ -n "${{ inputs.max-lag }}" ]]; then
+          cmd+=(--max-lag "${{ inputs.max-lag }}")
+        fi
+        if [[ -n "${{ inputs.slo-endpoint }}" ]]; then
+          cmd+=(--slo-endpoint "${{ inputs.slo-endpoint }}")
+        fi
+        # shellcheck disable=SC2206
+        extra=(${{ inputs.args }})
+        if ((${#extra[@]})); then
+          cmd+=("${extra[@]}")
+        fi
+        echo "Running: ${cmd[*]}"
+        "${cmd[@]}"
+
+    - name: Upload report artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: rpcbench-report
+        path: ${{ inputs.output-dir }}
+        if-no-files-found: warn

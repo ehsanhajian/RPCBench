@@ -1160,7 +1160,8 @@ def test_cli_html_needs_output(tmp_path: Path, capsys) -> None:
     )
     code = main(["run", "--endpoints", str(cfg), "--html"])
     assert code == 2
-    assert "--html needs -o FILE" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "--html needs -o FILE" in err
 
 
 def test_cli_html_writes_file_keeps_table(tmp_path: Path, monkeypatch, capsys) -> None:
