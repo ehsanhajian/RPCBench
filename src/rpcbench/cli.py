@@ -53,6 +53,7 @@ from rpcbench.methods import (
 )
 from rpcbench.profile import as_profile_path, has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
+from rpcbench.prometheus import format_prometheus
 from rpcbench.slo import evaluate_slo, format_slo_failures
 from rpcbench.run import (
     DEFAULT_BATCH,
@@ -588,6 +589,15 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         help="Print a flat CSV (one row per provider). -o FILE writes the same CSV; .csv on -o also writes CSV",
     )
     run.add_argument(
+        "--prometheus",
+        action="store_true",
+        help=(
+            "Print Prometheus textfile metrics (latency, error rate, rps, "
+            "reliability, histogram). -o FILE / --out-dir also write metrics.prom. "
+            "Not a /metrics HTTP server."
+        ),
+    )
+    run.add_argument(
         "--history",
         metavar="DIR",
         help="Append a JSON snapshot to DIR after the run (local history for rpcbench diff)",
@@ -598,14 +608,16 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         metavar="FILE",
         help=(
             "Write JSON to FILE, HTML when --html, markdown when --md, "
-            "or CSV when --csv / FILE ends in .csv (CLI table still prints unless --json/--md/--csv)"
+            "CSV when --csv / FILE ends in .csv, or Prometheus when --prometheus "
+            "/ FILE ends in .prom (CLI table still prints unless "
+            "--json/--md/--csv/--prometheus)"
         ),
     )
     run.add_argument(
         "--out-dir",
         metavar="DIR",
         help=(
-            "Write report.json, report.html, and report.md into DIR "
+            "Write report.json, report.html, report.md, and metrics.prom into DIR "
             "(CI / Action artifacts). Combines with -o when set."
         ),
     )
@@ -802,9 +814,15 @@ def _add_replay_parser(sub, *, show: bool = True) -> None:
 
 
 def _output_csv_path(args: argparse.Namespace) -> bool:
-    if not args.output or args.html or args.md or args.json:
+    if not args.output or args.html or args.md or args.json or args.prometheus:
         return False
     return Path(args.output).suffix.lower() == ".csv"
+
+
+def _output_prom_path(args: argparse.Namespace) -> bool:
+    if not args.output or args.html or args.md or args.json or args.csv:
+        return False
+    return Path(args.output).suffix.lower() in {".prom", ".prometheus"}
 
 
 def apply_job(args: argparse.Namespace) -> argparse.Namespace:
@@ -912,9 +930,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    formats = [name for name, on in (("json", args.json), ("md", args.md), ("csv", args.csv)) if on]
+    formats = [
+        name
+        for name, on in (
+            ("json", args.json),
+            ("md", args.md),
+            ("csv", args.csv),
+            ("prometheus", args.prometheus),
+        )
+        if on
+    ]
     if len(formats) > 1:
-        print("rpcbench: pick --json, --md, or --csv", file=sys.stderr)
+        print("rpcbench: pick --json, --md, --csv, or --prometheus", file=sys.stderr)
         return 2
     try:
         apply_job(args)
@@ -1127,12 +1154,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
     md_blob = None
     csv_blob = None
     html_blob = None
+    prom_blob = None
     write_csv = args.csv or _output_csv_path(args)
+    write_prom = args.prometheus or _output_prom_path(args) or bool(args.out_dir)
     need_json = bool(
         args.json
         or args.history
         or args.out_dir
-        or (args.output and not args.html and not args.md and not write_csv)
+        or (
+            args.output
+            and not args.html
+            and not args.md
+            and not write_csv
+            and not write_prom
+        )
     )
     if need_json:
         json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
@@ -1142,6 +1177,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
         csv_blob = format_csv(result, rank_by=rank_by, similar_band=similar_band)
     if args.html or args.out_dir:
         html_blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
+    if write_prom:
+        prom_blob = format_prometheus(
+            result, rank_by=rank_by, similar_band=similar_band
+        )
     if args.out_dir:
         out_dir = Path(args.out_dir)
         try:
@@ -1153,6 +1192,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
             )
             (out_dir / "report.html").write_text(html_blob or "", encoding="utf-8")
             (out_dir / "report.md").write_text(md_blob or "", encoding="utf-8")
+            (out_dir / "metrics.prom").write_text(
+                prom_blob
+                or format_prometheus(
+                    result, rank_by=rank_by, similar_band=similar_band
+                ),
+                encoding="utf-8",
+            )
         except OSError as exc:
             print(f"rpcbench: cannot write {out_dir}: {exc}", file=sys.stderr)
             return 2
@@ -1167,6 +1213,10 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 blob = md_blob
             elif write_csv:
                 blob = csv_blob
+            elif write_prom and (
+                args.prometheus or _output_prom_path(args)
+            ):
+                blob = prom_blob
             else:
                 blob = json_blob
             path.write_text(blob or "", encoding="utf-8")
@@ -1189,6 +1239,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
         sys.stdout.write(md_blob or "")
     elif args.csv:
         sys.stdout.write(csv_blob or "")
+    elif args.prometheus:
+        sys.stdout.write(
+            prom_blob
+            or format_prometheus(result, rank_by=rank_by, similar_band=similar_band)
+        )
     else:
         sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
 

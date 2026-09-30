@@ -11,7 +11,7 @@ Zero-setup CI gate: run RPCBench in Actions or a container, upload HTML/JSON/MD,
 | `--max-error-rate FRAC` | Max error rate (`0`–`1`) |
 | `--max-lag BLOCKS` | Max head lag vs cohort |
 | `--slo-endpoint NAME` | Check only this endpoint (default: all) |
-| `--out-dir DIR` | Write `report.json`, `report.html`, `report.md` |
+| `--out-dir DIR` | Write `report.json`, `report.html`, `report.md`, `metrics.prom` |
 
 ```bash
 rpcbench compare --endpoints endpoints.yaml --out-dir out \
