@@ -9,7 +9,7 @@ import pytest
 from rpcbench.cli import build_parser, main
 from rpcbench.config import Endpoint
 from rpcbench.freshness import Freshness
-from rpcbench.rpc import ProbeResult, make_client
+from rpcbench.rpc import ProbeResult
 from rpcbench.run import EndpointOutcome, RunResult, summarize
 from rpcbench.slo import evaluate_slo, format_slo_failures
 
