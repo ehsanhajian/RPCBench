@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: rpcbench
+    orgId: 1
+    folder: RPCBench
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Mount grafana/dashboards/ from this repo to this path in the Grafana container.
+      path: /var/lib/grafana/dashboards/rpcbench

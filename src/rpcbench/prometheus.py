@@ -13,6 +13,21 @@ _BUCKET_LE = tuple(str(int(edge)) if edge == int(edge) else str(edge) for edge i
     "+Inf",
 )
 
+# Names written by format_prometheus (and expected by the Grafana pack).
+DOCUMENTED_METRICS: frozenset[str] = frozenset(
+    {
+        "rpcbench_info",
+        "rpcbench_latency_ms",
+        "rpcbench_error_rate",
+        "rpcbench_rps",
+        "rpcbench_reliability_score",
+        "rpcbench_samples",
+        "rpcbench_latency_histogram_bucket",
+        "rpcbench_latency_histogram_count",
+        "rpcbench_latency_histogram_sum",
+    }
+)
+
 
 def format_prometheus(
     result: RunResult,
