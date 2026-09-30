@@ -32,7 +32,7 @@ Three tools, three questions. Do not copy checks across the line.
 - Workload coverage: of the methods **this mix needs**, which ones succeeded and how fast
 - Optional **trace/debug timing** only when the user opts into a tracing/indexer mix — skip if missing, never a vulnerability
 - Client version as a **report label** (interpret Erigon vs Geth results), never a disclosure finding
-- HTML/JSON/Prometheus as **benchmark reports**, not finding cards with severity badges
+- HTML/JSON/Prometheus/Grafana as **benchmark reports**, not finding cards with severity badges
 
 ## Shared primitives (OK if the purpose differs)
 

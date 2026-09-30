@@ -39,3 +39,7 @@ Point [node_exporter](https://github.com/prometheus/node_exporter) textfile coll
 - Values are **this run only**. Re-run to refresh the file.
 - Missing successes omit latency / rps series for that provider; error rate stays present.
 - Mutually exclusive on stdout with `--json` / `--md` / `--csv`.
+
+## Grafana
+
+Import [`grafana/dashboards/rpcbench.json`](../grafana/dashboards/rpcbench.json) (Cloud / UI) or file-provision with [`grafana/provisioning/dashboards.yml`](../grafana/provisioning/dashboards.yml). Steps: [GRAFANA.md](GRAFANA.md).
