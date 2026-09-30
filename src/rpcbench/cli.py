@@ -53,6 +53,7 @@ from rpcbench.methods import (
 )
 from rpcbench.profile import as_profile_path, has_dynamic_source, hint_request_count
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
+from rpcbench.slo import evaluate_slo, format_slo_failures
 from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
@@ -529,6 +530,44 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         ),
     )
     run.add_argument(
+        "--ci",
+        "--strict",
+        action="store_true",
+        dest="ci",
+        help=(
+            "CI gate: exit 1 when an SLO budget is missed "
+            "(needs --max-p95 / --max-error-rate / --max-lag). "
+            "Reports still write. Alias: --strict."
+        ),
+    )
+    run.add_argument(
+        "--max-p95",
+        type=float,
+        default=None,
+        metavar="MS",
+        help="SLO: max P95 latency in ms (checked with --ci).",
+    )
+    run.add_argument(
+        "--max-error-rate",
+        type=float,
+        default=None,
+        metavar="FRAC",
+        help="SLO: max error rate as a fraction 0–1 (checked with --ci).",
+    )
+    run.add_argument(
+        "--max-lag",
+        type=float,
+        default=None,
+        metavar="BLOCKS",
+        help="SLO: max head lag in blocks vs cohort (checked with --ci).",
+    )
+    run.add_argument(
+        "--slo-endpoint",
+        default=None,
+        metavar="NAME",
+        help="Check SLO budgets only for this endpoint name (default: every endpoint).",
+    )
+    run.add_argument(
         "--json",
         action="store_true",
         help="Print a JSON report to stdout instead of the CLI table",
@@ -560,6 +599,14 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         help=(
             "Write JSON to FILE, HTML when --html, markdown when --md, "
             "or CSV when --csv / FILE ends in .csv (CLI table still prints unless --json/--md/--csv)"
+        ),
+    )
+    run.add_argument(
+        "--out-dir",
+        metavar="DIR",
+        help=(
+            "Write report.json, report.html, and report.md into DIR "
+            "(CI / Action artifacts). Combines with -o when set."
         ),
     )
     if not full:
@@ -838,11 +885,32 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if stopped:
         print(f"rpcbench: disabled ({stopped})", file=sys.stderr)
         return 2
-    if args.html and not args.output:
-        print("rpcbench: --html needs -o FILE", file=sys.stderr)
+    if args.html and not args.output and not getattr(args, "out_dir", None):
+        print("rpcbench: --html needs -o FILE or --out-dir DIR", file=sys.stderr)
         return 2
     if args.http1 and args.http2:
         print("rpcbench: pick --http1 or --http2, not both", file=sys.stderr)
+        return 2
+    if args.max_error_rate is not None and (
+        args.max_error_rate < 0 or args.max_error_rate > 1
+    ):
+        print("rpcbench: --max-error-rate must be between 0 and 1", file=sys.stderr)
+        return 2
+    if args.max_p95 is not None and args.max_p95 < 0:
+        print("rpcbench: --max-p95 must be >= 0", file=sys.stderr)
+        return 2
+    if args.max_lag is not None and args.max_lag < 0:
+        print("rpcbench: --max-lag must be >= 0", file=sys.stderr)
+        return 2
+    if args.ci and (
+        args.max_p95 is None
+        and args.max_error_rate is None
+        and args.max_lag is None
+    ):
+        print(
+            "rpcbench: --ci needs --max-p95, --max-error-rate, and/or --max-lag",
+            file=sys.stderr,
+        )
         return 2
     formats = [name for name, on in (("json", args.json), ("md", args.md), ("csv", args.csv)) if on]
     if len(formats) > 1:
@@ -1058,23 +1126,43 @@ def _cmd_run(args: argparse.Namespace) -> int:
     json_blob = None
     md_blob = None
     csv_blob = None
+    html_blob = None
     write_csv = args.csv or _output_csv_path(args)
     need_json = bool(
         args.json
         or args.history
+        or args.out_dir
         or (args.output and not args.html and not args.md and not write_csv)
     )
     if need_json:
         json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
-    if args.md:
+    if args.md or args.out_dir:
         md_blob = format_md(result, rank_by=rank_by, similar_band=similar_band)
     if write_csv:
         csv_blob = format_csv(result, rank_by=rank_by, similar_band=similar_band)
+    if args.html or args.out_dir:
+        html_blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "report.json").write_text(
+                json_blob
+                or format_json(result, rank_by=rank_by, similar_band=similar_band),
+                encoding="utf-8",
+            )
+            (out_dir / "report.html").write_text(html_blob or "", encoding="utf-8")
+            (out_dir / "report.md").write_text(md_blob or "", encoding="utf-8")
+        except OSError as exc:
+            print(f"rpcbench: cannot write {out_dir}: {exc}", file=sys.stderr)
+            return 2
     if args.output:
         path = Path(args.output)
         try:
             if args.html:
-                blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
+                blob = html_blob or format_html(
+                    result, rank_by=rank_by, similar_band=similar_band
+                )
             elif args.md:
                 blob = md_blob
             elif write_csv:
@@ -1103,6 +1191,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         sys.stdout.write(csv_blob or "")
     else:
         sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
+
+    slo = evaluate_slo(
+        result,
+        max_p95_ms=args.max_p95,
+        max_error_rate=args.max_error_rate,
+        max_lag_blocks=args.max_lag,
+        endpoint=args.slo_endpoint,
+    )
+    if slo.checked:
+        print(format_slo_failures(slo), file=sys.stderr)
+        if args.ci and not slo.ok:
+            return 1
     if any(outcome.stats.n_ok for outcome in result.outcomes):
         return 0
     return 1

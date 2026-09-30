@@ -21,6 +21,7 @@ Three tools, three questions. Do not copy checks across the line.
 ## RPCBench owns (even if a method name appears in both)
 
 - Timed samples: P50/P95/P99, jitter, histograms, RPS, batch, concurrent extra-read, throughput extra-read, load shapes
+- Docker image + GitHub Action for scheduled/PR compares with HTML/JSON artifacts and SLO exit codes
 - Fair paired compare, similar-band, body/hash **consistency** (correctness under load, not “exposed API”)
 - Capture/replay of a JSON-RPC stream in lockstep (status, error class, canonical body) — integrity, not a method inventory
 - Head freshness / lag vs cohort; `latest` vs `safe` vs `finalized` **latency**
