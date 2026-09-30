@@ -1,33 +1,80 @@
 # Grafana dashboard
 
-Provisionable dashboard for [Prometheus textfile metrics](PROMETHEUS.md) (`--prometheus` / `metrics.prom`). Graphs P95 latency, error rate, RPS, reliability, samples, and latency histogram buckets by provider / method / family / chain.
+Provisionable dashboard for [Prometheus textfile metrics](PROMETHEUS.md). Panels: P95 latency, error rate, RPS, reliability, samples, and latency histogram buckets, filtered by provider / method / family / chain.
 
-**Freshness / head lag** stays in the JSON and HTML reports — it is not exported as a Prometheus series today.
+**Freshness / head lag** is not a Prometheus series today (use JSON/HTML reports).
 
-## Import (Grafana Cloud or UI)
+| File | Role |
+| --- | --- |
+| [`grafana/dashboards/rpcbench.json`](../grafana/dashboards/rpcbench.json) | Dashboard JSON (UID `rpcbench`) |
+| [`grafana/provisioning/dashboards.yml`](../grafana/provisioning/dashboards.yml) | File provider → folder **RPCBench** |
 
-1. Dump metrics and scrape them (node_exporter textfile collector, or any sidecar that serves `metrics.prom`).
-2. In Grafana: **Dashboards → New → Import**.
-3. Upload [`grafana/dashboards/rpcbench.json`](../grafana/dashboards/rpcbench.json) (or paste the JSON).
-4. Pick your Prometheus datasource when prompted.
+## Prerequisites
 
-Dashboard UID: `rpcbench`. Template variables: datasource, provider, method, family, chain.
+1. Dump and scrape metrics so Prometheus has `rpcbench_*` series — follow [PROMETHEUS.md](PROMETHEUS.md) (HTTP file server, node_exporter textfile, or CI artifact).
+2. Confirm in Prometheus UI (http://localhost:9090):
 
-## Local Grafana (file provisioning)
+   ```promql
+   rpcbench_latency_ms{quantile="0.95"}
+   rpcbench_error_rate
+   ```
+
+   One series per provider means the exporter is healthy. Fix scrape/path issues before opening Grafana.
+
+## Import (Grafana Cloud or any Grafana UI)
+
+1. Ensure your Prometheus (or Grafana Cloud Prometheus / Agent) scrapes `metrics.prom`.
+2. **Dashboards → New → Import**.
+3. Upload `grafana/dashboards/rpcbench.json` (or paste the JSON).
+4. When prompted, select your Prometheus datasource.
+5. Open the dashboard. Use the top variables (**Provider**, **Method**, **Family**, **Chain**) to filter.
+
+Expected: **P95 latency by provider** and **Error rate by provider** show each endpoint from your last compare.
+
+## Local stack (file provisioning)
+
+From the repo root, with metrics already being served (see [PROMETHEUS.md](PROMETHEUS.md) § scrape) and Prometheus on port 9090:
 
 ```bash
-# Example docker run — adjust paths to your checkout and Prometheus scrape setup.
 docker run --rm -p 3000:3000 \
   -v "$PWD/grafana/dashboards:/var/lib/grafana/dashboards/rpcbench:ro" \
   -v "$PWD/grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/rpcbench.yml:ro" \
   grafana/grafana:latest
 ```
 
-Open http://localhost:3000 (default `admin` / `admin`). The dashboard appears under folder **RPCBench**.
+1. Open http://localhost:3000 (default `admin` / `admin`).
+2. **Connections → Data sources → Add Prometheus**.
+3. URL:
+   - Docker Desktop / host gateway: `http://host.docker.internal:9090`
+   - Prometheus on the same Docker network: use that service name / IP
+4. **Save & test** — should report green.
+5. Open **Dashboards → RPCBench → RPCBench** (provisioned), or import the JSON manually if the folder is empty.
+6. Set the **Datasource** variable to the Prometheus you just added.
 
-## Metric names
+### End-to-end checklist
 
-Panels query only names documented in [PROMETHEUS.md](PROMETHEUS.md):
+```bash
+# 1. Write metrics
+mkdir -p /tmp/rpcbench
+rpcbench compare --endpoints endpoints.ci.yaml --samples 2 --warmup 0 \
+  --prometheus -o /tmp/rpcbench/metrics.prom
+
+# 2. Serve file (terminal A)
+python3 -m http.server 9100 --directory /tmp/rpcbench
+
+# 3. Prometheus with scrape job → host.docker.internal:9100/metrics.prom (terminal B)
+# 4. Grafana as above (terminal C)
+# 5. Re-run step 1 later; wait for the next scrape; panels update
+```
+
+## Grafana Cloud
+
+1. Ship the textfile into Cloud (Grafana Agent / Alloy scraping the same HTTP path or node_exporter).
+2. In Cloud Grafana: **Import** → `grafana/dashboards/rpcbench.json`.
+3. Bind the Cloud Prometheus datasource.
+4. Same variables and panels as local.
+
+## Panels ↔ metrics
 
 | Panel | Metric |
 | --- | --- |
@@ -40,4 +87,4 @@ Panels query only names documented in [PROMETHEUS.md](PROMETHEUS.md):
 | Latency table | `rpcbench_latency_ms` |
 | Histogram | `rpcbench_latency_histogram_bucket` |
 
-Re-run `rpcbench compare … --prometheus` (or `--out-dir`) on a schedule so Prometheus keeps fresh scrapes; the textfile is this-run only.
+Names must match [PROMETHEUS.md](PROMETHEUS.md). Empty panels usually mean the scrape target is wrong, the file was never overwritten after a run, or the datasource URL is unreachable from the Grafana container.
