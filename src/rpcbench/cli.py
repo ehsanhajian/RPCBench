@@ -63,6 +63,7 @@ from rpcbench.report import RankError, format_json, format_run, normalize_rank_b
 from rpcbench.prometheus import format_prometheus
 from rpcbench.slo import evaluate_slo, format_slo_failures
 from rpcbench.tui import LiveTui, install_abort_flag, restore_sigint, wants_tui
+from rpcbench.webui import LiveWebUi, should_wait_web, wants_web
 from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
@@ -183,6 +184,14 @@ def build_parser(*, full: bool = False) -> argparse.ArgumentParser:
         full=full,
         show=True,
     )
+    _add_run_parser(
+        sub,
+        "ui",
+        "Same as compare --web (localhost live UI)",
+        full=full,
+        show=True,
+        force_web=True,
+    )
     _add_diff_parser(sub)
     _add_merge_parser(sub)
     _add_record_parser(sub, show=full)
@@ -190,7 +199,15 @@ def build_parser(*, full: bool = False) -> argparse.ArgumentParser:
     return parser
 
 
-def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -> None:
+def _add_run_parser(
+    sub,
+    name: str,
+    help_text: str,
+    *,
+    full: bool,
+    show: bool,
+    force_web: bool = False,
+) -> None:
     run = sub.add_parser(
         name,
         help=help_text if show else argparse.SUPPRESS,
@@ -569,6 +586,21 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         help="Disable the live TUI (always on with --ci or a non-TTY stdout)",
     )
     run.add_argument(
+        "--web",
+        action="store_true",
+        help=(
+            "Open a localhost-only live web UI (latency / errors / RPS / lag) "
+            "and show the HTML report when the run finishes"
+        ),
+    )
+    run.add_argument(
+        "--web-port",
+        type=int,
+        default=8765,
+        metavar="PORT",
+        help="Port for --web (default 8765; 0 = ephemeral). Always binds 127.0.0.1",
+    )
+    run.add_argument(
         "--max-p95",
         type=float,
         default=None,
@@ -652,6 +684,9 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         for action in run._actions:
             if action.dest in _LAB_DESTS:
                 action.help = argparse.SUPPRESS
+    if force_web:
+        # After --web store_true (default False): force on for `rpcbench ui`.
+        run.set_defaults(web=True)
 
 
 def _add_diff_parser(sub) -> None:
@@ -940,7 +975,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command is None:
         parser.print_help()
         return 2
-    if args.command in {"run", "compare"}:
+    if args.command in {"run", "compare", "ui"}:
         return _cmd_run(args)
     if args.command == "diff":
         return _cmd_diff(args)
@@ -964,6 +999,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 2
     if args.http1 and args.http2:
         print("rpcbench: pick --http1 or --http2, not both", file=sys.stderr)
+        return 2
+    if getattr(args, "web_port", 8765) < 0:
+        print("rpcbench: --web-port must be >= 0", file=sys.stderr)
         return 2
     if args.max_error_rate is not None and (
         args.max_error_rate < 0 or args.max_error_rate > 1
@@ -1179,163 +1217,204 @@ def _cmd_run(args: argparse.Namespace) -> int:
         else sys.stdout,
         enabled=wants_tui(plain=args.plain, ci=args.ci),
     )
+    web = LiveWebUi(
+        [ep.name for ep in config.endpoints],
+        port=getattr(args, "web_port", 8765),
+        enabled=wants_web(web=bool(getattr(args, "web", False)), ci=args.ci),
+        open_browser=not args.ci,
+    )
     abort_flag, prev_sigint = install_abort_flag()
 
     def _on_sample(name: str, hit, kind: str) -> None:
         live.record(name, hit, kind=kind)
+        web.record(name, hit, kind=kind)
 
+    def _should_abort() -> bool:
+        return abort_flag.is_set() or web.should_abort()
+
+    web.start()
     try:
-        result = run_endpoints(
-            config,
-            method=method,
-            params=params,
-            samples=args.samples,
-            warmup=args.warmup,
-            timeout=args.timeout,
-            budget=max_requests,
-            workload=workload,
-            profile=method if is_app_workload(method) else "single",
-            sample_budget=args.sample_budget,
-            stale_blocks=args.stale_blocks,
-            block_time_s=args.block_time,
-            block_pin=block_pin,
-            max_duration=args.max_duration,
-            mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
-            seed=args.seed,
-            concurrency=0,
-            inflight=args.concurrency,
-            burst=args.burst,
-            rps=args.rps,
-            throughput=args.throughput,
-            shape=args.shape,
-            new_connection=args.new_connection,
-            http2=args.http2,
-            batch=args.batch,
-            logs_range=args.logs_range,
-            profile_notes=plan.notes,
-            simulate=args.simulate,
-            archive=args.archive,
-            lookback=args.lookback,
-            websocket=args.websocket,
-            yellowstone=args.yellowstone,
-            family=family_name,
-            on_sample=_on_sample if live.enabled else None,
-            should_abort=abort_flag.is_set,
-        )
-    finally:
-        restore_sigint(prev_sigint)
-        live.finish(aborted=abort_flag.is_set())
-    json_blob = None
-    md_blob = None
-    csv_blob = None
-    html_blob = None
-    prom_blob = None
-    write_csv = args.csv or _output_csv_path(args)
-    write_prom = args.prometheus or _output_prom_path(args) or bool(args.out_dir)
-    need_json = bool(
-        args.json
-        or args.history
-        or args.out_dir
-        or (
-            args.output
-            and not args.html
-            and not args.md
-            and not write_csv
-            and not write_prom
-        )
-    )
-    if need_json:
-        json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
-    if args.md or args.out_dir:
-        md_blob = format_md(result, rank_by=rank_by, similar_band=similar_band)
-    if write_csv:
-        csv_blob = format_csv(result, rank_by=rank_by, similar_band=similar_band)
-    if args.html or args.out_dir:
-        html_blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
-    if write_prom:
-        prom_blob = format_prometheus(
-            result, rank_by=rank_by, similar_band=similar_band
-        )
-    if args.out_dir:
-        out_dir = Path(args.out_dir)
         try:
-            out_dir.mkdir(parents=True, exist_ok=True)
-            (out_dir / "report.json").write_text(
-                json_blob
-                or format_json(result, rank_by=rank_by, similar_band=similar_band),
-                encoding="utf-8",
+            result = run_endpoints(
+                config,
+                method=method,
+                params=params,
+                samples=args.samples,
+                warmup=args.warmup,
+                timeout=args.timeout,
+                budget=max_requests,
+                workload=workload,
+                profile=method if is_app_workload(method) else "single",
+                sample_budget=args.sample_budget,
+                stale_blocks=args.stale_blocks,
+                block_time_s=args.block_time,
+                block_pin=block_pin,
+                max_duration=args.max_duration,
+                mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
+                seed=args.seed,
+                concurrency=0,
+                inflight=args.concurrency,
+                burst=args.burst,
+                rps=args.rps,
+                throughput=args.throughput,
+                shape=args.shape,
+                new_connection=args.new_connection,
+                http2=args.http2,
+                batch=args.batch,
+                logs_range=args.logs_range,
+                profile_notes=plan.notes,
+                simulate=args.simulate,
+                archive=args.archive,
+                lookback=args.lookback,
+                websocket=args.websocket,
+                yellowstone=args.yellowstone,
+                family=family_name,
+                on_sample=_on_sample if (live.enabled or web.enabled) else None,
+                should_abort=_should_abort,
             )
-            (out_dir / "report.html").write_text(html_blob or "", encoding="utf-8")
-            (out_dir / "report.md").write_text(md_blob or "", encoding="utf-8")
-            (out_dir / "metrics.prom").write_text(
+        finally:
+            restore_sigint(prev_sigint)
+            live.finish(aborted=abort_flag.is_set() or web.should_abort())
+            web.finish(aborted=abort_flag.is_set() or web.should_abort())
+        json_blob = None
+        md_blob = None
+        csv_blob = None
+        html_blob = None
+        prom_blob = None
+        write_csv = args.csv or _output_csv_path(args)
+        write_prom = args.prometheus or _output_prom_path(args) or bool(args.out_dir)
+        need_json = bool(
+            args.json
+            or args.history
+            or args.out_dir
+            or (
+                args.output
+                and not args.html
+                and not args.md
+                and not write_csv
+                and not write_prom
+            )
+        )
+        if need_json:
+            json_blob = format_json(result, rank_by=rank_by, similar_band=similar_band)
+        if args.md or args.out_dir:
+            md_blob = format_md(result, rank_by=rank_by, similar_band=similar_band)
+        if write_csv:
+            csv_blob = format_csv(result, rank_by=rank_by, similar_band=similar_band)
+        if args.html or args.out_dir or web.enabled:
+            html_blob = format_html(result, rank_by=rank_by, similar_band=similar_band)
+        if write_prom:
+            prom_blob = format_prometheus(
+                result, rank_by=rank_by, similar_band=similar_band
+            )
+        if web.enabled and html_blob:
+            web.set_report(html_blob)
+        if args.out_dir:
+            out_dir = Path(args.out_dir)
+            try:
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "report.json").write_text(
+                    json_blob
+                    or format_json(result, rank_by=rank_by, similar_band=similar_band),
+                    encoding="utf-8",
+                )
+                (out_dir / "report.html").write_text(html_blob or "", encoding="utf-8")
+                (out_dir / "report.md").write_text(md_blob or "", encoding="utf-8")
+                (out_dir / "metrics.prom").write_text(
+                    prom_blob
+                    or format_prometheus(
+                        result, rank_by=rank_by, similar_band=similar_band
+                    ),
+                    encoding="utf-8",
+                )
+            except OSError as exc:
+                print(f"rpcbench: cannot write {out_dir}: {exc}", file=sys.stderr)
+                return 2
+        if args.output:
+            path = Path(args.output)
+            try:
+                if args.html:
+                    blob = html_blob or format_html(
+                        result, rank_by=rank_by, similar_band=similar_band
+                    )
+                elif args.md:
+                    blob = md_blob
+                elif write_csv:
+                    blob = csv_blob
+                elif write_prom and (
+                    args.prometheus or _output_prom_path(args)
+                ):
+                    blob = prom_blob
+                else:
+                    blob = json_blob
+                path.write_text(blob or "", encoding="utf-8")
+            except OSError as exc:
+                print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
+                return 2
+        if args.history:
+            try:
+                if json_blob is None:
+                    json_blob = format_json(
+                        result, rank_by=rank_by, similar_band=similar_band
+                    )
+                write_history(Path(args.history), json_blob)
+            except OSError as exc:
+                print(f"rpcbench: cannot write history: {exc}", file=sys.stderr)
+                return 2
+        if args.json:
+            sys.stdout.write(
+                json_blob
+                or format_json(result, rank_by=rank_by, similar_band=similar_band)
+            )
+        elif args.md:
+            sys.stdout.write(md_blob or "")
+        elif args.csv:
+            sys.stdout.write(csv_blob or "")
+        elif args.prometheus:
+            sys.stdout.write(
                 prom_blob
                 or format_prometheus(
                     result, rank_by=rank_by, similar_band=similar_band
-                ),
-                encoding="utf-8",
+                )
             )
-        except OSError as exc:
-            print(f"rpcbench: cannot write {out_dir}: {exc}", file=sys.stderr)
-            return 2
-    if args.output:
-        path = Path(args.output)
-        try:
-            if args.html:
-                blob = html_blob or format_html(
-                    result, rank_by=rank_by, similar_band=similar_band
+        else:
+            sys.stdout.write(
+                format_run(
+                    result,
+                    verbose=args.verbose,
+                    rank_by=rank_by,
+                    similar_band=similar_band,
                 )
-            elif args.md:
-                blob = md_blob
-            elif write_csv:
-                blob = csv_blob
-            elif write_prom and (
-                args.prometheus or _output_prom_path(args)
-            ):
-                blob = prom_blob
-            else:
-                blob = json_blob
-            path.write_text(blob or "", encoding="utf-8")
-        except OSError as exc:
-            print(f"rpcbench: cannot write {path}: {exc}", file=sys.stderr)
-            return 2
-    if args.history:
-        try:
-            if json_blob is None:
-                json_blob = format_json(
-                    result, rank_by=rank_by, similar_band=similar_band
-                )
-            write_history(Path(args.history), json_blob)
-        except OSError as exc:
-            print(f"rpcbench: cannot write history: {exc}", file=sys.stderr)
-            return 2
-    if args.json:
-        sys.stdout.write(json_blob or format_json(result, rank_by=rank_by, similar_band=similar_band))
-    elif args.md:
-        sys.stdout.write(md_blob or "")
-    elif args.csv:
-        sys.stdout.write(csv_blob or "")
-    elif args.prometheus:
-        sys.stdout.write(
-            prom_blob
-            or format_prometheus(result, rank_by=rank_by, similar_band=similar_band)
-        )
-    else:
-        sys.stdout.write(format_run(result, verbose=args.verbose, rank_by=rank_by, similar_band=similar_band))
+            )
 
-    slo = evaluate_slo(
-        result,
-        max_p95_ms=args.max_p95,
-        max_error_rate=args.max_error_rate,
-        max_lag_blocks=args.max_lag,
-        endpoint=args.slo_endpoint,
-    )
-    if slo.checked:
-        print(format_slo_failures(slo), file=sys.stderr)
-        if args.ci and not slo.ok:
-            return 1
-    if any(outcome.stats.n_ok for outcome in result.outcomes):
-        return 0
-    return 1
+        slo = evaluate_slo(
+            result,
+            max_p95_ms=args.max_p95,
+            max_error_rate=args.max_error_rate,
+            max_lag_blocks=args.max_lag,
+            endpoint=args.slo_endpoint,
+        )
+        if slo.checked:
+            print(format_slo_failures(slo), file=sys.stderr)
+            if args.ci and not slo.ok:
+                code = 1
+            elif any(outcome.stats.n_ok for outcome in result.outcomes):
+                code = 0
+            else:
+                code = 1
+        elif any(outcome.stats.n_ok for outcome in result.outcomes):
+            code = 0
+        else:
+            code = 1
+        if web.enabled and should_wait_web(ci=args.ci):
+            print(
+                "rpcbench: web UI open — Quit in the browser or Ctrl-C",
+                file=sys.stderr,
+            )
+            web.wait_until_quit()
+        return code
+    finally:
+        web.stop()
 
 
 def _cmd_diff(args: argparse.Namespace) -> int:
