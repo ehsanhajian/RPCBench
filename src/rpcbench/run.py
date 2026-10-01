@@ -86,7 +86,8 @@ from rpcbench.rpc import (
 )
 from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.family import benchmark_family, pin_block_params, resolve_block_time, tag_block_params
-from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp, vantage_label
+from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp
+from rpcbench.vantage import VantageInfo, resolve_vantage
 from rpcbench.tags import (
     TagSnapshot,
     client_from_hit,
@@ -309,6 +310,7 @@ class RunResult:
     git_sha: str | None = None
     started_at: str | None = None
     vantage: str | None = None
+    vantage_info: VantageInfo | None = None
     profile_notes: str | None = None
     payload: PayloadMeta | None = None
 
@@ -1076,6 +1078,7 @@ def _execute_run(
             replace(outcome, yellowstone=by_name.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    vantage = resolve_vantage()
     return RunResult(
         method=method,
         params=tuple(rpc_params),
@@ -1115,7 +1118,8 @@ def _execute_run(
         family=family,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
-        vantage=vantage_label(),
+        vantage=vantage.label,
+        vantage_info=vantage,
         profile_notes=profile_notes,
         payload=payload,
     )

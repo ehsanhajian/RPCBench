@@ -322,7 +322,37 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. **One compare is one vantage** (this host / `RPCBENCH_VANTAGE`). It is **not** a browser RUM, not Core Web Vitals, and not a synthetic multi-hop path measure. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
+
+## Vantage and multi-region
+
+Each JSON report’s `watermark` records where it was measured:
+
+| Field | Source |
+| --- | --- |
+| `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
+| `region` / `city` / `asn` | optional `RPCBENCH_REGION`, `RPCBENCH_CITY`, `RPCBENCH_ASN` |
+| `hostname` | resolved hostname when available |
+| `vantage_meta` | same fields nested for tooling |
+
+No extra CLI flags — set env on the machine that runs the compare. CLI **Cite**, HTML footer/hero, markdown Cite, and JSON watermark all show the label (and extras when set).
+
+To compare the **same** seed/workload from two regions:
+
+```bash
+# on eu host
+RPCBENCH_VANTAGE=eu-west RPCBENCH_REGION=eu-west-1 \
+  rpcbench compare --endpoints endpoints.yaml --seed 7 -o eu.json
+
+# on us host
+RPCBENCH_VANTAGE=us-east RPCBENCH_REGION=us-east-1 \
+  rpcbench compare --endpoints endpoints.yaml --seed 7 -o us.json
+
+rpcbench merge eu.json us.json
+rpcbench merge eu.json us.json --json -o merged.json
+```
+
+`merge` prints a per-vantage P95 matrix and a **global** rollup (mean P95 across vantages that reported the provider; max error rate). Seed, workload/method, and family must match. Duplicate vantage labels are rejected.
 
 ## Report watermark
 
@@ -338,11 +368,12 @@ Every JSON report includes a `watermark` object so the numbers can be cited:
 | `seed` | Shared sequence stamp |
 | `family` | RPC family (`evm` today) |
 | `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
+| `region` / `city` / `asn` / `hostname` | Optional env extras; also nested under `vantage_meta` |
 | `samples` / `warmup` | Timed rounds and excluded warmup rounds; each round sends `sum(weights)` calls |
 | `methodology` / `boundary` | This page and [BOUNDARY.md](BOUNDARY.md) |
 
 The compact CLI prints a **Cite** line. `--verbose` prints the same doc URLs in the footer. `--html -o report.html` reuses the same watermark object in the footer — same links, not a scanner card. Ranking (with sample sparklines), a coverage **heatmap**, **Signals**, P95, error rate, and freshness sit above the fold. Charts are inline SVG (no network). Print CSS keeps sections and SVG on one page. The heatmap is this workload’s coverage and latency (ok / skip / miss), not a method-inventory scan.
 
-`--md` is the compact ranking as GitHub-flavored markdown (P95, error rate, freshness, verdict). `--csv` is one row per provider with the same ranking numbers (percentiles, rps, error rate, score, rank, verdict) — not per-sample rows. `--prometheus` dumps the same run as Prometheus textfile gauges/histogram (provider, method, family, chain labels); see [PROMETHEUS.md](PROMETHEUS.md). `rpcbench diff old.json new.json` compares two JSON watermarks: P95 delta, winner change, and new **signals**. CI exits 1 when the previous **primary**’s rank key got worse beyond the similar-band (same band as ranking; override with `--similar-band`). Not a security finding. `--history DIR` stores JSON snapshots locally for that diff.
+`--md` is the compact ranking as GitHub-flavored markdown (P95, error rate, freshness, verdict). `--csv` is one row per provider with the same ranking numbers (percentiles, rps, error rate, score, rank, verdict) — not per-sample rows. `--prometheus` dumps the same run as Prometheus textfile gauges/histogram (provider, method, family, chain labels); see [PROMETHEUS.md](PROMETHEUS.md). `rpcbench diff old.json new.json` compares two JSON watermarks: P95 delta, winner change, and new **signals**. CI exits 1 when the previous **primary**’s rank key got worse beyond the similar-band (same band as ranking; override with `--similar-band`). Not a security finding. `--history DIR` stores JSON snapshots locally for that diff. `rpcbench merge a.json b.json` joins multi-vantage runs (same seed/workload) into a per-region table and global mean-P95 rollup — see [Vantage and multi-region](#vantage-and-multi-region).
 
 Reproduce with the same `--budget`, `--workload`/`--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.

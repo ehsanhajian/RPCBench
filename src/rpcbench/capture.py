@@ -27,8 +27,8 @@ from rpcbench.watermark import (
     family_token,
     git_sha as current_git_sha,
     utc_stamp,
-    vantage_label,
 )
+from rpcbench.vantage import resolve_vantage
 from rpcbench import __version__
 
 MAX_CAPTURE_CALLS = 10_000
@@ -306,7 +306,7 @@ def replay_calls(
         allow_writes=allow_writes,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
-        vantage=vantage_label(),
+        vantage=resolve_vantage().label,
     )
 
 

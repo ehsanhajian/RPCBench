@@ -108,6 +108,8 @@ def _hero(data: dict[str, Any]) -> str:
         "<h1>RPCBench</h1>"
         f"<p class=\"meta\">{escape(str(method))} · size {escape(str(data['sample_budget']))} · "
         f"rank {escape(str(data['rank_by']))} · similar {100 * data['similar_band']:.0f}% · "
+        f"vantage={escape(str(mark.get('vantage') or '—'))}"
+        f"{_vantage_extra(mark)} · "
         f"{_payload_meta(data)}"
         f"sha={escape(str(mark['git_sha'] or '—'))}</p>"
         '<p class="winner">'
@@ -118,6 +120,13 @@ def _hero(data: dict[str, Any]) -> str:
         f'<p class="why">{escape(data["route"]["why"])}</p>'
         "</header>"
     )
+
+
+def _vantage_extra(mark: dict[str, Any]) -> str:
+    from rpcbench.vantage import format_vantage_bits
+
+    extras = format_vantage_bits(mark.get("vantage_meta") or mark)
+    return f" · {escape(extras)}" if extras else ""
 
 
 def _payload_meta(data: dict[str, Any]) -> str:
