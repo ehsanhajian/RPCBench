@@ -9,6 +9,7 @@ import math
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from typing import Callable
 
 from rpcbench.archive import (
     ArchiveHit,
@@ -316,6 +317,7 @@ class RunResult:
     vantage_info: VantageInfo | None = None
     profile_notes: str | None = None
     payload: PayloadMeta | None = None
+    aborted: bool = False
 
 
 def percentile(samples: list[float], p: float) -> float:
@@ -587,6 +589,8 @@ def run_endpoints(
     open_yellowstone=None,
     shape: str | None = None,
     family: str = FAMILY_EVM,
+    on_sample: Callable[[str, ProbeResult, str], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> RunResult:
     if samples < 1:
         raise ValueError("samples must be at least 1")
@@ -701,6 +705,8 @@ def run_endpoints(
             open_yellowstone=open_yellowstone,
             shape=shape,
             family=family,
+            on_sample=on_sample,
+            should_abort=should_abort,
         )
     finally:
         reset_transport(transport_token)
@@ -819,8 +825,15 @@ def _execute_run(
     open_yellowstone,
     shape: str | None,
     family: str,
+    on_sample: Callable[[str, ProbeResult, str], None] | None,
+    should_abort: Callable[[], bool] | None,
 ) -> RunResult:
     adapter = benchmark_family(family)
+    aborted = False
+
+    def _aborted() -> bool:
+        return bool(should_abort and should_abort())
+
     if mode == MODE_SEQUENTIAL:
         outcomes, pairs = _run_sequential(
             config,
@@ -833,6 +846,8 @@ def _execute_run(
             burst=burst,
             rps=rps,
             client=client,
+            on_sample=on_sample,
+            should_abort=should_abort,
         )
     else:
         outcomes, pairs = _run_paired(
@@ -847,13 +862,76 @@ def _execute_run(
             burst=burst,
             rps=rps,
             client=client,
+            on_sample=on_sample,
+            should_abort=should_abort,
         )
+    aborted = _aborted()
     extra_heads: dict[str, ProbeResult] = {}
     wave_concurrency = 1 if mode == MODE_SEQUENTIAL else concurrency
-    if not any(spec.method == adapter.head_method for spec in steps):
-        extra_heads = _probe_wave(
+    tip = None
+    pin = block_pin
+    canon = None
+    race = None
+    if not aborted:
+        if not any(spec.method == adapter.head_method for spec in steps):
+            extra_heads = _probe_wave(
+                config,
+                method=adapter.head_method,
+                params=list(adapter.empty_params),
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                concurrency=wave_concurrency,
+                client=client,
+            )
+        chain_id = _sample_chain_id(outcomes, adapter.chain_method)
+        resolved_time = resolve_block_time(
+            adapter, chain_id=chain_id, override=block_time_s
+        )
+        heights = {
+            outcome.endpoint.name: _head_height(
+                outcome, method, extra_heads, adapter.head_method
+            )
+            for outcome in outcomes
+        }
+        judged = assess_freshness(
+            heights, stale_blocks=stale_blocks, block_time_s=resolved_time
+        )
+        outcomes = [
+            replace(outcome, freshness=judged[outcome.endpoint.name])
+            for outcome in outcomes
+        ]
+        tip = next((row.cohort_height for row in judged.values()), None)
+        pin = block_pin if block_pin is not None else tip
+        extra_blocks: dict[str, ProbeResult] = {}
+        if pin is not None:
+            extra_blocks = _probe_wave(
+                config,
+                method=adapter.block_method,
+                params=pin_block_params(adapter, pin),
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                concurrency=wave_concurrency,
+                client=client,
+            )
+        hashes = {
+            outcome.endpoint.name: _block_hash(extra_blocks.get(outcome.endpoint.name))
+            for outcome in outcomes
+        }
+        numbers = {
+            outcome.endpoint.name: _block_number(extra_blocks.get(outcome.endpoint.name))
+            for outcome in outcomes
+        }
+        agreed = assess_consistency(hashes, numbers=numbers, pin_height=pin)
+        outcomes = [
+            replace(outcome, consistency=agreed[outcome.endpoint.name])
+            for outcome in outcomes
+        ]
+        canon = next((row.canonical_hash for row in agreed.values()), None)
+        client_hits = _probe_wave(
             config,
-            method=adapter.head_method,
+            method=adapter.client_method,
             params=list(adapter.empty_params),
             timeout=timeout,
             budget=purse,
@@ -861,89 +939,40 @@ def _execute_run(
             concurrency=wave_concurrency,
             client=client,
         )
-    chain_id = _sample_chain_id(outcomes, adapter.chain_method)
-    resolved_time = resolve_block_time(
-        adapter, chain_id=chain_id, override=block_time_s
-    )
-    heights = {
-        outcome.endpoint.name: _head_height(
-            outcome, method, extra_heads, adapter.head_method
-        )
-        for outcome in outcomes
-    }
-    judged = assess_freshness(
-        heights, stale_blocks=stale_blocks, block_time_s=resolved_time
-    )
-    outcomes = [
-        replace(outcome, freshness=judged[outcome.endpoint.name])
-        for outcome in outcomes
-    ]
-    tip = next((row.cohort_height for row in judged.values()), None)
-    pin = block_pin if block_pin is not None else tip
-    extra_blocks: dict[str, ProbeResult] = {}
-    if pin is not None:
-        extra_blocks = _probe_wave(
-            config,
-            method=adapter.block_method,
-            params=pin_block_params(adapter, pin),
-            timeout=timeout,
-            budget=purse,
-            deadline=deadline,
-            concurrency=wave_concurrency,
-            client=client,
-        )
-    hashes = {
-        outcome.endpoint.name: _block_hash(extra_blocks.get(outcome.endpoint.name))
-        for outcome in outcomes
-    }
-    numbers = {
-        outcome.endpoint.name: _block_number(extra_blocks.get(outcome.endpoint.name))
-        for outcome in outcomes
-    }
-    agreed = assess_consistency(hashes, numbers=numbers, pin_height=pin)
-    outcomes = [
-        replace(outcome, consistency=agreed[outcome.endpoint.name])
-        for outcome in outcomes
-    ]
-    canon = next((row.canonical_hash for row in agreed.values()), None)
-    client_hits = _probe_wave(
-        config,
-        method=adapter.client_method,
-        params=list(adapter.empty_params),
-        timeout=timeout,
-        budget=purse,
-        deadline=deadline,
-        concurrency=wave_concurrency,
-        client=client,
-    )
-    tag_rows: dict[str, list[TagSnapshot]] = {
-        outcome.endpoint.name: [] for outcome in outcomes
-    }
-    for tag in adapter.block_tags:
-        hits = _probe_wave(
-            config,
-            method=adapter.block_method,
-            params=tag_block_params(adapter, tag),
-            timeout=timeout,
-            budget=purse,
-            deadline=deadline,
-            concurrency=wave_concurrency,
-            client=client,
-        )
-        judged_tags = snapshots_from_hits(
-            tag, hits, stale_blocks=stale_blocks, block_time_s=resolved_time
-        )
-        for name, snap in judged_tags.items():
-            tag_rows[name].append(snap)
-    outcomes = [
-        replace(
-            outcome,
-            client=client_from_hit(client_hits.get(outcome.endpoint.name)),
-            tags=tuple(tag_rows.get(outcome.endpoint.name, ())),
-        )
-        for outcome in outcomes
-    ]
-    if archive:
+        tag_rows: dict[str, list[TagSnapshot]] = {
+            outcome.endpoint.name: [] for outcome in outcomes
+        }
+        for tag in adapter.block_tags:
+            if _aborted():
+                aborted = True
+                break
+            hits = _probe_wave(
+                config,
+                method=adapter.block_method,
+                params=tag_block_params(adapter, tag),
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                concurrency=wave_concurrency,
+                client=client,
+            )
+            judged_tags = snapshots_from_hits(
+                tag, hits, stale_blocks=stale_blocks, block_time_s=resolved_time
+            )
+            for name, snap in judged_tags.items():
+                tag_rows[name].append(snap)
+        outcomes = [
+            replace(
+                outcome,
+                client=client_from_hit(client_hits.get(outcome.endpoint.name)),
+                tags=tuple(tag_rows.get(outcome.endpoint.name, ())),
+            )
+            for outcome in outcomes
+        ]
+    else:
+        resolved_time = resolve_block_time(adapter, chain_id=None, override=block_time_s)
+
+    if not aborted and archive:
         measured_archive = _measure_archive(
             config,
             pin=pin,
@@ -961,7 +990,7 @@ def _execute_run(
             )
             for outcome in outcomes
         ]
-    if lookback > 0:
+    if not aborted and lookback > 0:
         measured_history = _measure_history(
             config,
             pin=pin,
@@ -983,7 +1012,7 @@ def _execute_run(
             )
             for outcome in outcomes
         ]
-    if logs_range > 0:
+    if not aborted and logs_range > 0:
         measured_logs = _measure_logs_ranges(
             config,
             pin=pin,
@@ -1002,7 +1031,7 @@ def _execute_run(
             )
             for outcome in outcomes
         ]
-    if batch > 0:
+    if not aborted and batch > 0:
         spec = steps[0]
         measured = {
             outcome.endpoint.name: _measure_batch(
@@ -1020,7 +1049,7 @@ def _execute_run(
             replace(outcome, batch=measured.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
-    if inflight > 0:
+    if not aborted and inflight > 0:
         spec = steps[0]
         measured_inflight = {
             outcome.endpoint.name: _measure_inflight(
@@ -1038,7 +1067,7 @@ def _execute_run(
             replace(outcome, inflight=measured_inflight.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
-    if throughput > 0:
+    if not aborted and throughput > 0:
         spec = steps[0]
         measured_throughput = {
             outcome.endpoint.name: _measure_throughput(
@@ -1057,7 +1086,7 @@ def _execute_run(
             replace(outcome, throughput=measured_throughput.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
-    if shape:
+    if not aborted and shape:
         spec = steps[0]
 
         def _shape_hit(endpoint, *, spec, timeout, budget, deadline):
@@ -1086,7 +1115,7 @@ def _execute_run(
             replace(outcome, shape=measured_shape.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
-    if websocket > 0:
+    if not aborted and websocket > 0:
         measured_ws = {
             outcome.endpoint.name: probe_websocket(
                 outcome.endpoint,
@@ -1102,8 +1131,7 @@ def _execute_run(
             replace(outcome, websocket=measured_ws.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
-    race: YellowstoneRace | None = None
-    if yellowstone > 0:
+    if not aborted and yellowstone > 0:
         race = run_yellowstone_race(
             tuple(outcome.endpoint for outcome in outcomes),
             window=yellowstone,
@@ -1117,6 +1145,7 @@ def _execute_run(
             replace(outcome, yellowstone=by_name.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    aborted = aborted or _aborted()
     vantage = resolve_vantage()
     return RunResult(
         method=method,
@@ -1162,6 +1191,7 @@ def _execute_run(
         vantage_info=vantage,
         profile_notes=profile_notes,
         payload=payload,
+        aborted=aborted,
     )
 
 
@@ -1806,9 +1836,13 @@ def _run_sequential(
     burst: int,
     rps: float,
     client,
+    on_sample: Callable[[str, ProbeResult, str], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> tuple[list[EndpointOutcome], list[PairRecord]]:
     outcomes: list[EndpointOutcome] = []
     for endpoint in config.endpoints:
+        if should_abort and should_abort():
+            break
         outcomes.append(
             _run_one(
                 endpoint,
@@ -1821,6 +1855,8 @@ def _run_sequential(
                 burst=burst,
                 rps=rps,
                 client=client,
+                on_sample=on_sample,
+                should_abort=should_abort,
             )
         )
     return outcomes, []
@@ -1839,6 +1875,8 @@ def _run_paired(
     burst: int,
     rps: float,
     client,
+    on_sample: Callable[[str, ProbeResult, str], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> tuple[list[EndpointOutcome], list[PairRecord]]:
     endpoints = list(config.endpoints)
     warmups: dict[str, list[ProbeResult]] = {ep.name: [] for ep in endpoints}
@@ -1872,6 +1910,8 @@ def _run_paired(
                 warmups[endpoint.name].append(hit)
             else:
                 measured[endpoint.name].append(hit)
+            if on_sample is not None:
+                on_sample(endpoint.name, hit, kind)
         if kind == "sample":
             pairs.append(
                 PairRecord(
@@ -1900,9 +1940,11 @@ def _run_paired(
         record(kind, index, spec, hits)
 
     for kind, index, spec in warmup_plan:
+        if should_abort and should_abort():
+            break
         one_wave(kind, index, spec)
 
-    if burst_plan:
+    if burst_plan and not (should_abort and should_abort()):
         if _expired(deadline):
             miss_steps = burst_plan
             still: list[tuple[str, int, CallSpec]] = []
@@ -1932,6 +1974,8 @@ def _run_paired(
 
     last_start: float | None = None
     for kind, index, spec in steady_plan:
+        if should_abort and should_abort():
+            break
         last_start = _pace(last_start, rps)
         one_wave(kind, index, spec)
 
@@ -1960,6 +2004,8 @@ def _run_one(
     burst: int,
     rps: float,
     client,
+    on_sample: Callable[[str, ProbeResult, str], None] | None = None,
+    should_abort: Callable[[], bool] | None = None,
 ) -> EndpointOutcome:
     warmup_hits: list[ProbeResult] = []
     measured: list[ProbeResult] = []
@@ -1972,8 +2018,8 @@ def _run_one(
         first = workload[0].method if workload else None
         measured.append(_skipped("duration", "max duration exceeded", first))
         return _finish_outcome(endpoint, (), tuple(measured), workload, burst=0)
-    for _kind, _index, spec in warmup_plan:
-        if stop:
+    for kind, _index, spec in warmup_plan:
+        if stop or (should_abort and should_abort()):
             break
         hit = _hit(
             endpoint,
@@ -1984,14 +2030,17 @@ def _run_one(
             client=client,
         )
         warmup_hits.append(hit)
+        if on_sample is not None:
+            on_sample(endpoint.name, hit, kind)
         if hit.error_class in _STOP_CLASSES:
             stop = True
             if not measured:
                 measured.append(hit)
-    if not stop and burst_plan:
+    if not stop and burst_plan and not (should_abort and should_abort()):
         with ThreadPoolExecutor(max_workers=max(1, len(burst_plan))) as pool:
             futs = [
-                _submit(pool, 
+                _submit(
+                    pool,
                     _hit,
                     endpoint,
                     spec=spec,
@@ -2005,11 +2054,13 @@ def _run_one(
             for fut in futs:
                 hit = fut.result()
                 measured.append(hit)
+                if on_sample is not None:
+                    on_sample(endpoint.name, hit, "sample")
                 if hit.error_class in _STOP_CLASSES:
                     stop = True
     last_start: float | None = None
-    for _kind, _index, spec in steady_plan:
-        if stop:
+    for kind, _index, spec in steady_plan:
+        if stop or (should_abort and should_abort()):
             break
         last_start = _pace(last_start, rps)
         hit = _hit(
@@ -2021,6 +2072,8 @@ def _run_one(
             client=client,
         )
         measured.append(hit)
+        if on_sample is not None:
+            on_sample(endpoint.name, hit, kind)
         if hit.error_class in _STOP_CLASSES:
             stop = True
     return _finish_outcome(

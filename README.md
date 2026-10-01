@@ -175,7 +175,7 @@ The default CLI prints, in order:
 23. **Providers** — one table: redacted URL, client, n/err, p95, head/lag/fresh/match, histogram (`≥1s=3`), note. Per-sample rows follow.
 24. **Capabilities** — who answered this method (and whether batch was supported, when enabled)
 
-On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). Reports never print API keys, bearer tokens, or header values.
+On a TTY, ok is green and fail is red (`NO_COLOR` or a pipe turns color off). While samples collect, a **live table** (P50/P95, err, rps, sparkline) updates unless `--plain` or `--ci`. Ctrl-C stops early and still writes JSON/HTML. Reports never print API keys, bearer tokens, or header values.
 
 ## How a run works
 
@@ -278,7 +278,8 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--lookback` | 0 (1000 on indexer) | Timed `eth_getBalance` at pin−N vs latest (`0`=off, omit N for 1000). Skips without archive |
 | `--websocket` | 0 | Connect + `eth_subscribe` `newHeads` (`0`=off, omit SEC for 3s, max 10s). Missing WS is not configured |
 | `--yellowstone` | 0 | Solana gRPC first-seen race (`0`=off, omit SEC for 3s, max 10s). Missing gRPC is not configured. Needs `rpcbench[yellowstone]` |
-| `--ci` / `--strict` | off | Exit 1 when an SLO budget misses (needs `--max-p95` / `--max-error-rate` / `--max-lag`). Reports still write |
+| `--ci` / `--strict` | off | Exit 1 when an SLO budget misses (needs `--max-p95` / `--max-error-rate` / `--max-lag`). Reports still write. Disables live TUI |
+| `--plain` | off | Disable the live TUI (also off with `--ci` or a pipe) |
 | `--max-p95` | | SLO: max P95 latency (ms) |
 | `--max-error-rate` | | SLO: max error rate (`0`–`1`) |
 | `--max-lag` | | SLO: max head lag (blocks) |
