@@ -1,8 +1,10 @@
 # Docker and GitHub Action
 
-Zero-setup CI gate: run RPCBench in Actions or a container, upload HTML/JSON/MD, fail when SLO budgets miss.
+Run RPCBench in CI or a container, upload HTML / JSON / MD, and **fail the job** when an SLO budget misses.
 
-## CLI budgets (#28)
+Also see the [README](../README.md) quick start and [METHODOLOGY](METHODOLOGY.md).
+
+## SLO budgets
 
 | Flag | Meaning |
 | --- | --- |
@@ -16,48 +18,49 @@ Zero-setup CI gate: run RPCBench in Actions or a container, upload HTML/JSON/MD,
 ```bash
 rpcbench compare --endpoints endpoints.yaml --out-dir out \
   --ci --max-p95 500 --max-error-rate 0.05
-echo $?   # 1 if any checked endpoint missed a budget
+echo $?          # 1 if any checked endpoint missed a budget
 open out/report.html
 ```
 
-Misses print on stderr (`SLO  failed` + which budget). Passing runs print `SLO  ok`.
+Stderr shows `SLO  ok` or `SLO  failed` plus which budget missed.
 
 ## Docker
 
 Image: `ghcr.io/ehsanhajian/rpcbench` (published on `v*` tags).
 
 ```bash
+docker pull ghcr.io/ehsanhajian/rpcbench:latest
 docker run --rm -v "$PWD:/work" -w /work ghcr.io/ehsanhajian/rpcbench:latest \
   compare --endpoints endpoints.yaml --out-dir out --ci --max-p95 500
 ```
 
-Build locally: `docker build -t rpcbench .`
+Local build: `docker build -t rpcbench .`
 
 ## GitHub Action
 
-Composite action at the repo root (`action.yml`). Inputs map to CLI flags; artifacts upload as `rpcbench-report`.
+Composite action at the repo root (`action.yml`). Artifacts upload as `rpcbench-report`.
 
 ```yaml
-- uses: ehsanhajian/RPCBench@v0.6.1
-  with:
-    endpoints: endpoints.yaml
-    workload: general
-    budget: short
-    max-p95: "500"
-    max-error-rate: "0.05"
-    max-lag: "3"
-    output-dir: rpcbench-out
-```
-
-Pin a release tag (e.g. `@v0.6.1`). Omit `version` for latest PyPI, or set it to match the Action tag.
-
-Schedule or PR:
-
-```yaml
+name: rpcbench
 on:
   schedule:
     - cron: "0 */6 * * *"
   pull_request:
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ehsanhajian/RPCBench@v0.6.1
+        with:
+          endpoints: endpoints.yaml
+          budget: short
+          max-p95: "500"
+          max-error-rate: "0.05"
+          # max-lag: "3"
+          output-dir: rpcbench-out
 ```
 
-Diff regressions: keep JSON history and use `rpcbench diff` (exit `1` when the previous primary got worse beyond the similar-band). The Action focuses on absolute SLO budgets; wire `diff` as a second step if you need relative gates.
+Pin a release tag (`@v0.6.1` or later). Omit `version` for latest PyPI, or set it to match the Action tag.
+
+**Absolute vs relative gates:** the Action checks SLO budgets. For regressions vs a previous run, keep JSON history and add `rpcbench diff` as a second step (exit `1` when the previous primary got worse beyond the similar-band).

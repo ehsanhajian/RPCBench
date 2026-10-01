@@ -1,21 +1,21 @@
-# For node operators: pick a primary and a fallback RPC from your VPS
+# Operator post (paste template)
 
-Published as part of RPCBench discoverability (#66). Paste or link this when posting to EthStaker / Solana RPC / operator chats.
+Short copy for EthStaker / Solana RPC / operator chats. Landing: https://ehsanhajian.github.io/RPCBench/
 
 ---
 
-**TL;DR:** [`rpcbench`](https://github.com/ehsanhajian/RPCBench) is a small local CLI that answers *which RPC is fastest for this workload from this machine* — latency, P50/P95/P99, errors, freshness — without a SaaS account.
+**TL;DR:** [RPCBench](https://github.com/ehsanhajian/RPCBench) is a local CLI that answers *which RPC is fastest for this workload from this machine* — latency, P50/P95/P99, errors, freshness — with no SaaS account.
 
 ```bash
 pip install rpcbench
 rpcbench compare --endpoints endpoints.yaml
-# on a VPS with a browser UI:
+
+# VPS + browser UI (no auth — open the port only when you mean to):
 rpcbench compare --endpoints endpoints.yaml --web --web-host 0.0.0.0
 ```
 
-Landing: https://ehsanhajian.github.io/RPCBench/  
-PyPI: https://pypi.org/project/rpcbench/
+- Site: https://ehsanhajian.github.io/RPCBench/
+- PyPI: https://pypi.org/project/rpcbench/
+- Demo: https://ehsanhajian.github.io/RPCBench/images/cli-compact.svg
 
-It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)) and **not** validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). You bring your own endpoints; no public catalog.
-
-Demo (CLI): https://ehsanhajian.github.io/RPCBench/images/cli-compact.svg
+Not a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nodeprobe)). Not validator monitoring ([ValidatorPulse](https://github.com/ehsanhajian/ValidatorPulse)). You bring your own endpoints.
