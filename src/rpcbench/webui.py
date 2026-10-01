@@ -1,4 +1,4 @@
-"""Localhost-only live web UI during a compare. No third-party UI deps."""
+"""Live web UI during a compare. Default bind is 127.0.0.1; opt-in for VPS."""
 
 from __future__ import annotations
 
@@ -19,10 +19,32 @@ from rpcbench.tui import ProviderLive, _mean
 _DEFAULT_HOST = "127.0.0.1"
 _DEFAULT_PORT = 8765
 _LATENCY_WINDOW = 120
+_LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+class WebHostError(ValueError):
+    """Invalid --web-host."""
+
+
+def normalize_web_host(host: str) -> str:
+    """Return a bind address. Default callers use 127.0.0.1; VPS uses 0.0.0.0."""
+    text = (host or "").strip()
+    if not text:
+        raise WebHostError("--web-host is empty")
+    if text.lower() == "localhost":
+        return "127.0.0.1"
+    # Reject whitespace / control chars; allow IPv4, IPv6, hostnames, 0.0.0.0, ::
+    if any(ch.isspace() for ch in text):
+        raise WebHostError(f"invalid --web-host {host!r}")
+    return text
+
+
+def is_loopback_host(host: str) -> bool:
+    return host in _LOOPBACK or host == "127.0.0.1"
 
 
 class LiveWebUi:
-    """Serve live charts on 127.0.0.1 and the final HTML report."""
+    """Serve live charts and the final HTML report (default: 127.0.0.1)."""
 
     def __init__(
         self,
@@ -34,10 +56,8 @@ class LiveWebUi:
         open_browser: bool = True,
         log: TextIO | None = None,
     ) -> None:
-        if host not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValueError("web UI binds localhost only")
         self.enabled = enabled
-        self.host = "127.0.0.1" if host == "localhost" else host
+        self.host = normalize_web_host(host)
         self.port = int(port)
         self.open_browser = open_browser
         self.log = log or sys.stderr
@@ -64,18 +84,30 @@ class LiveWebUi:
         if port == 0:
             port = _free_port(self.host)
         handler = _make_handler(self)
-        # Bind explicitly to loopback; refuse anything else.
         httpd = ThreadingHTTPServer((self.host, port), handler)
         httpd.daemon_threads = True
         self._httpd = httpd
         self.port = httpd.server_address[1]
-        self.url = f"http://{self.host}:{self.port}/"
+        browse_host = "127.0.0.1" if self.host in {"0.0.0.0", "::"} else self.host
+        # Bracket IPv6 literals in URLs.
+        if ":" in browse_host and not browse_host.startswith("["):
+            url_host = f"[{browse_host}]"
+        else:
+            url_host = browse_host
+        self.url = f"http://{url_host}:{self.port}/"
         self._thread = threading.Thread(
             target=httpd.serve_forever, name="rpcbench-webui", daemon=True
         )
         self._thread.start()
-        print(f"rpcbench: web UI {self.url}", file=self.log)
-        if self.open_browser:
+        if is_loopback_host(self.host):
+            print(f"rpcbench: web UI {self.url}", file=self.log)
+        else:
+            print(
+                f"rpcbench: web UI bound {self.host}:{self.port} "
+                f"(no auth — open http://<this-host>:{self.port}/)",
+                file=self.log,
+            )
+        if self.open_browser and is_loopback_host(self.host):
             try:
                 webbrowser.open(self.url)
             except Exception:
@@ -207,7 +239,8 @@ def should_wait_web(*, ci: bool, stdin: TextIO | None = None) -> bool:
 
 
 def _free_port(host: str) -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    family = socket.AF_INET6 if ":" in host and host.count(":") > 1 else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
         return int(sock.getsockname()[1])
 

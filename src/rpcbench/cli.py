@@ -63,7 +63,7 @@ from rpcbench.report import RankError, format_json, format_run, normalize_rank_b
 from rpcbench.prometheus import format_prometheus
 from rpcbench.slo import evaluate_slo, format_slo_failures
 from rpcbench.tui import LiveTui, install_abort_flag, restore_sigint, wants_tui
-from rpcbench.webui import LiveWebUi, should_wait_web, wants_web
+from rpcbench.webui import LiveWebUi, WebHostError, normalize_web_host, should_wait_web, wants_web
 from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
@@ -187,7 +187,7 @@ def build_parser(*, full: bool = False) -> argparse.ArgumentParser:
     _add_run_parser(
         sub,
         "ui",
-        "Same as compare --web (localhost live UI)",
+        "Same as compare --web (live UI; default 127.0.0.1)",
         full=full,
         show=True,
         force_web=True,
@@ -589,8 +589,17 @@ def _add_run_parser(
         "--web",
         action="store_true",
         help=(
-            "Open a localhost-only live web UI (latency / errors / RPS / lag) "
-            "and show the HTML report when the run finishes"
+            "Open a live web UI (latency / errors / RPS / lag) and show the HTML "
+            "report when the run finishes (default bind 127.0.0.1)"
+        ),
+    )
+    run.add_argument(
+        "--web-host",
+        default="127.0.0.1",
+        metavar="ADDR",
+        help=(
+            "Bind address for --web (default 127.0.0.1). "
+            "Use 0.0.0.0 on a VPS to reach the UI from another machine (no auth)"
         ),
     )
     run.add_argument(
@@ -598,7 +607,7 @@ def _add_run_parser(
         type=int,
         default=8765,
         metavar="PORT",
-        help="Port for --web (default 8765; 0 = ephemeral). Always binds 127.0.0.1",
+        help="Port for --web (default 8765; 0 = ephemeral)",
     )
     run.add_argument(
         "--max-p95",
@@ -1003,6 +1012,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if getattr(args, "web_port", 8765) < 0:
         print("rpcbench: --web-port must be >= 0", file=sys.stderr)
         return 2
+    try:
+        web_host = normalize_web_host(getattr(args, "web_host", "127.0.0.1"))
+    except WebHostError as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
     if args.max_error_rate is not None and (
         args.max_error_rate < 0 or args.max_error_rate > 1
     ):
@@ -1219,6 +1233,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     web = LiveWebUi(
         [ep.name for ep in config.endpoints],
+        host=web_host,
         port=getattr(args, "web_port", 8765),
         enabled=wants_web(web=bool(getattr(args, "web", False)), ci=args.ci),
         open_browser=not args.ci,

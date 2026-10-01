@@ -11,7 +11,13 @@ import pytest
 
 from rpcbench.cli import build_parser, main
 from rpcbench.rpc import ProbeResult
-from rpcbench.webui import LiveWebUi, should_wait_web, wants_web
+from rpcbench.webui import (
+    LiveWebUi,
+    WebHostError,
+    normalize_web_host,
+    should_wait_web,
+    wants_web,
+)
 
 
 def test_wants_web() -> None:
@@ -28,9 +34,91 @@ def test_should_wait_web_respects_ci() -> None:
     assert should_wait_web(ci=False, stdin=Tty()) is True
 
 
-def test_refuses_public_bind() -> None:
-    with pytest.raises(ValueError, match="localhost"):
-        LiveWebUi(["a"], host="0.0.0.0", enabled=True)
+def test_normalize_web_host() -> None:
+    assert normalize_web_host("localhost") == "127.0.0.1"
+    assert normalize_web_host("0.0.0.0") == "0.0.0.0"
+    assert normalize_web_host("192.168.1.10") == "192.168.1.10"
+    with pytest.raises(WebHostError):
+        normalize_web_host("  ")
+
+
+def test_public_bind_allowed(monkeypatch) -> None:
+    monkeypatch.setattr("rpcbench.webui.webbrowser.open", lambda url: True)
+    ui = LiveWebUi(["a"], host="0.0.0.0", port=0, open_browser=False)
+    url = ui.start()
+    assert url is not None
+    assert ui.host == "0.0.0.0"
+    # Browse URL uses loopback when bound on all interfaces.
+    assert url.startswith("http://127.0.0.1:")
+    ui.stop()
+
+
+def test_cli_web_host_public(tmp_path: Path, monkeypatch, capsys) -> None:
+    cfg = tmp_path / "e.yaml"
+    cfg.write_text(
+        "endpoints:\n  - name: local\n    url: http://127.0.0.1:1\n",
+        encoding="utf-8",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        ident = payload.get("id", 1)
+        method = payload.get("method")
+        if method == "eth_chainId":
+            result: object = "0x1"
+        elif method == "eth_blockNumber":
+            result = "0x10"
+        elif method == "eth_getBlockByNumber":
+            result = {
+                "number": "0x10",
+                "hash": "0x" + "11" * 32,
+                "parentHash": "0x" + "22" * 32,
+            }
+        else:
+            result = "0x0"
+        return httpx.Response(
+            200, json={"jsonrpc": "2.0", "id": ident, "result": result}
+        )
+
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(
+        "rpcbench.run.make_client",
+        lambda **kwargs: httpx.Client(transport=transport, timeout=5.0),
+    )
+    monkeypatch.setattr("rpcbench.webui.webbrowser.open", lambda url: True)
+    monkeypatch.setattr("rpcbench.cli.wants_tui", lambda **kwargs: False)
+    monkeypatch.setattr("rpcbench.cli.should_wait_web", lambda **kwargs: False)
+
+    seen: list[str] = []
+
+    class Tracking(LiveWebUi):
+        def start(self):
+            seen.append(self.host)
+            return super().start()
+
+    monkeypatch.setattr("rpcbench.cli.LiveWebUi", Tracking)
+    code = main(
+        [
+            "compare",
+            "--endpoints",
+            str(cfg),
+            "--method",
+            "eth_blockNumber",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--plain",
+            "--web",
+            "--web-host",
+            "0.0.0.0",
+            "--web-port",
+            "0",
+        ]
+    )
+    assert code == 0
+    assert seen == ["0.0.0.0"]
+    assert "no auth" in capsys.readouterr().err
 
 
 def test_live_api_and_stop(monkeypatch) -> None:
@@ -94,13 +182,24 @@ def test_live_api_and_stop(monkeypatch) -> None:
 
 def test_parser_web_and_ui() -> None:
     ns = build_parser().parse_args(
-        ["compare", "--endpoints", "x.yaml", "--web", "--web-port", "0"]
+        [
+            "compare",
+            "--endpoints",
+            "x.yaml",
+            "--web",
+            "--web-host",
+            "0.0.0.0",
+            "--web-port",
+            "0",
+        ]
     )
     assert ns.web is True
+    assert ns.web_host == "0.0.0.0"
     assert ns.web_port == 0
     ui = build_parser().parse_args(["ui", "--endpoints", "x.yaml"])
     assert ui.web is True
     assert ui.command == "ui"
+    assert ui.web_host == "127.0.0.1"
 
 
 def test_help_lists_web() -> None:
@@ -202,7 +301,7 @@ def test_cli_web_stop_writes_reports(tmp_path: Path, monkeypatch, capsys) -> Non
     assert data.get("aborted") is True
 
 
-def test_cli_web_binds_loopback_only(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cli_web_binds_loopback_by_default(tmp_path: Path, monkeypatch, capsys) -> None:
     cfg = tmp_path / "e.yaml"
     cfg.write_text(
         "endpoints:\n  - name: local\n    url: http://127.0.0.1:1\n",
