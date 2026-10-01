@@ -2,19 +2,67 @@
 
 What RPCBench numbers are — and what they are not. Tool split: [BOUNDARY.md](BOUNDARY.md).
 
+## Contents
+
+1. [Clocks and samples](#clocks-and-samples)
+2. [Method mix](#method-mix)
+3. [Custom YAML profiles](#custom-yaml-profiles)
+4. [Workload coverage](#workload-coverage)
+5. [Sample budgets](#sample-budgets)
+6. [Paired compare](#paired-compare)
+7. [Ranking and similar-band](#ranking-and-similar-band)
+8. [Freshness, consistency, client, tags](#head-freshness)
+9. [Extra reads](#rate-limit-reliability) (burst, batch, concurrency, throughput, shapes, logs, simulate, archive, history, WS, Yellowstone)
+10. [Capture and replay](#traffic-capture-and-replay)
+11. [Stats](#p99) (P99, reliability, verdict, route, jitter, HTTP timing/transport)
+12. [Non-claims](#non-claims)
+13. [Vantage and multi-region](#vantage-and-multi-region)
+14. [Report watermark](#report-watermark)
+
+---
+
 ## Clocks and samples
 
-Latency uses a monotonic clock. Warmup is excluded from stats. Percentiles, jitter, min/mean/max, and the histogram use **successful** samples only. Error rate is failed/attempted.
+Latency uses a monotonic clock. **Warmup is excluded** from stats. Percentiles, jitter, min/mean/max, and the histogram use **successful** samples only. Error rate is failed / attempted.
+
+---
 
 ## Method mix
 
-Default CLI is the **general** mix at **short** size when you pass only `--endpoints`. **`--workload wallet|indexer|trading|nft|tracing`** is the other documented job (`wallet` and `trading` also run simulate; `indexer` also runs logs-range, archive, and lookback). **`--profile mix`** is the old name for general. A single call is **`--method`** (head is `eth_blockNumber`) or **`--preset`**. `--budget short|standard|long` sets how many rounds to take and does not turn extras on. **`--samples` / `--warmup` apply per mix round**; each step’s **weight** is how many times that call appears in a round. Ranking, Comparison, and Fastest use **all mix samples together**, not only head. The Methods table (`--verbose`, and compact CLI when an optional step is in the mix) is per step.
+Default CLI is the **general** mix at **short** size when you pass only `--endpoints`.
 
-An indexer winner is not a wallet winner: ranking and coverage are **this mix only**. Privileged debug recon (`debug_memStats`, `debug_verbosity`, …) is never in catalogs. `trace_*` and `debug_traceCall` are **`--workload tracing`** (or a YAML mix you write) only.
+| Flag | Role |
+| --- | --- |
+| `--workload wallet\|indexer\|trading\|nft\|tracing` | Named job (`wallet` / `trading` also simulate; `indexer` also logs-range / archive / lookback) |
+| `--profile mix` | Alias for general |
+| `--method` / `--preset` | Single call (head = `eth_blockNumber`) |
+| `--budget short\|standard\|long` | How many rounds — does **not** turn extras on |
+| `--samples` / `--warmup` | Apply **per mix round**; each step’s **weight** is how often it appears in a round |
 
-Family catalogs are **EVM**, **Solana**, **Substrate**, **Cosmos**, **Aptos**, **Sui**, **NEAR**, **Starknet**, **Bitcoin**, and **TON**. One EVM adapter covers every chain id, including ones RPCBench has not listed. Solana uses `getSlot` / `getLatestBlockhash` / `getBalance` / `getAccountInfo` / `getSignaturesForAddress` and `slotSubscribe`. Substrate (Polkadot, Kusama, parachains — one adapter) uses `chain_getHeader` / `chain_getBlockHash` / `system_chain` / `state_getRuntimeVersion` / `system_health` / `system_syncState` and `chain_subscribeNewHeads`. Cosmos (CometBFT JSON-RPC — one adapter) uses `status` / `block` / `abci_info` / `net_info` / `num_unconfirmed_txs` / `consensus_state` and `subscribe` `tm.event='NewBlock'`. Aptos (fullnode REST — one adapter) uses ledger GET `/v1`, `accounts/0x1`, resources, transactions, `estimate_gas_price`, and NewBlock events. WebSocket subscribe is skipped (no default stream in this mix). Sui (JSON-RPC — one adapter) uses `sui_getLatestCheckpointSequenceNumber` / `sui_getCheckpoint` / `sui_getObject` / `suix_getBalance` / `suix_getReferenceGasPrice` / `suix_queryTransactionBlocks` / `suix_queryEvents`. WebSocket subscribe is skipped. NEAR (JSON-RPC — one adapter) uses `status` / `block` / `query` `view_account` / `gas_price` / `network_info` / `validators`. WebSocket subscribe is skipped. Starknet (JSON-RPC — one adapter) uses `starknet_blockNumber` / `starknet_chainId` / `starknet_specVersion` / `starknet_getBlockWithTxHashes` / `starknet_syncing` / `starknet_getClassHashAt` / `starknet_getNonce` / `starknet_getStorageAt` / bounded `starknet_getEvents`. WebSocket subscribe is skipped. Bitcoin (JSON-RPC — one adapter) uses `getblockchaininfo` / `getblockcount` / `getnetworkinfo` / `getbestblockhash` / `getblock` / `getmempoolinfo` / cheap `getrawtransaction`, with ~10m block-time lag. Cookie or `user`/`password` become HTTP Basic and stay out of reports. WebSocket subscribe is skipped. TON (toncenter-style JSON-RPC — one adapter) uses `getMasterchainInfo` / `getConsensusBlock` / `getBlockHeader` / `getShards` / `getAddressInformation` / `getAddressBalance` / `getWalletInformation` / `getConfigParam`, with masterchain seqno freshness. API keys via `headers` / `api_key` query stay out of reports. WebSocket subscribe is skipped. EVM-only extras (logs-range, archive, lookback, eth simulate, tracing) skip with reason `family` on non-EVM families. `family: auto` or `--family auto` sends only `eth_chainId`, then `getHealth`, then `system_health`, then `status` (Cosmos `node_info`), then `sui_getLatestCheckpointSequenceNumber`, then `network_info` (NEAR), then `starknet_blockNumber`, then `getblockchaininfo`, then `getMasterchainInfo`, then a ledger GET, and names the family. That handshake is not a finding. Other declared families error instead of sending the wrong methods.
+Ranking, Comparison, and Fastest use **all mix samples together**, not only head. An indexer winner is not a wallet winner — ranking and coverage are **this mix only**.
 
-Shared read-only payloads (same on every provider):
+Privileged debug recon (`debug_memStats`, `debug_verbosity`, …) is never in catalogs. `trace_*` and `debug_traceCall` are **`--workload tracing`** (or YAML) only.
+
+### Families
+
+One adapter per protocol family (not per EVM chain id). Unknown EVM chain ids still use the EVM mix.
+
+| Family | Identity / head (examples) | Notes |
+| --- | --- | --- |
+| **evm** | `eth_chainId`, `eth_blockNumber` | One adapter for every chain id |
+| **solana** | `getHealth`, `getSlot` | Optional Yellowstone via `grpc` URL |
+| **substrate** | `system_health`, `chain_getHeader` | Polkadot / Kusama / parachains |
+| **cosmos** | `status` | CometBFT JSON-RPC (not Cosmos EVM `eth_*`) |
+| **aptos** | ledger GET `/v1` | REST fullnode |
+| **sui** | `sui_getLatestCheckpointSequenceNumber` | WS subscribe skipped in default mix |
+| **near** | `status` / `network_info` | WS skipped |
+| **starknet** | `starknet_blockNumber` | WS skipped |
+| **bitcoin** | `getblockchaininfo` | Cookie / Basic auth; ~10m block time |
+| **ton** | `getMasterchainInfo` | API keys via headers stay out of reports |
+
+`family: auto` / `--family auto` tries identity handshakes in order and names the family. That handshake is not a finding. EVM-only extras (logs-range, archive, lookback, eth simulate, tracing) skip with reason `family` on non-EVM.
+
+### Shared EVM payloads
 
 | Step | Method | Params |
 | --- | --- | --- |
@@ -26,30 +74,31 @@ Shared read-only payloads (same on every provider):
 | gas | `eth_estimateGas` | `[{"to": 0x000…0000, "data": "0x"}]` |
 | logs | `eth_getLogs` | `[{fromBlock, toBlock: "latest", address: 0x000…0000}]` |
 | trace | `trace_block` | `["latest"]` |
-| debug | `debug_traceCall` | `[{to: 0x000…0000, data: "0x"}, "latest", {tracer: "callTracer", timeout: "1s"}]` |
+| debug | `debug_traceCall` | fixture call + `callTracer`, 1s timeout |
 
-Logs are one block and one address. No unbounded scans. No writes. Logs appear only in mixes that need them. `eth_estimateGas` appears in **wallet** and **trading** only. `eth_simulateV1` is not in these catalogs (`--simulate` or a YAML profile). `trace_block` is **`--workload tracing`** only: one recent block, `trace` types — not `vmTrace`, not `trace_filter`. `debug_traceCall` is the same mix: fixture call, `callTracer`, 1s timeout cap. Both are optional (not-offered / restricted / timeout is skip, not a ranking miss).
+Logs are **one block**, one address. No unbounded scans. No writes. `eth_estimateGas` is **wallet** / **trading** only. `eth_simulateV1` is not in core catalogs (`--simulate` or YAML). Trace/debug are **tracing** only and optional (skip ≠ ranking miss).
 
-| `--workload` | What it models | Steps × weight |
+| `--workload` | Models | Steps × weight |
 | --- | --- | --- |
 | **general** | Balanced dApp reads | head 1, chainId 1, block 1, balance 1, call 1, logs 1 |
-| **wallet** | Balances, calls, and gas | head 1, chainId 1, block 1, balance 4, call 3, gas 2 |
-| **indexer** | Blocks and bounded logs | head 1, chainId 1, block 3, call 1, logs 4 |
-| **trading** | Fresh head, calls, and gas | head 3, chainId 1, block 2, call 4, gas 2 |
-| **nft** | Calls and bounded logs | head 1, chainId 1, block 1, balance 1, call 3, logs 3 |
-| **tracing** | Optional `trace_block` + `debug_traceCall` | head 1, chainId 1, block 1, trace 4, debug 2 |
+| **wallet** | Balances, calls, gas | head 1, chainId 1, block 1, balance 4, call 3, gas 2 |
+| **indexer** | Blocks + bounded logs | head 1, chainId 1, block 3, call 1, logs 4 |
+| **trading** | Fresh head, calls, gas | head 3, chainId 1, block 2, call 4, gas 2 |
+| **nft** | Calls + bounded logs | head 1, chainId 1, block 1, balance 1, call 3, logs 3 |
+| **tracing** | Optional traces | head 1, chainId 1, block 1, trace 4, debug 2 |
 
-Example: `--workload wallet --budget short` is 3 rounds × 12 weighted calls = 36 timed samples per endpoint (plus extra freshness/hash/tag reads). `--workload indexer --budget short` is 3 × 10, and four of every ten are bounded `eth_getLogs`.
+Example: `--workload wallet --budget short` → 3 rounds × 12 weighted calls = 36 timed samples per endpoint (plus freshness / hash / tag extras).
+
+---
 
 ## Custom YAML profiles
 
-`--profile FILE.yaml` loads a mix without a code change. Named catalogs stay `--workload general|wallet|…|tracing` / `--profile mix`. Do not combine a file with `--method`, `--preset`, or `--params`.
+`--profile FILE.yaml` loads a custom mix. Do not combine a file with `--method`, `--preset`, or `--params`.
 
 ```yaml
 name: dex
 notes: Uniswap-style reads
-timeout: 8          # used when --timeout is omitted
-# contract: "0x…"   # optional default for source: known_contract
+timeout: 8
 methods:
   - method: eth_blockNumber
     weight: 1
@@ -65,210 +114,178 @@ methods:
     source: latest_head
 ```
 
-`source` fills params from a shared snapshot taken **before** timed samples (not mixed into ranking):
+`source` fills params from a shared snapshot **before** timed samples (not mixed into ranking):
 
-| Source | What it fills | Fallback if the chain cannot supply data |
+| Source | Fills | Fallback |
 | --- | --- | --- |
-| `latest_head` | Pin block tag to the cohort `eth_blockNumber` | `"latest"` |
-| `recent_block` | A block in `[head − 256, head]` from `--seed` | `"latest"` |
-| `known_contract` | WETH (or wrapped native) for chainId 1 / 10 / 8453 / 137, or YAML `contract:` | zero address |
-| `seeded_address` | `0x` + SHA-256(`rpcbench:{seed}:{step}`)[:20] | (always determined; no chain read) |
+| `latest_head` | Cohort `eth_blockNumber` pin | `"latest"` |
+| `recent_block` | Block in `[head − 256, head]` from `--seed` | `"latest"` |
+| `known_contract` | Wrapped native for known chainIds, or YAML `contract:` | zero address |
+| `seeded_address` | `0x` + SHA-256(`rpcbench:{seed}:{step}`)[:20] | always determined |
 
-The same `--seed` + profile + fetched head produces the same method/param sequence on every provider and on a re-run of that snapshot. A live head that moved between runs changes absolute block numbers; the offset and seeded address stay fixed. Static `params:` are allowed instead of `source`, not both on one step.
+Same `--seed` + profile + fetched head → same sequence on every provider. Live head movement between runs changes absolute block numbers; offset and seeded address stay fixed. Static `params:` and `source` are mutually exclusive per step.
 
-Logs from these sources stay **one block**. Unbounded scans are out of scope (`--logs-range` is the extra range table). `debug_memStats` / `debug_verbosity` / admin / txpool / `trace_filter` are rejected. `trace_block` / `trace_call` / `debug_traceCall` in YAML are always optional (unsupported / restricted / timeout is skip, not a ranking miss). Writes still need `--allow-writes`. `eth_simulateV1` in YAML is always optional (not-offered is skip, not a ranking miss).
+Logs from these sources stay **one block**. Rejected in YAML: `debug_memStats` / `debug_verbosity` / admin / txpool / `trace_filter`. Optional: `trace_*` / `debug_traceCall` / `eth_simulateV1`. Writes need `--allow-writes`.
 
-JSON `payload` records `source` (`chain` / `seed` / `yaml` / `fixture`), `head`, `chain_id`, and `fallback`. Compact CLI, HTML, CSV, and markdown print the same facts.
+JSON `payload` records `source` (`chain` / `seed` / `yaml` / `fixture`), `head`, `chain_id`, and `fallback`.
+
+---
 
 ## Workload coverage
 
-Coverage is **this workload only**: each mix step is timed OK, an error class, or **skip** (JSON-RPC method not found / not offered). It is product fit, not a surface scan. `--workload indexer` failing `eth_getLogs` is a coverage miss for an indexer, not a vulnerability. `--workload wallet` does not send logs, so a node that cannot serve `eth_getLogs` can still look ready for a wallet. Missing **required** steps take `~` in Ranking (same as high error, stale, or disagree). **`eth_simulateV1`**, **`trace_*`**, and **`debug_traceCall`** are optional: unsupported / restricted / timeout is skip, not a ranking miss and not mixed into error rate. Default catalogs never include admin/personal/miner/engine/txpool, never include `debug_memStats` / `debug_verbosity`, never include writes or `eth_simulateV1`. `trace_*` and `debug_traceCall` are `--workload tracing` (or YAML) only.
+Coverage is **this workload only**: each mix step is OK, an error class, or **skip** (method not offered). Product fit — not a surface scan.
 
-JSON `coverage` lists the same steps and cells. No `rpc_modules` walk. No `discover`.
+- Required miss → `~` in Ranking (same as high error, stale, disagree)
+- Optional (`eth_simulateV1`, `trace_*`, `debug_traceCall`) unsupported / restricted / timeout → skip, not a ranking miss
+
+Default catalogs never include admin / personal / miner / engine / txpool, never `debug_memStats` / `debug_verbosity`, never writes. No `rpc_modules` walk. No `discover`.
+
+---
 
 ## Sample budgets
 
-`--budget short|standard|long` is how long we sample, not a Nodeprobe scan profile.
+`--budget` is how long we sample — not a Nodeprobe scan profile.
 
-| Budget | Samples | Warmup | Timeout | Max duration | Paired wave |
-| --- | --- | --- | --- | --- | --- |
-| **short** | 3 | 0 | 5s | 30s | all providers |
-| **standard** (default) | 10 | 1 | 10s | 600s | all providers |
-| **long** | 50 | 2 | 15s | 1800s | all providers |
+| Budget | Samples | Warmup | Timeout | Max duration |
+| --- | --- | --- | --- | --- |
+| **short** | 3 | 0 | 5s | 30s |
+| **standard** | 10 | 1 | 10s | 600s |
+| **long** | 50 | 2 | 15s | 1800s |
 
-`--samples`, `--warmup`, `--timeout`, and `--max-duration` override the table. HTTP cap is `--max-requests` (default 128). `--sequential` is A-then-B instead of a paired wave.
+Overrides: `--samples`, `--warmup`, `--timeout`, `--max-duration`. HTTP cap: `--max-requests` (default 128). `--sequential` = A-then-B instead of paired.
 
-`long` does not add archive, history, WebSocket, or tracing. Those methods appear only when the workload asks (for example `--workload indexer` includes bounded logs; `--workload wallet` does not; `--workload tracing` times optional `trace_block` and `debug_traceCall`).
+`long` does **not** add archive, history, WebSocket, or tracing — only the workload does.
+
+---
 
 ## Paired compare
 
-Default compare is **paired**: one shared read-only sequence; each sample is raced to every provider. `--sequential` is A-then-B (heads and caches can drift).
+Default is **paired**: one shared read-only sequence; each sample is raced to every provider. `--sequential` is A-then-B (heads and caches can drift).
+
+---
 
 ## Ranking and similar-band
 
-Default rank key is **P95** of successes (`--rank-by` for p50, p99, mean, or rps).
+Default rank key: **P95** of successes (`--rank-by` for p50, p99, mean, or rps).
 
-**Similar-band** (default **10%**, `--similar-band 0.10`): two values are similar if the worse is within that fraction of the better. Similar endpoints **share a place**. Fastest is that place-1 set. 81ms vs 84ms is not a victory.
+**Similar-band** (default **10%**): worse within that fraction of better → **share a place**. Fastest is that place-1 set. 81ms vs 84ms is not a victory.
 
-An endpoint whose **error rate is above the same band**, whose head is **stale**, whose pinned block **hash disagrees** with the cohort, or whose mix is missing a required step, does not get a numbered place or Fastest. It is listed after placed rows as `~`. Failed endpoints (`n_ok=0`) stay last.
+No numbered place / Fastest when: error rate above the band, **stale** head, pinned hash **disagrees**, or required mix coverage miss → listed as `~`. Failed (`n_ok=0`) last.
 
-We use this documented band instead of bootstrap confidence intervals. Typical `--samples 10` is too small for a stable P95 CI.
+We use this band instead of bootstrap CIs; typical `--samples 10` is too small for a stable P95 CI.
+
+---
 
 ## Head freshness
 
-Each provider’s head is the first timed `eth_blockNumber` in the workload (default and the app mixes already include it). If the workload has no `eth_blockNumber` (for example `--preset balance`), one extra paired `eth_blockNumber` wave runs after the timed samples. Extra heads are **not** mixed into latency stats.
+Head = first timed `eth_blockNumber` in the workload (or one extra paired wave if the mix has none). Extra heads are **not** mixed into latency.
 
-**Cohort tip** is the upper median of known heights (`ordered[len // 2]`). Two providers at 90 and 100 → tip 100.
+- **Cohort tip** = upper median of known heights
+- **Lag** = `max(0, tip − height)`; ahead of median → lag 0
+- **Stale** when `lag_blocks > --stale-blocks` (default 2)
+- Lag time ≈ `lag_blocks ×` seconds/block (`--block-time`, or known chain from `eth_chainId`, else 12s)
 
-**Lag** is `max(0, tip − height)` blocks. Ahead of the median is lag 0, fresh. Estimated time is `lag_blocks ×` seconds per block. `--block-time` overrides. If the mix already returned `eth_chainId`, a small known-chain table is used (Ethereum 12s, Polygon/Base/Optimism 2s, BNB 3s, Arbitrum 0.25s). Otherwise 12s.
-
-**Stale** when `lag_blocks > --stale-blocks` (default 2; strictly exceeds). Unknown when the head could not be parsed. This is a compare-time freshness verdict, not ValidatorPulse monitoring and not a reading of `eth_syncing`.
+Compare-time freshness — not ValidatorPulse, not `eth_syncing`.
 
 ## Head hash consistency
 
-After freshness, one paired `eth_getBlockByNumber(pin, false)` is sent to every provider. Extra hashes are **not** mixed into latency stats.
+After freshness: one paired `eth_getBlockByNumber(pin, false)`. Pin = `--block` or cohort median.
 
-**Pin** is `--block` (hex, decimal, `latest`, or `cohort`) when set. Otherwise the cohort median head from this run. Use `--block` when heads naturally diverge by one block.
+- Unique majority hash → **agree** for matchers
+- 1–1 split → everyone with a hash **disagrees**
+- Missing / unparseable → **unknown** (not disagree)
 
-**Canonical hash** is the unique majority among parsed hashes. A 1–1 split has no canonical hash: both **disagree**. Matching the majority is **agree**. Missing or unparseable results (including `null`) are **unknown**, not disagree — stale already covers a node that does not have the tip.
-
-This is compare-time data agreement, not consensus fork choice and not a security finding.
+Compare-time data agreement — not fork choice, not a security finding.
 
 ## Client label and block tags
 
-`web3_clientVersion` is stored as a **label** when the node volunteers a string. It is omitted when missing or not a client string. RPCBench does not flag outdated versions, CVEs, or “version disclosed” — that is Nodeprobe.
+`web3_clientVersion` is a **label** when volunteered. No outdated / CVE / “disclosed” findings.
 
-**Tags** are one paired snapshot of `eth_getBlockByNumber` for `latest`, `safe`, and `finalized` (second param `false`). Extra tag reads are **not** mixed into ranking samples. Freshness is per tag vs that tag’s cohort median (finalized is behind `latest` by design). JSON-RPC errors on a tag are **skipped** with reason `unsupported`; an empty/`null` result is `empty`. A family that has no `safe`/`finalized` still ranks on the timed workload.
+**Tags:** one paired snapshot each for `latest`, `safe`, `finalized`. Not mixed into ranking. Unsupported tag → skip with reason. Full samples on one tag: `--method eth_getBlockByNumber --params '["finalized", false]'`.
 
-To time a single tag with full `--samples`, pass `--method eth_getBlockByNumber --params '["finalized", false]'`.
+---
 
 ## Rate-limit reliability
 
-HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many requests`, `rate limit`, `compute unit`, …) are class **`rate_limit`**, not a generic 4xx. 401/403 stay `http_4xx` (missing key, not a throttle). RPCBench does not harvest rate-limit headers as a security check.
+HTTP **429** and clear CU/throttle JSON-RPC messages → class **`rate_limit`**. 401/403 stay `http_4xx`.
 
-**`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget, then runs the rest as a steady phase. **`--rps`** caps how often steady samples start (`0` = as fast as responses allow). Neither flag adds requests or searches for a ceiling. Burst vs steady error rate and recovered rps are reported only when `--burst` is set. Extra `latest`/`safe`/`finalized` 429s are listed as `tags=N` on that table; they do not change timed n/err. Load shapes (`--shape flat|ramp|spike|soak`) are a separate bounded extra read — see [Load shapes](#load-shapes).
+**`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget; rest are steady. **`--rps`** caps steady starts. Neither adds requests. Tag 429s show as `tags=N` (not timed n/err). See also [Load shapes](#load-shapes).
 
 ## JSON-RPC batch
 
-**`--batch N`** (default 0 = off, omit N for 3, max 8) is an extra read after timed samples, tags, and client. RPCBench POSTs one JSON array of N copies of the primary workload method (ids `1..N`), then sends the same N calls one-by-one on the same keep-alive client. Reported numbers are wall-clock `batch_ms`, `serial_ms`, and `ratio = serial_ms / batch_ms` (>1 means the batch was faster). These are **not** mixed into ranking, reliability, or Fastest.
+**`--batch N`** (default off; omit N → 3; max 8): one JSON array of N primary-method calls, then N serial. Reports `batch_ms`, `serial_ms`, `ratio`. Not mixed into ranking.
 
-A JSON **array** means the provider accepted batch. A single JSON-RPC **object** (error or otherwise) is **`batch_unsupported`** — a capability result, not a crash. Item-level errors or missing ids are **`partial`**. HTTP 4xx/5xx stay those classes. Huge batches are out of scope; this is not an HTTP/2 multiplexing study.
+- Array response → supported
+- Single object → `batch_unsupported`
+- Item errors → `partial`
 
-Adds **1+N HTTP requests per endpoint**.
+Adds **1+N** requests/endpoint. Not an HTTP/2 study.
 
 ## Concurrent extra read
 
-**`--concurrency N`** (default 0 = off, omit N for 4, max 8) is an extra read after timed samples, tags, and client. RPCBench sends N overlapping HTTP POSTs of the primary workload method, then the same N calls one-by-one on the same keep-alive client. Reported numbers are per-request concurrent P50/P95, serial P50/P95, `ratio = concurrent_p50 / serial_p50` (>1 means in-flight copies were slower), wall-clock `concurrent_ms` / `serial_ms`, and the concurrent error count. These are **not** mixed into ranking, reliability, or Fastest.
-
-`--burst` still overlaps existing timed samples without adding requests. `--batch` is a JSON-RPC array vs serial. `--concurrency` is a bounded extra read, not an unbounded load generator.
-
-Adds **2N HTTP requests per endpoint**.
+**`--concurrency N`** (default off; omit N → 4; max 8): N overlapping POSTs vs N serial. Reports concurrent P50/P95, ratio vs serial, errors. Not mixed into ranking. Adds **2N** requests/endpoint. Bounded — not a load generator.
 
 ## Throughput extra read
 
-**`--throughput N`** (default 0 = off, omit N for 20, max 64) is an extra read after timed samples, tags, and client. RPCBench sends N serial HTTP POSTs of the primary workload method on the same keep-alive client. **`--rps`** caps how often those starts fire (`0` = as fast as responses allow). Reported numbers are successful req/s (`n_ok / duration_s`), wall-clock `duration_ms`, completed count `n`, and `n_fail` (HTTP **429** / CU throttle is class **`rate_limit`**, a rejected request, not a crash). These are **not** mixed into ranking, reliability, or Fastest.
-
-Ranking table `rps` stays `1000 / mean_ms` of the timed samples. `--concurrency` is overlapping extra POSTs vs serial. `--burst` overlaps existing timed samples. `--throughput` is a bounded extra read, not concurrent fan-out and not an unbounded load generator.
+**`--throughput N`** (default off; omit N → 20; max 64): N serial POSTs; successful req/s, duration, completed. `--rps` caps starts. 429 = rejected, not a crash. Ranking table `rps` stays `1000 / mean_ms` of timed samples. Adds **N** requests/endpoint.
 
 ## Load shapes
 
-**`--shape flat|ramp|spike|soak`** (default off) runs a **bounded** load curve after timed samples (and after `--throughput` when both are set). Serial paced starts follow a target RPS curve; results are bucketed every 2s into a time series of **RPS**, **P95**, and **error rate**. Not mixed into ranking, reliability, or Fastest.
+**`--shape flat|ramp|spike|soak`**: bounded paced curve after timed samples. Series every 2s: RPS, P95, error rate. Not mixed into ranking.
 
-| Shape | Duration | Max requests | Concurrency cap | Curve |
+| Shape | Duration | Max req | Cap | Curve |
 | --- | --- | --- | --- | --- |
-| `flat` | 8s | 32 | 2 | constant ~4 rps |
+| `flat` | 8s | 32 | 2 | ~4 rps constant |
 | `ramp` | 12s | 40 | 2 | 1 → 6 rps |
-| `spike` | 10s | 40 | 4 | ~2 rps, spike ~8 rps for 2s mid-run |
-| `soak` | 20s | 48 | 2 | gentle ~2 rps |
+| `spike` | 10s | 40 | 4 | ~2 rps, spike ~8 for 2s |
+| `soak` | 20s | 48 | 2 | ~2 rps |
 
-Starts are **serial** (safe with one HTTP client); the concurrency column is the documented profile ceiling, not unbounded fan-out. Defaults stay short — this is **not** a multi-hour soak against public RPCs. Stop early on `--max-duration` / request budget. Series appear in JSON (`ranking[].shape.series`), the CLI **Shape** table, HTML sparklines, and Prometheus (`rpcbench_shape_*` with `offset_s` / `shape` labels) for Grafana.
-
-Adds **N HTTP requests per endpoint**.
+Starts are serial. Short defaults — not a multi-hour soak. JSON / CLI / HTML / Prometheus `rpcbench_shape_*`.
 
 ## getLogs range scaling
 
-**`--logs-range N`** (default 0 = off, omit N for 1000, allowed 1 / 10 / 100 / 1000) is an extra read after the pinned head is known. Mix catalogs still send `eth_getLogs` as **one block** (`latest→latest`). The extra read uses a **fixed** filter on every provider: `address` is the zero address, no `topics`, `toBlock` is the cohort pin, `fromBlock` is `pin − N + 1`.
-
-Ranges **1, 10, 100, and N** are sent as paired waves. If the pin is below `N − 1` (the chain is too short), that window is **skipped** with reason `head` instead of clamping to genesis (a clamped window would not be an N-block scan). `budget` / `duration` skips are the same as other extra reads. Non-EVM families skip with `family`.
-
-Each cell records latency, JSON-RPC/HTTP error class, response bytes, log count, and **truncation** (a result list of ≥10000 items, or an error that clearly says the log query was too large). A provider that only fails at 1000 blocks is visible in this table. These samples are **not** mixed into ranking, reliability, or Fastest.
-
-Adds **up to 4 HTTP requests per endpoint**.
+**`--logs-range N`** (default off; omit N → 1000; allowed 1/10/100/1000): after pin, same zero-address `eth_getLogs` at 1, 10, 100, and N blocks. Mix logs stay one block. Too-short chain → skip `head`. Truncation recorded. Not mixed into ranking. Up to **4** requests/endpoint. Non-EVM → `family`.
 
 ## Read-only simulation
 
-Trading and wallets live on “would this tx work?”, not `eth_blockNumber`. **`--simulate`** appends any missing `eth_call`, `eth_estimateGas`, and `eth_simulateV1` to the active mix (fixture `{to: zero, data: "0x"}`; simulateV1 is one `blockStateCalls` entry with `validation: false`). Never `eth_send*`. `--workload wallet` and `--workload trading` already include `eth_estimateGas`. `eth_simulateV1` is not in the core catalogs.
-
-These are **timed mix steps** (Methods table, Coverage, ranking) except unimplemented simulateV1: **skip**, dropped from ranking error rate, not a crash. YAML may list the same methods; simulateV1 stays optional.
+**`--simulate`** appends missing `eth_call` / `eth_estimateGas` / `eth_simulateV1` (fixture tx; never `eth_send*`). Wallet and trading turn this on. Unimplemented simulateV1 → **skip**, not a crash. Timed mix steps except optional simulateV1.
 
 ## Optional trace timing
 
-Indexers need to know whether traces are **fast enough**, not whether a public node “leaked” `trace_*` or `debug_*`. **`--workload tracing`** times `trace_block("latest")` (one recent block, `trace` types only — not `vmTrace`, not `trace_filter`) and one cheap `debug_traceCall` (fixture `{to: zero, data: "0x"}`, `callTracer`, 1s timeout). general / wallet / indexer / trading / nft never send those methods. `--budget long` does not turn this on.
-
-Missing, restricted (401/403 / disabled), or timed-out traces are **skip**, not a crash and not a vulnerability. They are not mixed into ranking error rate. YAML may include `trace_block` / `trace_call` / `debug_traceCall` (always optional); `trace_filter`, `debug_memStats`, `debug_verbosity`, and other debug recon stay rejected.
+**`--workload tracing`** times `trace_block("latest")` and a cheap `debug_traceCall`. Other workloads never send those. Missing / restricted / timeout → skip. Not a vulnerability. `--budget long` does not enable this.
 
 ## Archive / historical state
 
-Indexers and wallets need old state, not only `latest`. **`--archive`** is one extra read after the pin is known: `eth_getBalance` of the zero address at **genesis** (`0x0`). Mix catalogs stay on `"latest"`. `--budget long` does not turn this on.
-
-If the cohort pin is below **128** blocks (a typical full-node prune window), the probe is **skipped** with reason `head` instead of calling a block the node still has. Non-EVM families skip with `family`.
-
-Each endpoint is classified **yes** / **no** / **unknown** / **rate-limited**:
-
-- **yes** — hex balance at genesis
-- **no** — pruned / missing-state JSON-RPC (`missing trie node`, `historical state is not available`, …)
-- **rate-limited** — HTTP 429 or CU/throttle
-- **unknown** — timeout, connection, other errors, or skip
-
-Missing archive is a capability result, not a crash and not a vulnerability. These samples are **not** mixed into ranking, reliability, or Fastest. Timed historical-vs-head latency is `--lookback` ([Historical queries](#historical-queries)).
-
-Adds **1 HTTP request per endpoint**.
+**`--archive`**: one `eth_getBalance` at genesis after pin. Classified **yes** / **no** / **unknown** / **rate-limited**. Pin below 128 blocks → skip `head`. Not mixed into ranking. Adds **1** request/endpoint. Indexer turns this on.
 
 ## Historical queries
 
-A genesis yes/no is not enough for indexers: they also need how slow a **non-head** read is. **`--lookback N`** (default 0 = off, omit N for 1000) is an extra read after archive detection: the same `eth_getBalance` of the zero address at **pin − N**, then once at `"latest"` so the two latencies are comparable. Mix catalogs stay on `"latest"`. `--budget long` does not turn this on.
-
-`--lookback` turns on `--archive`. A node classified **no** (pruned) skips when N ≥ 128 (the typical full-node window) with reason `archive`. A **rate-limited** archive probe skips with `rate_limit`. Shallower lookbacks still run — a Geth full node may keep the last ~128 blocks. If the pin is below N, the probe is **skipped** with reason `head`. Missing pin is `pin`. Non-EVM families skip with `family`. When pin − N is genesis and the archive probe already succeeded, that sample is reused instead of sending a second genesis read.
-
-Reported per endpoint: historical latency, latest (head) latency, ratio (`hist / head`), error rate, and a status (`ok` / `skip/…` / error class). These samples are **not** mixed into ranking, reliability, or Fastest. Missing history is skip, not a crash and not a vulnerability.
-
-Adds **up to 2 HTTP requests per endpoint** (plus the archive probe).
+**`--lookback N`** (default off; omit N → 1000): `eth_getBalance` at pin−N vs `latest`. Turns on archive detection; pruned nodes skip with `archive`. Reports hist/head latency ratio. Not mixed into ranking. Up to **2** requests (+ archive).
 
 ## WebSocket subscribe
 
-HTTP round-trips are not the same as a live head stream. **`--websocket SEC`** (default 0 = off, omit SEC for 3s, max 10s) is an extra read after timed samples: connect to the optional per-endpoint `ws` / `websocket` URL (`ws://` or `wss://`), complete the WebSocket handshake, send `eth_subscribe` `["newHeads"]`, and listen for that window.
-
-The HTTP `url` stays `http`/`https`. A missing WS URL is **not configured** (skip, not a crash). Non-EVM families skip with `family`. `--budget long` does not turn this on. WS frames do **not** consume `--max-requests`.
-
-Reported per endpoint: `connect_ms` (TCP/TLS + upgrade), `subscribe_ms` (subscribe send until subscription id), `first_event_ms` (ack until first `newHeads`), event count, **missed** block-number gaps in the window, and **disconnects**. These samples are **not** mixed into ranking, reliability, or Fastest. Not a WS origin/auth check.
+**`--websocket SEC`** (default off; omit SEC → 3s; max 10s): connect optional `ws` / `websocket` URL, `eth_subscribe` `newHeads`, listen. Missing WS → **not configured**. Reports connect / subscribe / first-event ms, missed heads, disconnects. Does not consume `--max-requests`. Not mixed into ranking. Not a WS origin/auth check.
 
 ## Yellowstone / gRPC first-seen
 
-HTTP `getSlot` is not the same as a live gRPC slot stream. **`--yellowstone SEC`** (default 0 = off, omit SEC for 3s, max 10s) is an extra read after timed samples: open optional per-endpoint `grpc` / `yellowstone` / `grpc_url` streams (`grpc://`, `grpcs://`, `http://`, `https://`, or `host:port`), subscribe to Yellowstone Geyser **slots**, and race which endpoint sees each slot first for that window.
+**`--yellowstone SEC`** (Solana; default off; omit SEC → 3s; max 10s): race optional `grpc` / `yellowstone` slot streams. Missing gRPC → **not configured**. Needs `pip install 'rpcbench[yellowstone]'`. **Geography dominates** first-seen. Not tx landing; not an HTTP `getSlot` substitute. Not mixed into ranking. Does not replace HTTP Solana.
 
-The HTTP `url` stays `http`/`https` and still drives Solana ranking. A missing gRPC URL is **not configured** (skip, not a crash). Non-Solana families skip with `family`. Optional deps: `pip install 'rpcbench[yellowstone]'` (skip/`deps` without them). Does **not** replace the HTTP Solana family. gRPC frames do **not** consume `--max-requests`.
-
-Reported: first-seen **wins** per endpoint, lag vs the winner (p50/p95), a lag histogram, and connect time. **Geography dominates** first-seen — measure from the trading vantage. This is **not** transaction landing, shred inclusion, or an HTTP `getSlot` substitute. These samples are **not** mixed into ranking, reliability, or Fastest.
+---
 
 ## Traffic capture and replay
 
-Versus + ethspam-style integrity, plus a dataset you can replay. **`rpcbench record`** writes a JSONL file: one JSON object per line with `method` and `params` (full JSON-RPC requests are accepted on read). The sequence is the same mix `run` would send (`--workload` / `--method` / `--profile`, `--samples` rounds, no warmup). YAML `source` fields bind from chain when `--endpoints` is set.
+| Command | Role |
+| --- | --- |
+| `rpcbench record -o FILE` | JSONL capture (`method` + `params`) of the same mix `run` would send |
+| `rpcbench replay --from FILE` | Lockstep to every provider; compare status, error class, canonical body |
 
-**`rpcbench replay --from FILE`** (or `--from -` for stdin) sends that exact sequence to every provider in **lockstep** (one call, all endpoints, then the next). Each call compares:
+A call **matches** when successful `result` bodies agree (sorted-key JSON hash). Timeout / 429 → status/error on that row, not a body mismatch. `--verbose` prints unified diffs. Writes blocked unless `--allow-writes`. Not mixed into ranking. Adds **N × providers** requests.
 
-- **status** — all ok, or all failed
-- **JSON-RPC / HTTP error class** — failures share a class
-- **canonicalized body** — successful `result` values hashed after `json.dumps(..., sort_keys=True)`
-
-A call **matches** when successful `result` bodies agree (canonical JSON hash). A provider that times out or 429s is **status** / **error** on that row, not a body mismatch — down nodes are coverage, not a disagreeing chain. Mismatched bodies (`bodies=N`) are the integrity signal; `--verbose` prints a unified diff. `--json` / `--html` / `--md` / `--csv` carry the same match counts. These samples are **not** mixed into ranking, reliability, or Fastest.
-
-Write methods (`eth_send*`, `eth_sign*`, `personal_*`, `miner_*`, `admin_*`, `wallet_*`) are **blocked** on record and replay unless **`--allow-writes`**. Default is read-only.
-
-Adds **N × providers HTTP requests** (N = lines in the capture).
+---
 
 ## P99
 
-Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that it is flagged (`p99_reliable: false`). Default `--samples 10` is not enough for P99.
+Nearest-rank P99 is the **slowest success** until **n ≥ 100**. Below that: `p99_reliable: false`. Default `--samples 10` is not enough for P99.
 
 ## Reliability score
 
@@ -283,81 +300,68 @@ rel = round(
 )
 ```
 
-Clamped to 0–100. `timeout_share` is timeout count / attempted. `tail` is 0 when P99/P50 = 1 and 1 when P99/P50 ≥ 3 (linear in between). `coverage` is the fraction of mix steps with n_ok > 0; a single method that answered is 1. A 100% error run is 0. A clean flat-tail run is 100.
-
-JSON `reliability` includes the score, success_rate, the inputs, and `parts` (the four weighted terms). Ranking `rel` is that integer. `--verbose` prints the breakdown.
+`tail` is 0 when P99/P50 = 1 and 1 when P99/P50 ≥ 3 (linear in between). `coverage` = fraction of mix steps with at least one success. JSON `reliability` includes score, inputs, and `parts`.
 
 ## Production-readiness verdict
 
-A categorical decision for **this workload, this run**. Not an SLA. Not a security finding. Compact CLI always prints **Verdict**; `--verbose` adds **Signals** (problem / why / next — routing and config, not hardening).
+Categorical for **this workload, this run**. Compact CLI always prints **Verdict**; `--verbose` adds **Signals** (problem / why / next — routing, not hardening).
 
-Decisions: **ready** / **risky** / **not ready** (JSON: `ready`, `risky`, `not_ready`).
-
-**not ready** if any of: no successful timed samples, stale head, mix coverage miss, or disagreeing pinned hash. Kind is `timeout` / `rate-limited` / `failed` when nothing succeeded, else `stale`, `coverage`, or `disagree`.
-
-**risky** if the endpoint still answered but hit 429s, some timeouts, lag within `--stale-blocks` (`stale-risk`), jitter (stddev) above half of P50, or an error rate above the similar-band (when that is not already a timeout or 429).
-
-**ready** otherwise: place-1 and similar-band co-winner → `similar`; place-1 alone → `fast+stable`; other numbered places → `slow+reliable`.
-
-Each signal is `id`, `problem`, `why`, `next`. Next-actions are operational (raise `--timeout`, pick another endpoint, pin `--block`, localhost is allowed). JSON `verdict` is on ranking, comparison, and providers. Summary lists `ready_names`, `risky_names`, `not_ready_names` in ranking order.
+| Decision | When |
+| --- | --- |
+| **not ready** | No successes, stale head, coverage miss, or disagreeing hash |
+| **risky** | Answered but 429s, some timeouts, lag within stale-blocks, high jitter, or high error rate |
+| **ready** | Otherwise (`fast+stable`, `similar`, or `slow+reliable`) |
 
 ## Primary and fallback
 
-Production routing is two endpoints. **Route** names a **primary** and **fallback** from **ready** providers only (same `ready` as the verdict). Stale, disagree, coverage-miss, and failed endpoints never become primary.
+**Route** picks **primary** + **fallback** from **ready** endpoints only. Stale / disagree / coverage-miss / failed never become primary.
 
-Among ready endpoints in the similar-band of the fastest ready node, primary is the highest reliability score, then lower head lag, then a matching hash, then ranking order. Fallback is the next ready endpoint in ranking order. If primary had a timed error class, fallback skips others with that same class when a diverse ready alternative exists (so two 429s are not the pair).
-
-When fewer than two providers are ready, fallback is omitted (`null` / `none`). Compact CLI prints one paragraph. JSON is `route` (`primary`, `fallback`, `why`) and `summary.primary` / `summary.fallback`. Not an SLA.
+Among ready endpoints in the similar-band of the fastest ready node: highest `rel`, then lower lag, then matching hash, then ranking order. Fallback prefers a different timed error class when possible. Fewer than two ready → fallback `none`.
 
 ## Jitter and histogram
 
-Jitter is the sample standard deviation (needs n≥2). Histogram buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.
+Jitter = sample stddev (n≥2). Buckets: `&lt;50ms`, `&lt;100ms`, `&lt;250ms`, `&lt;1s`, `≥1s`.
 
 ## HTTP timing
 
-Each successful sample is split where the HTTP stack allows it:
-
-| Phase | What it is |
+| Phase | Meaning |
 | --- | --- |
-| **handshake** | DNS + TCP + TLS. **0** when keep-alive reuses the socket |
-| **server** | Time from a ready connection to response headers (TTFB minus handshake) |
+| **handshake** | DNS + TCP + TLS (≈0 on keep-alive reuse) |
+| **server** | Ready connection → response headers |
 | **payload** | Body download + JSON parse |
 
-Default is **keep-alive** (one pooled client per run). **`--new-connection`** closes the socket after every request so handshake is paid every time. Ranking still uses total round-trip, not a phase. TLS here is handshake latency, not a certificate or CORS check.
-
-JSON includes p50/p95/p99 for each phase on the provider.
+Default **keep-alive**. `--new-connection` pays handshake every request. Ranking uses total RTT. TLS here is latency, not a cert check.
 
 ## HTTP transport
 
-Each sample records the negotiated HTTP version (`1.1` or `2`), `Content-Encoding` (`gzip`, `br`, …), request bytes, and response **wire** bytes (the encoded size). Large `eth_getLogs` bodies and missing compression look like slow nodes. Ranking still uses total round-trip, not size. Default is HTTP/1.1. **`--http2`** asks for HTTP/2 via ALPN and falls back to 1.1 if the peer does not offer it. **`--http1`** forces HTTP/1.1. Not a TLS, CORS, or compression-as-security check.
+Records negotiated HTTP version (`1.1` / `2`), `Content-Encoding`, request/response wire bytes. `--http2` / `--http1`. Ranking still uses total RTT. Not TLS/CORS-as-security.
 
-JSON includes proto, encoding, and byte counts on each sample plus a provider `transport` summary. HTML plots size vs latency below the fold only when payloads actually differ (mix / `eth_getLogs`); a 50-byte head read is omitted. The scatter uses a **log X** (response bytes) so a 40-byte head and a 7kB `getBlock` are not stacked on the axis; dots are colored by method.
+---
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. **One compare is one vantage** (this host / `RPCBENCH_VANTAGE`). It is **not** a browser RUM, not Core Web Vitals, and not a synthetic multi-hop path measure. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--shape` is a bounded load curve with a time series — not an unbounded soak. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine.
+
+- One compare = one vantage (`RPCBENCH_VANTAGE`) — not browser RUM / CWV
+- Ranking `rps` = `1000 / mean_ms`, not parallel throughput
+- `--throughput` / `--shape` / `--websocket` / `--yellowstone` / `replay` are bounded extras — not mixed into Fastest
+
+---
 
 ## Vantage and multi-region
 
-Each JSON report’s `watermark` records where it was measured:
-
 | Field | Source |
 | --- | --- |
-| `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
-| `region` / `city` / `asn` | optional `RPCBENCH_REGION`, `RPCBENCH_CITY`, `RPCBENCH_ASN` |
-| `hostname` | resolved hostname when available |
-| `vantage_meta` | same fields nested for tooling |
+| `vantage` | `RPCBENCH_VANTAGE`, or hostname |
+| `region` / `city` / `asn` | optional env |
+| `hostname` | when available |
 
-No extra CLI flags — set env on the machine that runs the compare. CLI **Cite**, HTML footer/hero, markdown Cite, and JSON watermark all show the label (and extras when set).
-
-To compare the **same** seed/workload from two regions:
+No extra CLI flags — set env on the measuring host.
 
 ```bash
-# on eu host
 RPCBENCH_VANTAGE=eu-west RPCBENCH_REGION=eu-west-1 \
   rpcbench compare --endpoints endpoints.yaml --seed 7 -o eu.json
 
-# on us host
 RPCBENCH_VANTAGE=us-east RPCBENCH_REGION=us-east-1 \
   rpcbench compare --endpoints endpoints.yaml --seed 7 -o us.json
 
@@ -365,28 +369,40 @@ rpcbench merge eu.json us.json
 rpcbench merge eu.json us.json --json -o merged.json
 ```
 
-`merge` prints a per-vantage P95 matrix and a **global** rollup (mean P95 across vantages that reported the provider; max error rate). Seed, workload/method, and family must match. Duplicate vantage labels are rejected.
+`merge` requires matching seed / workload / family. Prints per-vantage P95 and a global rollup (mean P95; max error rate).
+
+---
 
 ## Report watermark
 
-Every JSON report includes a `watermark` object so the numbers can be cited:
+Every JSON report includes `watermark` so numbers can be cited:
 
 | Field | Meaning |
 | --- | --- |
-| `version` | Tool version (`rpcbench --version`) |
-| `git_sha` | Checkout SHA when this is a git install; omitted (`null`) from a PyPI wheel. `-dirty` if the tree has uncommitted diffs |
-| `utc` | Run start, UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
-| `budget` | Named sample size (`short` / `standard` / `long`) |
-| `workload` | named mix (`general`, `wallet`, …), a YAML profile name, or the JSON-RPC method |
-| `seed` | Shared sequence stamp |
-| `family` | RPC family (`evm` today) |
-| `vantage` | `RPCBENCH_VANTAGE`, or the hostname |
-| `region` / `city` / `asn` / `hostname` | Optional env extras; also nested under `vantage_meta` |
-| `samples` / `warmup` | Timed rounds and excluded warmup rounds; each round sends `sum(weights)` calls |
-| `methodology` / `boundary` | This page and [BOUNDARY.md](BOUNDARY.md) |
+| `version` | Tool version |
+| `git_sha` | Git install SHA (`null` from PyPI wheel); `-dirty` if dirty tree |
+| `utc` | Run start UTC |
+| `budget` / `workload` / `seed` / `family` | Run identity |
+| `vantage` (+ optional region/city/asn) | Where it was measured |
+| `samples` / `warmup` | Timed / excluded rounds |
+| `methodology` / `boundary` | Links to this page and [BOUNDARY.md](BOUNDARY.md) |
 
-The compact CLI prints a **Cite** line. On a TTY, a **live table** updates per provider (P50/P95, error rate, rps, sparkline) while samples collect; `--plain` / `--ci` / a pipe disables it. **`--web`** (or `rpcbench ui`) opens a live browser UI (default bind `127.0.0.1`) with the same live stats plus charts; use `--web-host 0.0.0.0` on a VPS to reach it from another machine (no auth). Stop from the UI aborts the run and still flushes reports, then serves the standalone HTML report. Ctrl-C sets an abort flag, finishes the current wave, skips remaining extras, and still writes JSON/HTML from samples collected so far (`aborted: true` in JSON). `--verbose` prints the same doc URLs in the footer. `--html -o report.html` reuses the same watermark object in the footer — same links, not a scanner card. Ranking (with sample sparklines), a coverage **heatmap**, **Signals**, P95, error rate, and freshness sit above the fold. Charts are inline SVG (no network). Print CSS keeps sections and SVG on one page. The heatmap is this workload’s coverage and latency (ok / skip / miss), not a method-inventory scan.
+### Live UI and abort
 
-`--md` is the compact ranking as GitHub-flavored markdown (P95, error rate, freshness, verdict). `--csv` is one row per provider with the same ranking numbers (percentiles, rps, error rate, score, rank, verdict) — not per-sample rows. `--prometheus` dumps the same run as Prometheus textfile gauges/histogram (provider, method, family, chain labels); see [PROMETHEUS.md](PROMETHEUS.md). `rpcbench diff old.json new.json` compares two JSON watermarks: P95 delta, winner change, and new **signals**. CI exits 1 when the previous **primary**’s rank key got worse beyond the similar-band (same band as ranking; override with `--similar-band`). Not a security finding. `--history DIR` stores JSON snapshots locally for that diff. `rpcbench merge a.json b.json` joins multi-vantage runs (same seed/workload) into a per-region table and global mean-P95 rollup — see [Vantage and multi-region](#vantage-and-multi-region).
+- TTY: live table while sampling (`--plain` / `--ci` / pipe disables)
+- `--web` / `rpcbench ui`: localhost UI; `--web-host 0.0.0.0` on a VPS (no auth)
+- Ctrl-C or Stop: abort flag, finish current wave, still write reports (`aborted: true`)
 
-Reproduce with the same `--budget`, `--workload`/`--profile`/`--method`, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.
+### Formats
+
+| Output | Role |
+| --- | --- |
+| Compact CLI | Cite + Summary / Verdict / Route / Ranking |
+| `--verbose` | Full dump + signals / coverage / timing |
+| `--html` | Offline charts, heatmap, signals, print CSS |
+| `--md` / `--csv` | Pasteable table / flat rows |
+| `--prometheus` | Textfile — [PROMETHEUS.md](PROMETHEUS.md) |
+| `diff` / `--history` | Regression vs prior primary beyond similar-band |
+| `merge` | Multi-vantage rollup |
+
+Reproduce with the same `--budget`, workload/method, and `--seed` from a similar vantage. URLs in reports are redacted; JSON keeps a hash id, not the key.
