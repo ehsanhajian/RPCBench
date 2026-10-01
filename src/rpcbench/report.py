@@ -469,6 +469,8 @@ def run_to_dict(
             blob["yellowstone_race"] = yellowstone_race_dict(result.yellowstone_race)
     if result.shape:
         blob["shape"] = result.shape
+    if result.aborted:
+        blob["aborted"] = True
     return blob
 
 
@@ -537,9 +539,15 @@ def format_run(
         f"{_yellowstone_mode_suffix(result)}"
         f"  ·  conn={result.connection}",
         cite_line(result, color=use_color),
+    ]
+    if result.aborted:
+        lines.append("Abort    stopped early (Ctrl-C); report uses samples collected so far")
+    lines.extend(
+        [
         "",
         "Summary",
-    ]
+        ]
+    )
     lines.extend(
         _summary_lines(
             placed,

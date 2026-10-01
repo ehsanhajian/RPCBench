@@ -62,6 +62,7 @@ from rpcbench.profile import as_profile_path, has_dynamic_source, hint_request_c
 from rpcbench.report import RankError, format_json, format_run, normalize_rank_by, normalize_similar_band
 from rpcbench.prometheus import format_prometheus
 from rpcbench.slo import evaluate_slo, format_slo_failures
+from rpcbench.tui import LiveTui, install_abort_flag, restore_sigint, wants_tui
 from rpcbench.run import (
     DEFAULT_BATCH,
     DEFAULT_INFLIGHT,
@@ -559,8 +560,13 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
         help=(
             "CI gate: exit 1 when an SLO budget is missed "
             "(needs --max-p95 / --max-error-rate / --max-lag). "
-            "Reports still write. Alias: --strict."
+            "Reports still write. Disables the live TUI. Alias: --strict."
         ),
+    )
+    run.add_argument(
+        "--plain",
+        action="store_true",
+        help="Disable the live TUI (always on with --ci or a non-TTY stdout)",
     )
     run.add_argument(
         "--max-p95",
@@ -1166,41 +1172,59 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"rpcbench: {exc}", file=sys.stderr)
         return 2
     params = list(workload[0].params) if len(workload) == 1 else []
-    result = run_endpoints(
-        config,
-        method=method,
-        params=params,
-        samples=args.samples,
-        warmup=args.warmup,
-        timeout=args.timeout,
-        budget=max_requests,
-        workload=workload,
-        profile=method if is_app_workload(method) else "single",
-        sample_budget=args.sample_budget,
-        stale_blocks=args.stale_blocks,
-        block_time_s=args.block_time,
-        block_pin=block_pin,
-        max_duration=args.max_duration,
-        mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
-        seed=args.seed,
-        concurrency=0,
-        inflight=args.concurrency,
-        burst=args.burst,
-        rps=args.rps,
-        throughput=args.throughput,
-        shape=args.shape,
-        new_connection=args.new_connection,
-        http2=args.http2,
-        batch=args.batch,
-        logs_range=args.logs_range,
-        profile_notes=plan.notes,
-        simulate=args.simulate,
-        archive=args.archive,
-        lookback=args.lookback,
-        websocket=args.websocket,
-        yellowstone=args.yellowstone,
-        family=family_name,
+    live = LiveTui(
+        [ep.name for ep in config.endpoints],
+        stream=sys.stderr
+        if (args.json or args.md or args.csv or args.prometheus)
+        else sys.stdout,
+        enabled=wants_tui(plain=args.plain, ci=args.ci),
     )
+    abort_flag, prev_sigint = install_abort_flag()
+
+    def _on_sample(name: str, hit, kind: str) -> None:
+        live.record(name, hit, kind=kind)
+
+    try:
+        result = run_endpoints(
+            config,
+            method=method,
+            params=params,
+            samples=args.samples,
+            warmup=args.warmup,
+            timeout=args.timeout,
+            budget=max_requests,
+            workload=workload,
+            profile=method if is_app_workload(method) else "single",
+            sample_budget=args.sample_budget,
+            stale_blocks=args.stale_blocks,
+            block_time_s=args.block_time,
+            block_pin=block_pin,
+            max_duration=args.max_duration,
+            mode=MODE_SEQUENTIAL if args.sequential else MODE_PAIRED,
+            seed=args.seed,
+            concurrency=0,
+            inflight=args.concurrency,
+            burst=args.burst,
+            rps=args.rps,
+            throughput=args.throughput,
+            shape=args.shape,
+            new_connection=args.new_connection,
+            http2=args.http2,
+            batch=args.batch,
+            logs_range=args.logs_range,
+            profile_notes=plan.notes,
+            simulate=args.simulate,
+            archive=args.archive,
+            lookback=args.lookback,
+            websocket=args.websocket,
+            yellowstone=args.yellowstone,
+            family=family_name,
+            on_sample=_on_sample if live.enabled else None,
+            should_abort=abort_flag.is_set,
+        )
+    finally:
+        restore_sigint(prev_sigint)
+        live.finish(aborted=abort_flag.is_set())
     json_blob = None
     md_blob = None
     csv_blob = None
