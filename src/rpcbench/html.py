@@ -69,6 +69,7 @@ def format_html(
         _batch_table(data),
         _inflight_table(data),
         _throughput_table(data),
+        _shape_section_html(data),
         _logs_range_table(data),
         _archive_table(data),
         _history_table(data),
@@ -797,6 +798,64 @@ def _throughput_table(data: dict[str, Any]) -> str:
         f"<tbody>{''.join(rows)}</tbody>"
         "</table>"
         "</section>"
+    )
+
+
+def _shape_section_html(data: dict[str, Any]) -> str:
+    shape = data.get("shape")
+    if not shape:
+        return ""
+    charts: list[str] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("shape")
+        if not summary:
+            continue
+        series = summary.get("series") or []
+        if not series:
+            continue
+        charts.append(_shape_sparkline(str(row.get("name") or "?"), series))
+    if not charts:
+        return ""
+    return (
+        '<section aria-label="load shape">'
+        f"<h2>Load shape ({escape(str(shape))})</h2>"
+        '<p class="meta">Time series of successful RPS and P95; not mixed into ranking. '
+        "Not a browser RUM.</p>"
+        + "".join(charts)
+        + "</section>"
+    )
+
+
+def _shape_sparkline(name: str, series: list[dict[str, Any]]) -> str:
+    width, height, pad = 420.0, 80.0, 8.0
+    rps_vals = [float(p["rps"]) for p in series if p.get("rps") is not None]
+    p95_vals = [float(p["p95_ms"]) for p in series if p.get("p95_ms") is not None]
+    max_rps = max(rps_vals) if rps_vals else 1.0
+    max_p95 = max(p95_vals) if p95_vals else 1.0
+    n = max(1, len(series) - 1)
+
+    def points(key: str, peak: float) -> str:
+        pts: list[str] = []
+        for i, point in enumerate(series):
+            raw = point.get(key)
+            if raw is None:
+                continue
+            x = pad + (width - 2 * pad) * (i / n)
+            y = height - pad - (height - 2 * pad) * (float(raw) / peak if peak else 0)
+            pts.append(f"{x:.1f},{y:.1f}")
+        return " ".join(pts)
+
+    rps_poly = points("rps", max_rps)
+    p95_poly = points("p95_ms", max_p95)
+    return (
+        f'<div class="shape-chart"><p class="meta">{escape(name)}</p>'
+        f'<svg viewBox="0 0 {width:.0f} {height:.0f}" role="img" '
+        f'aria-label="shape series for {escape(name)}">'
+        f'<polyline fill="none" stroke="{_BAR}" stroke-width="2" points="{rps_poly}"/>'
+        f'<polyline fill="none" stroke="{_AMBER}" stroke-width="2" '
+        f'stroke-dasharray="4 3" points="{p95_poly}"/>'
+        "</svg>"
+        '<p class="meta">solid = RPS · dashed = P95 ms</p></div>'
     )
 
 

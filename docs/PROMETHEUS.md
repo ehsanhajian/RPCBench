@@ -106,6 +106,10 @@ Or use the [GitHub Action](CI.md) with `--out-dir` and publish / scrape `metrics
 | `rpcbench_reliability_score` | gauge | This-run reliability `0`–`100` (not an SLA) |
 | `rpcbench_samples` | gauge | Timed sample counts (`result` = `ok` \| `fail`) |
 | `rpcbench_latency_histogram` | histogram | Same bucket edges as the CLI (`le` = `50`, `100`, `250`, `1000`, `+Inf` ms) |
+| `rpcbench_shape_rps` | gauge | Successful req/s in a `--shape` time window (`offset_s`, `shape`) |
+| `rpcbench_shape_p95_ms` | gauge | P95 latency (ms) in that window |
+| `rpcbench_shape_error_rate` | gauge | Error rate in that window |
+| `rpcbench_shape_target_rps` | gauge | Target start rate from the shape curve |
 
 Histogram series in the textfile are `rpcbench_latency_histogram_bucket`, `_count`, and `_sum`.
 

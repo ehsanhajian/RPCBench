@@ -467,6 +467,8 @@ def run_to_dict(
         blob["yellowstone"] = result.yellowstone
         if result.yellowstone_race is not None:
             blob["yellowstone_race"] = yellowstone_race_dict(result.yellowstone_race)
+    if result.shape:
+        blob["shape"] = result.shape
     return blob
 
 
@@ -526,6 +528,7 @@ def format_run(
         f"{_batch_mode_suffix(result)}"
         f"{_inflight_mode_suffix(result)}"
         f"{_throughput_mode_suffix(result)}"
+        f"{_shape_mode_suffix(result)}"
         f"{_logs_range_mode_suffix(result)}"
         f"{_simulate_mode_suffix(result)}"
         f"{_archive_mode_suffix(result)}"
@@ -590,6 +593,8 @@ def format_run(
             lines.extend(_inflight_section(result, use_color))
         if result.throughput > 0:
             lines.extend(_throughput_section(result, use_color))
+        if result.shape:
+            lines.extend(_shape_section(result, use_color))
         if result.logs_range > 0:
             lines.extend(_logs_range_section(result, use_color))
         if result.archive:
@@ -700,6 +705,8 @@ def _verbose_sections(
         lines.extend(_inflight_section(result, use_color))
     if result.throughput > 0:
         lines.extend(_throughput_section(result, use_color))
+    if result.shape:
+        lines.extend(_shape_section(result, use_color))
     if result.logs_range > 0:
         lines.extend(_logs_range_section(result, use_color))
     if result.archive:
@@ -1290,6 +1297,63 @@ def _throughput_section(result: RunResult, use_color: bool) -> list[str]:
     ]
 
 
+def _shape_section(result: RunResult, use_color: bool) -> list[str]:
+    return [
+        "",
+        f"Shape    ({result.shape}; time series RPS/P95/err; "
+        "extra read; not mixed into ranking)",
+        *_shape_lines(result, use_color),
+    ]
+
+
+def _shape_lines(result: RunResult, use_color: bool) -> list[str]:
+    from rpcbench.shape import shape_status_label
+
+    rows: list[list[str]] = []
+    for outcome in result.outcomes:
+        summary = outcome.shape
+        if summary is None:
+            continue
+        name = _name_cell(outcome, use_color)
+        status = shape_status_label(summary)
+        series = summary.series
+        if series:
+            mid = series[len(series) // 2]
+            tip = (
+                f"t0={_fmt_shape_rps(series[0].rps)} "
+                f"mid={_fmt_shape_rps(mid.rps)} "
+                f"end={_fmt_shape_rps(series[-1].rps)}"
+            )
+            p95_tip = (
+                f"p95={_cell_ms(series[0].p95_ms)}→{_cell_ms(series[-1].p95_ms)}"
+            )
+        else:
+            tip = "—"
+            p95_tip = "—"
+        rows.append(
+            [
+                name,
+                status,
+                str(summary.n),
+                str(summary.n_ok),
+                str(summary.n_fail),
+                tip,
+                p95_tip,
+            ]
+        )
+    return _grid(
+        ["endpoint", "status", "n", "ok", "fail", "rps series", "p95"],
+        rows,
+        right=(False, False, True, True, True, False, False),
+    )
+
+
+def _fmt_shape_rps(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}"
+
+
 def _throughput_lines(result: RunResult, use_color: bool) -> list[str]:
     rows: list[list[str]] = []
     for outcome in result.outcomes:
@@ -1426,6 +1490,10 @@ def _extra_read_json(outcome: EndpointOutcome) -> dict[str, Any]:
         blob["websocket"] = websocket_dict(outcome.websocket)
     if outcome.yellowstone is not None:
         blob["yellowstone"] = _yellowstone_hit_dict(outcome.yellowstone)
+    if outcome.shape is not None:
+        from rpcbench.shape import shape_dict
+
+        blob["shape"] = shape_dict(outcome.shape)
     return blob
 
 
@@ -2448,6 +2516,12 @@ def _throughput_mode_suffix(result: RunResult) -> str:
     if result.throughput <= 0:
         return ""
     return f"  ·  throughput={result.throughput}"
+
+
+def _shape_mode_suffix(result: RunResult) -> str:
+    if not result.shape:
+        return ""
+    return f"  ·  shape={result.shape}"
 
 
 def _logs_range_mode_suffix(result: RunResult) -> str:

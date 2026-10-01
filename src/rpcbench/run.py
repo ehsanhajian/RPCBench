@@ -88,6 +88,7 @@ from rpcbench.timing import CONN_KEEPALIVE, CONN_NEW
 from rpcbench.family import benchmark_family, pin_block_params, resolve_block_time, tag_block_params
 from rpcbench.watermark import FAMILY_EVM, git_sha as current_git_sha, utc_stamp
 from rpcbench.vantage import VantageInfo, resolve_vantage
+from rpcbench.shape import ShapeSummary, measure_shape, normalize_shape
 from rpcbench.tags import (
     TagSnapshot,
     client_from_hit,
@@ -259,6 +260,7 @@ class EndpointOutcome:
     history: HistoryHit | None = None
     websocket: WebsocketHit | None = None
     yellowstone: YellowstoneEndpointHit | None = None
+    shape: ShapeSummary | None = None
 
 
 @dataclass(frozen=True)
@@ -306,6 +308,7 @@ class RunResult:
     websocket: float = 0.0
     yellowstone: float = 0.0
     yellowstone_race: YellowstoneRace | None = None
+    shape: str | None = None
     family: str = FAMILY_EVM
     git_sha: str | None = None
     started_at: str | None = None
@@ -582,6 +585,7 @@ def run_endpoints(
     open_ws=None,
     yellowstone: float = 0.0,
     open_yellowstone=None,
+    shape: str | None = None,
     family: str = FAMILY_EVM,
 ) -> RunResult:
     if samples < 1:
@@ -608,6 +612,10 @@ def run_endpoints(
         raise ValueError(f"websocket must be 0–{MAX_WEBSOCKET:g}")
     if yellowstone < 0 or yellowstone > MAX_YELLOWSTONE:
         raise ValueError(f"yellowstone must be 0–{MAX_YELLOWSTONE:g}")
+    try:
+        shape = normalize_shape(shape)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if rps < 0:
         raise ValueError("rps must be >= 0")
     if mode not in {MODE_PAIRED, MODE_SEQUENTIAL}:
@@ -691,6 +699,7 @@ def run_endpoints(
             open_ws=open_ws,
             yellowstone=yellowstone,
             open_yellowstone=open_yellowstone,
+            shape=shape,
             family=family,
         )
     finally:
@@ -808,6 +817,7 @@ def _execute_run(
     open_ws,
     yellowstone: float,
     open_yellowstone,
+    shape: str | None,
     family: str,
 ) -> RunResult:
     adapter = benchmark_family(family)
@@ -1047,6 +1057,35 @@ def _execute_run(
             replace(outcome, throughput=measured_throughput.get(outcome.endpoint.name))
             for outcome in outcomes
         ]
+    if shape:
+        spec = steps[0]
+
+        def _shape_hit(endpoint, *, spec, timeout, budget, deadline):
+            return _hit(
+                endpoint,
+                spec=spec,
+                timeout=timeout,
+                budget=budget,
+                deadline=deadline,
+                client=client,
+            )
+
+        measured_shape = {
+            outcome.endpoint.name: measure_shape(
+                outcome.endpoint,
+                spec=spec,
+                shape=shape,
+                timeout=timeout,
+                budget=purse,
+                deadline=deadline,
+                hit=_shape_hit,
+            )
+            for outcome in outcomes
+        }
+        outcomes = [
+            replace(outcome, shape=measured_shape.get(outcome.endpoint.name))
+            for outcome in outcomes
+        ]
     if websocket > 0:
         measured_ws = {
             outcome.endpoint.name: probe_websocket(
@@ -1115,6 +1154,7 @@ def _execute_run(
         websocket=websocket,
         yellowstone=yellowstone,
         yellowstone_race=race,
+        shape=shape,
         family=family,
         git_sha=current_git_sha(),
         started_at=utc_stamp(),
