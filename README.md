@@ -12,7 +12,7 @@ It is **not** a security scanner ([Nodeprobe](https://github.com/ehsanhajian/nod
 pip install rpcbench
 ```
 
-Python 3.10+. `rpcbench --version` prints `0.6.0`.
+Python 3.10+. `rpcbench --version` prints `0.6.1`.
 
 ```bash
 python3 -m venv .venv
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ehsanhajian/RPCBench@main
+      - uses: ehsanhajian/RPCBench@v0.6.1
         with:
           endpoints: endpoints.yaml
           budget: short
@@ -53,7 +53,7 @@ jobs:
       # HTML/JSON/MD are uploaded as artifact rpcbench-report
 ```
 
-Pin a release tag (e.g. `@v0.6.0`) once published. Until then `@main` installs from the action checkout.
+Pin the Action with `@v0.6.1` (or a later release tag).
 
 The Action runs `compare --ci` with your SLO inputs, writes `report.html` / `report.json` / `report.md` under `output-dir`, uploads them as `rpcbench-report`, and **fails the job** when a budget is missed. Open `report.html` from the artifact locally. Details: [docs/CI.md](docs/CI.md).
 

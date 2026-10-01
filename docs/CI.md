@@ -38,7 +38,7 @@ Build locally: `docker build -t rpcbench .`
 Composite action at the repo root (`action.yml`). Inputs map to CLI flags; artifacts upload as `rpcbench-report`.
 
 ```yaml
-- uses: ehsanhajian/RPCBench@main
+- uses: ehsanhajian/RPCBench@v0.6.1
   with:
     endpoints: endpoints.yaml
     workload: general
@@ -49,7 +49,7 @@ Composite action at the repo root (`action.yml`). Inputs map to CLI flags; artif
     output-dir: rpcbench-out
 ```
 
-Pin a release tag when available. Until then `@main` installs from the checked-out action path.
+Pin a release tag (e.g. `@v0.6.1`). Omit `version` for latest PyPI, or set it to match the Action tag.
 
 Schedule or PR:
 
