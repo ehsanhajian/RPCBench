@@ -320,7 +320,7 @@ Among ready endpoints in the similar-band of the fastest ready node: highest `re
 
 ## Jitter and histogram
 
-Jitter = sample stddev (n≥2). Buckets: `&lt;50ms`, `&lt;100ms`, `&lt;250ms`, `&lt;1s`, `≥1s`.
+Jitter = sample stddev (n≥2). Buckets: `<50ms`, `<100ms`, `<250ms`, `<1s`, `≥1s`.
 
 ## HTTP timing
 
