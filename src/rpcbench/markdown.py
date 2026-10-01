@@ -215,6 +215,22 @@ def _optional_sections(data: dict[str, Any]) -> list[str]:
                 "",
             ]
         )
+    shape_rows = _shape_rows(data)
+    if shape_rows:
+        lines.extend(
+            [
+                f"## Load shape ({data.get('shape')})",
+                "",
+                "Time series RPS / P95 (first → last window); not mixed into ranking",
+                "",
+                *_md_table(
+                    ["name", "status", "n", "ok", "fail", "rps", "p95"],
+                    shape_rows,
+                    right=(False, False, True, True, True, False, False),
+                ),
+                "",
+            ]
+        )
     logs = _logs_range_rows(data)
     if logs:
         spans = data.get("logs_range")
@@ -458,6 +474,54 @@ def _throughput_rows(data: dict[str, Any]) -> list[list[str]]:
             ]
         )
     return rows
+
+
+def _shape_rows(data: dict[str, Any]) -> list[list[str]]:
+    if not data.get("shape"):
+        return []
+    rows: list[list[str]] = []
+    for row in data.get("ranking") or []:
+        summary = row.get("shape")
+        if not summary:
+            continue
+        status = summary.get("skip") or (
+            "ok"
+            if summary.get("n_ok")
+            else (summary.get("error_class") or "failed")
+        )
+        if summary.get("rate_limit") and summary.get("n_ok"):
+            status = "rate-limited"
+        series = summary.get("series") or []
+        if series:
+            rps = (
+                f"{_shape_num(series[0].get('rps'))}→"
+                f"{_shape_num(series[-1].get('rps'))}"
+            )
+            p95 = (
+                f"{_ms(series[0].get('p95_ms'))}→"
+                f"{_ms(series[-1].get('p95_ms'))}"
+            )
+        else:
+            rps = "—"
+            p95 = "—"
+        rows.append(
+            [
+                str(row.get("name") or "—"),
+                str(status),
+                str(summary.get("n") or 0),
+                str(summary.get("n_ok") or 0),
+                str(summary.get("n_fail") or 0),
+                rps,
+                p95,
+            ]
+        )
+    return rows
+
+
+def _shape_num(value: Any) -> str:
+    if value is None:
+        return "—"
+    return f"{float(value):.1f}"
 
 
 def _logs_range_rows(data: dict[str, Any]) -> list[list[str]]:

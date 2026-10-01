@@ -87,4 +87,6 @@ python3 -m http.server 9100 --directory /tmp/rpcbench
 | Latency table | `rpcbench_latency_ms` |
 | Histogram | `rpcbench_latency_histogram_bucket` |
 
+When a compare used `--shape`, also query `rpcbench_shape_rps` / `rpcbench_shape_p95_ms` / `rpcbench_shape_error_rate` (labels `offset_s`, `shape`) or open the HTML report sparklines. See [METHODOLOGY.md](METHODOLOGY.md#load-shapes).
+
 Names must match [PROMETHEUS.md](PROMETHEUS.md). Empty panels usually mean the scrape target is wrong, the file was never overwritten after a run, or the datasource URL is unreachable from the Grafana container.

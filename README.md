@@ -154,6 +154,7 @@ The default CLI prints, in order:
 6. **Batch** — when `--batch` is set: support, batch vs serial wall-clock, ratio. `skip` means the extra read did not run (`budget` / `duration`). Not mixed into ranking.
 7. **Concurrency** — when `--concurrency` is set: overlapping extra POSTs vs the same N serial (per-request P50/P95, ratio, error count). Default is off. Not mixed into ranking.
 8. **Throughput** — when `--throughput` is set: extra serial POSTs, successful req/s, duration, and completed count. `--rps` caps starts. 429 is a rejected request, not a crash. Default is off. Not mixed into ranking.
+8b. **Shape** — when `--shape flat|ramp|spike|soak` is set: bounded load curve with a time series of RPS / P95 / error rate (CLI + HTML + Prometheus). Short defaults. Not mixed into ranking.
 9. **Logs range** — when `--logs-range` is set: pinned `eth_getLogs` at 1 / 10 / 100 / up to N blocks (latency, bytes, n, truncation). Mix logs stay one block. A provider that only dies at 1000 blocks shows here. Not mixed into ranking.
 10. **Archive** — when `--archive` is set: `eth_getBalance` at genesis, classified yes / no / unknown / rate-limited. Missing archive is a capability result, not a crash. Not mixed into ranking.
 11. **History** — when `--lookback N` is set: timed `eth_getBalance` at pin−N vs latest (latency, error rate, ratio). Endpoints without archive/history skip with a reason. Not mixed into ranking.
@@ -269,6 +270,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 | `--burst` | 0 | Overlap the first N timed samples (`0`=off, max 8). Same request budget |
 | `--rps` | 0 | Cap starts/sec after `--burst` and during `--throughput` (`0`=off). Does not raise the budget |
 | `--throughput` | 0 | Extra serial POSTs for successful req/s (`0`=off, omit N for 20, max 64). Extra N requests/endpoint. 429 is rejected |
+| `--shape` | off | Bounded load shape `flat` / `ramp` / `spike` / `soak` (time series RPS/P95/err). Short defaults; not mixed into ranking |
 | `--batch` | 0 | JSON-RPC batch of N vs N serial (`0`=off, omit N for 3, max 8). Extra 1+N requests/endpoint |
 | `--logs-range` | 0 (1000 on indexer) | Pinned `eth_getLogs` at 1/10/100/up to N blocks (`0`=off, omit N for 1000). Mix logs stay 1 block |
 | `--simulate` | on for wallet and trading | Add read-only `eth_call` / `eth_estimateGas` / `eth_simulateV1`. `--no-simulate` turns it off. Missing simulateV1 is skip |

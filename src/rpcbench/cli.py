@@ -123,6 +123,7 @@ _LAB_DESTS = frozenset(
         "burst",
         "rps",
         "throughput",
+        "shape",
         "websocket",
         "yellowstone",
         "batch",
@@ -351,6 +352,18 @@ def _add_run_parser(sub, name: str, help_text: str, *, full: bool, show: bool) -
             f"(0=off, omit N for {DEFAULT_THROUGHPUT}, max {MAX_THROUGHPUT}). "
             "Adds N requests per endpoint; paced by --rps; 429 is a rejected request. "
             "Not mixed into ranking. Not an unbounded load test."
+        ),
+    )
+    run.add_argument(
+        "--shape",
+        choices=("flat", "ramp", "spike", "soak"),
+        default=None,
+        metavar="NAME",
+        help=(
+            "Bounded load shape after timed samples: flat, ramp, spike, or soak. "
+            "Exports a time series of RPS / P95 / error rate (HTML + JSON + Prometheus). "
+            "Short defaults and hard request caps; not mixed into ranking. "
+            "Not an unbounded soak against public RPCs."
         ),
     )
     run.add_argument(
@@ -1175,6 +1188,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         burst=args.burst,
         rps=args.rps,
         throughput=args.throughput,
+        shape=args.shape,
         new_connection=args.new_connection,
         http2=args.http2,
         batch=args.batch,

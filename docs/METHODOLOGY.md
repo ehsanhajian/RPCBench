@@ -146,7 +146,7 @@ To time a single tag with full `--samples`, pass `--method eth_getBlockByNumber 
 
 HTTP **429** and JSON-RPC messages that are clearly CU/throttle (`too many requests`, `rate limit`, `compute unit`, …) are class **`rate_limit`**, not a generic 4xx. 401/403 stay `http_4xx` (missing key, not a throttle). RPCBench does not harvest rate-limit headers as a security check.
 
-**`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget, then runs the rest as a steady phase. **`--rps`** caps how often steady samples start (`0` = as fast as responses allow). Neither flag adds requests or searches for a ceiling. Burst vs steady error rate and recovered rps are reported only when `--burst` is set. Extra `latest`/`safe`/`finalized` 429s are listed as `tags=N` on that table; they do not change timed n/err. Load shapes (ramp/spike/soak) are separate.
+**`--burst N`** (default 0, max 8) overlaps the first N **timed** samples already in the budget, then runs the rest as a steady phase. **`--rps`** caps how often steady samples start (`0` = as fast as responses allow). Neither flag adds requests or searches for a ceiling. Burst vs steady error rate and recovered rps are reported only when `--burst` is set. Extra `latest`/`safe`/`finalized` 429s are listed as `tags=N` on that table; they do not change timed n/err. Load shapes (`--shape flat|ramp|spike|soak`) are a separate bounded extra read — see [Load shapes](#load-shapes).
 
 ## JSON-RPC batch
 
@@ -169,6 +169,19 @@ Adds **2N HTTP requests per endpoint**.
 **`--throughput N`** (default 0 = off, omit N for 20, max 64) is an extra read after timed samples, tags, and client. RPCBench sends N serial HTTP POSTs of the primary workload method on the same keep-alive client. **`--rps`** caps how often those starts fire (`0` = as fast as responses allow). Reported numbers are successful req/s (`n_ok / duration_s`), wall-clock `duration_ms`, completed count `n`, and `n_fail` (HTTP **429** / CU throttle is class **`rate_limit`**, a rejected request, not a crash). These are **not** mixed into ranking, reliability, or Fastest.
 
 Ranking table `rps` stays `1000 / mean_ms` of the timed samples. `--concurrency` is overlapping extra POSTs vs serial. `--burst` overlaps existing timed samples. `--throughput` is a bounded extra read, not concurrent fan-out and not an unbounded load generator.
+
+## Load shapes
+
+**`--shape flat|ramp|spike|soak`** (default off) runs a **bounded** load curve after timed samples (and after `--throughput` when both are set). Serial paced starts follow a target RPS curve; results are bucketed every 2s into a time series of **RPS**, **P95**, and **error rate**. Not mixed into ranking, reliability, or Fastest.
+
+| Shape | Duration | Max requests | Concurrency cap | Curve |
+| --- | --- | --- | --- | --- |
+| `flat` | 8s | 32 | 2 | constant ~4 rps |
+| `ramp` | 12s | 40 | 2 | 1 → 6 rps |
+| `spike` | 10s | 40 | 4 | ~2 rps, spike ~8 rps for 2s mid-run |
+| `soak` | 20s | 48 | 2 | gentle ~2 rps |
+
+Starts are **serial** (safe with one HTTP client); the concurrency column is the documented profile ceiling, not unbounded fan-out. Defaults stay short — this is **not** a multi-hour soak against public RPCs. Stop early on `--max-duration` / request budget. Series appear in JSON (`ranking[].shape.series`), the CLI **Shape** table, HTML sparklines, and Prometheus (`rpcbench_shape_*` with `offset_s` / `shape` labels) for Grafana.
 
 Adds **N HTTP requests per endpoint**.
 
@@ -322,7 +335,7 @@ JSON includes proto, encoding, and byte counts on each sample plus a provider `t
 
 ## Non-claims
 
-Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. **One compare is one vantage** (this host / `RPCBENCH_VANTAGE`). It is **not** a browser RUM, not Core Web Vitals, and not a synthetic multi-hop path measure. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
+Not an SLA. Not a security audit. Not geographic unless you run from more than one machine. **One compare is one vantage** (this host / `RPCBENCH_VANTAGE`). It is **not** a browser RUM, not Core Web Vitals, and not a synthetic multi-hop path measure. Sequential ranking `rps` is `1000 / mean_ms`, not parallel throughput. `--throughput` is a bounded serial extra-read of successful req/s. `--shape` is a bounded load curve with a time series — not an unbounded soak. `--websocket` is a bounded extra-read of connect / subscribe / first-event latency. `--yellowstone` is a bounded Solana gRPC first-seen race (not tx landing). `rpcbench replay` is lockstep integrity of a capture, not a ranking mix.
 
 ## Vantage and multi-region
 

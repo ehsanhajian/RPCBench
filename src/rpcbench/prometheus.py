@@ -25,6 +25,10 @@ DOCUMENTED_METRICS: frozenset[str] = frozenset(
         "rpcbench_latency_histogram_bucket",
         "rpcbench_latency_histogram_count",
         "rpcbench_latency_histogram_sum",
+        "rpcbench_shape_rps",
+        "rpcbench_shape_p95_ms",
+        "rpcbench_shape_error_rate",
+        "rpcbench_shape_target_rps",
     }
 )
 
@@ -161,6 +165,73 @@ def format_prometheus(
             )
         else:
             lines.append(_sample("rpcbench_latency_histogram_sum", 0, labels))
+
+    if any(outcome.shape is not None for outcome in result.outcomes):
+        lines.extend(
+            [
+                "# HELP rpcbench_shape_rps Successful req/s in a load-shape time window.",
+                "# TYPE rpcbench_shape_rps gauge",
+            ]
+        )
+        for outcome in result.outcomes:
+            if outcome.shape is None:
+                continue
+            base = _provider_labels(outcome.endpoint.name, method, family, chain)
+            base = {**base, "shape": outcome.shape.shape}
+            for win in outcome.shape.series:
+                labels = {**base, "offset_s": str(int(win.t_s))}
+                if win.rps is not None:
+                    lines.append(_sample("rpcbench_shape_rps", win.rps, labels))
+        lines.extend(
+            [
+                "# HELP rpcbench_shape_p95_ms P95 latency (ms) in a load-shape time window.",
+                "# TYPE rpcbench_shape_p95_ms gauge",
+            ]
+        )
+        for outcome in result.outcomes:
+            if outcome.shape is None:
+                continue
+            base = _provider_labels(outcome.endpoint.name, method, family, chain)
+            base = {**base, "shape": outcome.shape.shape}
+            for win in outcome.shape.series:
+                if win.p95_ms is None:
+                    continue
+                labels = {**base, "offset_s": str(int(win.t_s))}
+                lines.append(_sample("rpcbench_shape_p95_ms", win.p95_ms, labels))
+        lines.extend(
+            [
+                "# HELP rpcbench_shape_error_rate Error rate in a load-shape time window.",
+                "# TYPE rpcbench_shape_error_rate gauge",
+            ]
+        )
+        for outcome in result.outcomes:
+            if outcome.shape is None:
+                continue
+            base = _provider_labels(outcome.endpoint.name, method, family, chain)
+            base = {**base, "shape": outcome.shape.shape}
+            for win in outcome.shape.series:
+                if win.error_rate is None:
+                    continue
+                labels = {**base, "offset_s": str(int(win.t_s))}
+                lines.append(
+                    _sample("rpcbench_shape_error_rate", win.error_rate, labels)
+                )
+        lines.extend(
+            [
+                "# HELP rpcbench_shape_target_rps Target start rate for the shape curve.",
+                "# TYPE rpcbench_shape_target_rps gauge",
+            ]
+        )
+        for outcome in result.outcomes:
+            if outcome.shape is None:
+                continue
+            base = _provider_labels(outcome.endpoint.name, method, family, chain)
+            base = {**base, "shape": outcome.shape.shape}
+            for win in outcome.shape.series:
+                labels = {**base, "offset_s": str(int(win.t_s))}
+                lines.append(
+                    _sample("rpcbench_shape_target_rps", win.target_rps, labels)
+                )
 
     lines.append("")
     return "\n".join(lines)
