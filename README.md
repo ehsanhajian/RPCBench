@@ -110,10 +110,10 @@ endpoints:
     #   X-API-Key: YOUR_KEY
 ```
 
-Compare one family at a time (`--family ton` or only that family’s rows in the file). `run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs.
+Compare one family at a time (`--family ton` or only that family’s rows in the file). `run` is the same command as `compare`. `rpcbench diff old.json new.json` compares two JSON runs. `rpcbench merge eu.json us.json` joins multi-vantage reports (same seed/workload).
 ## Report
 
-Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. `--md` is a pasteable GitHub markdown table with aligned columns (ranking, P95, errors, rel, freshness, verdict). `--csv` is one flat row per provider (run, rank, latency, verdict, transport). `-o report.csv` writes that CSV and keeps the CLI table. `--prometheus` dumps Prometheus textfile metrics (latency, error rate, rps, reliability, histogram); `-o metrics.prom` or `--out-dir` writes `metrics.prom`. Details: [docs/PROMETHEUS.md](docs/PROMETHEUS.md). Grafana pack: [docs/GRAFANA.md](docs/GRAFANA.md) (`grafana/dashboards/rpcbench.json`). `rpcbench diff old.json new.json` compares two JSON runs (P95 delta, winner change, new signals) and exits 1 in CI if the previous **primary** got worse beyond the similar-band. `--history DIR` appends a JSON snapshot after a run so diff can use `--history DIR`. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
+Default is Fastest, a production-readiness **Verdict**, a **Route** (primary / fallback), and the ranked list. `--verbose` is the full dump (including **Signals**). `--json` / `-o` is always the complete payload. `--html -o report.html` is a standalone file (inline CSS/SVG, no CDN): ranking with sample sparklines, a provider × method **Heatmap**, **Signals** (problem / why / next), and print CSS. `--md` is a pasteable GitHub markdown table with aligned columns (ranking, P95, errors, rel, freshness, verdict). `--csv` is one flat row per provider (run, rank, latency, verdict, transport). `-o report.csv` writes that CSV and keeps the CLI table. `--prometheus` dumps Prometheus textfile metrics (latency, error rate, rps, reliability, histogram); `-o metrics.prom` or `--out-dir` writes `metrics.prom`. Details: [docs/PROMETHEUS.md](docs/PROMETHEUS.md). Grafana pack: [docs/GRAFANA.md](docs/GRAFANA.md) (`grafana/dashboards/rpcbench.json`). `rpcbench diff old.json new.json` compares two JSON runs (P95 delta, winner change, new signals) and exits 1 in CI if the previous **primary** got worse beyond the similar-band. `--history DIR` appends a JSON snapshot after a run so diff can use `--history DIR`. `rpcbench merge a.json b.json` joins multi-vantage JSON (same seed/workload) into a per-region P95 table and global rollup. Every report prints a **Cite** line (version, git sha, family, vantage, UTC) so the numbers can be reproduced.
 
 **Default**
 
@@ -310,7 +310,7 @@ Happy path is `compare --endpoints FILE` (general, short). Named jobs turn extra
 
 ## Safety
 
-Kill switch: `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key. Set `RPCBENCH_VANTAGE` to label the machine in the report watermark (default: hostname).
+Kill switch: `RPCBENCH_DISABLED=1`, or create `~/.config/rpcbench/DISABLED` (override path with `RPCBENCH_DISABLE_FILE`). RPCBench never prompts for a private key. Label the measurement machine with `RPCBENCH_VANTAGE` (default: hostname); optional `RPCBENCH_REGION`, `RPCBENCH_CITY`, `RPCBENCH_ASN` enrich the watermark. One compare is one vantage — not browser RUM. Merge regional JSON with `rpcbench merge` ([docs/METHODOLOGY.md](docs/METHODOLOGY.md#vantage-and-multi-region)).
 
 ## License
 

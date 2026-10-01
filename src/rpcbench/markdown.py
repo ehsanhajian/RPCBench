@@ -16,6 +16,7 @@ from rpcbench.report import (
 from rpcbench.run import RunResult
 from rpcbench.verdict import NOT_READY, READY, RISKY
 from rpcbench.watermark import DOCS_BOUNDARY, DOCS_METHODOLOGY
+from rpcbench.vantage import format_vantage_bits
 
 _DECISION = {READY: "ready", RISKY: "risky", NOT_READY: "not ready"}
 
@@ -94,11 +95,13 @@ def format_md_dict(data: dict[str, Any]) -> str:
     utc = mark.get("utc") or "—"
     vantage = mark.get("vantage") or "—"
     version = mark.get("version") or data.get("version") or "—"
+    extras = format_vantage_bits(mark.get("vantage_meta") or mark)
+    extra = f" {_esc(extras)}" if extras else ""
     lines.extend(
         [
             "",
             f"Cite `{_esc(version)}` sha={_esc(sha)} family={_esc(mark.get('family') or 'evm')} "
-            f"vantage={_esc(vantage)} utc={_esc(utc)} · "
+            f"vantage={_esc(vantage)}{extra} utc={_esc(utc)} · "
             f"[methodology]({DOCS_METHODOLOGY}) · [boundary]({DOCS_BOUNDARY})",
             "",
         ]

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import socket
 import subprocess
 from html import escape
 from pathlib import Path
@@ -11,6 +9,11 @@ from typing import TYPE_CHECKING, Any
 
 from rpcbench import __version__
 from rpcbench.methods import is_app_workload
+from rpcbench.vantage import (
+    VantageInfo,
+    format_vantage_bits,
+    vantage_label,
+)
 
 if TYPE_CHECKING:
     from rpcbench.run import RunResult
@@ -27,6 +30,21 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 
 _CYAN = "36"
 _BOLD = "1"
+
+# Re-export for callers that imported vantage_label from watermark.
+__all__ = [
+    "DOCS_BOUNDARY",
+    "DOCS_METHODOLOGY",
+    "FAMILY_EVM",
+    "as_dict",
+    "cite_line",
+    "family_token",
+    "git_sha",
+    "html_footer",
+    "utc_stamp",
+    "vantage_label",
+    "workload_label",
+]
 
 
 def _paint(text: str, *codes: str, enabled: bool) -> str:
@@ -75,24 +93,24 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def vantage_label() -> str:
-    env = os.environ.get("RPCBENCH_VANTAGE", "").strip()
-    if env:
-        return env
-    try:
-        return socket.gethostname() or "local"
-    except OSError:
-        return "local"
-
-
 def workload_label(result: RunResult) -> str:
     if is_app_workload(result.profile):
         return result.profile
     return result.method
 
 
+def _vantage_for(result: RunResult) -> VantageInfo | None:
+    info = getattr(result, "vantage_info", None)
+    if isinstance(info, VantageInfo):
+        return info
+    if result.vantage:
+        return VantageInfo(label=result.vantage)
+    return None
+
+
 def as_dict(result: RunResult) -> dict[str, Any]:
-    return {
+    info = _vantage_for(result)
+    mark: dict[str, Any] = {
         "version": __version__,
         "git_sha": result.git_sha,
         "utc": result.started_at,
@@ -106,6 +124,13 @@ def as_dict(result: RunResult) -> dict[str, Any]:
         "methodology": DOCS_METHODOLOGY,
         "boundary": DOCS_BOUNDARY,
     }
+    if info is not None:
+        mark["region"] = info.region
+        mark["city"] = info.city
+        mark["asn"] = info.asn
+        mark["hostname"] = info.hostname
+        mark["vantage_meta"] = info.as_dict()
+    return mark
 
 
 def html_footer(result: RunResult) -> str:
@@ -114,11 +139,14 @@ def html_footer(result: RunResult) -> str:
     utc = mark["utc"] or "—"
     sha = mark["git_sha"] or "—"
     family = escape(str(mark["family"]))
+    vantage = escape(str(mark["vantage"] or "—"))
+    extras = format_vantage_bits(mark.get("vantage_meta"))
+    extra_html = f" · {escape(extras)}" if extras else ""
     return (
         f'<footer>rpcbench {escape(str(mark["version"]))} · sha={escape(str(sha))} · '
         f'{escape(str(utc))} · '
         f'<span style="color:#22d3ee;font-weight:600">family={family}</span> · '
-        f'vantage={escape(str(mark["vantage"] or "—"))} · '
+        f'vantage={vantage}{extra_html} · '
         f'<a href="{DOCS_METHODOLOGY}">methodology</a> · '
         f'<a href="{DOCS_BOUNDARY}">boundary</a></footer>'
     )
@@ -130,7 +158,9 @@ def cite_line(result: RunResult, *, color: bool = False) -> str:
     vantage = mark["vantage"] or "—"
     utc = mark["utc"] or "—"
     family = family_token(str(mark["family"]), color=color)
+    extras = format_vantage_bits(mark.get("vantage_meta"))
+    extra = f"  {extras}" if extras else ""
     return (
         f"Cite      {mark['version']}  sha={sha}  {family}  "
-        f"vantage={vantage}  utc={utc}  ·  methodology · boundary"
+        f"vantage={vantage}{extra}  utc={utc}  ·  methodology · boundary"
     )

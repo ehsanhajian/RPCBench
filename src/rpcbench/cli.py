@@ -39,6 +39,13 @@ from rpcbench.diff import (
     load_report,
     write_history,
 )
+from rpcbench.merge import (
+    MergeError,
+    format_merge,
+    format_merge_json,
+    load_merge_inputs,
+    merge_reports,
+)
 from rpcbench.csv import format_csv
 from rpcbench.html import format_html
 from rpcbench.logs import DEFAULT_LOGS_RANGE, LOGS_RANGES, ranges_for
@@ -175,6 +182,7 @@ def build_parser(*, full: bool = False) -> argparse.ArgumentParser:
         show=True,
     )
     _add_diff_parser(sub)
+    _add_merge_parser(sub)
     _add_record_parser(sub, show=full)
     _add_replay_parser(sub, show=full)
     return parser
@@ -653,6 +661,33 @@ def _add_diff_parser(sub) -> None:
     )
 
 
+def _add_merge_parser(sub) -> None:
+    merge = sub.add_parser(
+        "merge",
+        help=(
+            "Merge JSON reports from multiple vantages into a per-region table "
+            "and global rollup (same seed/workload)"
+        ),
+    )
+    merge.add_argument(
+        "reports",
+        nargs="+",
+        metavar="REPORT.json",
+        help="rpcbench JSON reports (at least two), each from one vantage",
+    )
+    merge.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the merge as JSON instead of the CLI table",
+    )
+    merge.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Write the merge output to FILE",
+    )
+
+
 def _add_record_parser(sub, *, show: bool = True) -> None:
     rec = sub.add_parser(
         "record",
@@ -890,6 +925,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run(args)
     if args.command == "diff":
         return _cmd_diff(args)
+    if args.command == "merge":
+        return _cmd_merge(args)
     if args.command == "record":
         return _cmd_record(args)
     if args.command == "replay":
@@ -1288,6 +1325,27 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         return 2
     sys.stdout.write(format_diff_md(diff) if args.md else format_diff(diff))
     return 1 if diff.failed else 0
+
+
+def _cmd_merge(args: argparse.Namespace) -> int:
+    if len(args.reports) < 2:
+        print("rpcbench: merge needs at least two REPORT.json files", file=sys.stderr)
+        return 2
+    try:
+        reports = load_merge_inputs([Path(path) for path in args.reports])
+        merged = merge_reports(reports)
+    except (MergeError, DiffError, OSError) as exc:
+        print(f"rpcbench: {exc}", file=sys.stderr)
+        return 2
+    blob = format_merge_json(merged) if args.json else format_merge(merged)
+    if args.output:
+        try:
+            Path(args.output).write_text(blob, encoding="utf-8")
+        except OSError as exc:
+            print(f"rpcbench: cannot write {args.output}: {exc}", file=sys.stderr)
+            return 2
+    sys.stdout.write(blob)
+    return 0
 
 
 def _cmd_record(args: argparse.Namespace) -> int:
