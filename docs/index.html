@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>RPCBench — vendor-neutral RPC benchmark CLI</title>
+  <meta name="description" content="Compare JSON-RPC and REST RPC endpoints for latency, P50/P95/P99, error rate, and freshness. Ethereum, Solana, and more. Local CLI, Prometheus, no telemetry."/>
+  <meta name="keywords" content="RPC benchmark, JSON-RPC latency, P95, Ethereum RPC, Solana RPC, provider comparison, Prometheus, CLI"/>
+  <link rel="canonical" href="https://ehsanhajian.github.io/RPCBench/"/>
+  <meta property="og:title" content="RPCBench — which RPC is fastest from this machine?"/>
+  <meta property="og:description" content="Vendor-neutral CLI to compare RPC providers: latency, percentiles, errors, freshness. Not a security scanner."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://ehsanhajian.github.io/RPCBench/"/>
+  <meta property="og:image" content="https://ehsanhajian.github.io/RPCBench/images/cli-compact.svg"/>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --ink: #e8eef8;
+      --muted: #9aa8bc;
+      --line: #243044;
+      --accent: #3d8fd1;
+      --ok: #3ecf8e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.55 "IBM Plex Sans", "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 420px at 10% -10%, #1a3358 0%, transparent 55%),
+        radial-gradient(700px 380px at 90% 0%, #16302a 0%, transparent 50%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    a { color: var(--accent); }
+    header, main, footer { width: min(920px, calc(100% - 2rem)); margin-inline: auto; }
+    header { padding: 2.5rem 0 1.25rem; }
+    .brand {
+      font-family: "IBM Plex Mono", "Source Code Pro", ui-monospace, monospace;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.5rem;
+    }
+    .lede { font-size: 1.15rem; color: var(--muted); max-width: 38rem; margin: 0 0 1.25rem; }
+    .cta { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-bottom: 1.75rem; }
+    .cta a {
+      display: inline-block;
+      text-decoration: none;
+      padding: 0.55rem 0.95rem;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 600;
+    }
+    .cta a.primary { background: var(--accent); border-color: transparent; color: #041018; }
+    .shot {
+      display: block;
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0d1117;
+    }
+    section { padding: 1.75rem 0; border-top: 1px solid var(--line); }
+    h2 { margin: 0 0 0.5rem; font-size: 1.15rem; }
+    p, li { color: var(--muted); }
+    ul { padding-left: 1.15rem; }
+    code, pre {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+      color: var(--ink);
+    }
+    .split { display: grid; gap: 0.75rem; }
+    @media (min-width: 720px) {
+      .split { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+    }
+    .card strong { display: block; color: var(--ink); margin-bottom: 0.25rem; }
+    .card span { color: var(--muted); font-size: 0.92rem; }
+    footer { padding: 1.5rem 0 2.5rem; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet"/>
+</head>
+<body>
+  <header>
+    <p class="brand">RPCBench</p>
+    <p class="lede">Which RPC endpoint is fastest — for this call, from this machine? A vendor-neutral CLI that compares JSON-RPC and REST providers on latency, P50/P95/P99, error rate, and freshness.</p>
+    <div class="cta">
+      <a class="primary" href="https://github.com/ehsanhajian/RPCBench#install">Quick start</a>
+      <a href="https://pypi.org/project/rpcbench/">pip install rpcbench</a>
+      <a href="https://github.com/ehsanhajian/RPCBench">GitHub</a>
+    </div>
+    <img class="shot" src="images/cli-compact.svg" width="1066" height="694" alt="rpcbench compare CLI output showing ranked providers, verdict, and cite line"/>
+  </header>
+  <main>
+    <section>
+      <h2>Three tools, one job each</h2>
+      <div class="split">
+        <div class="card">
+          <strong>RPCBench</strong>
+          <span>Benchmark quality from your machine. Pick a primary and a fallback.</span>
+        </div>
+        <div class="card">
+          <strong><a href="https://github.com/ehsanhajian/nodeprobe">Nodeprobe</a></strong>
+          <span>Security / surface scan of an RPC. Not latency ranking.</span>
+        </div>
+        <div class="card">
+          <strong><a href="https://github.com/ehsanhajian/ValidatorPulse">ValidatorPulse</a></strong>
+          <span>Always-on validator monitoring. Not a one-shot compare.</span>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Install</h2>
+      <pre>pip install rpcbench
+rpcbench compare --endpoints endpoints.yaml</pre>
+      <p>Python 3.10+. Read-only by default. No accounts. No telemetry. Localhost and private URLs are allowed so you can bench your own node. Details and flags live in the <a href="https://github.com/ehsanhajian/RPCBench#install">README</a>.</p>
+    </section>
+    <section>
+      <h2>What you get</h2>
+      <ul>
+        <li>EVM, Solana, Substrate, Cosmos, Aptos, Sui, NEAR, Starknet, Bitcoin, TON</li>
+        <li>Paired compare, similar-band ranking, freshness / lag, HTML + JSON + Prometheus</li>
+        <li>Live TUI and optional <code>--web</code> UI; Docker image and GitHub Action for CI SLOs</li>
+      </ul>
+      <p><a href="images/html-report.svg">HTML report preview</a> · <a href="https://github.com/ehsanhajian/RPCBench/blob/main/docs/METHODOLOGY.md">Methodology</a> · <a href="https://github.com/ehsanhajian/RPCBench/blob/main/docs/BOUNDARY.md">Boundary</a></p>
+    </section>
+  </main>
+  <footer>
+    MIT · <a href="https://github.com/ehsanhajian/RPCBench">ehsanhajian/RPCBench</a> ·
+    <a href="https://pypi.org/project/rpcbench/">PyPI</a> ·
+    Not a security scanner.
+  </footer>
+</body>
+</html>
