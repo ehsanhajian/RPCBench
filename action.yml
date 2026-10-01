@@ -1,7 +1,5 @@
 name: RPCBench
-description: >
-  Compare RPC endpoints, write HTML/JSON/MD artifacts, and fail the job when
-  SLO budgets (--max-p95 / --max-error-rate / --max-lag) are missed.
+description: Compare RPC endpoints in CI; write HTML/JSON reports; fail on P95/error/lag SLOs.
 author: Ehsan Hajian
 
 branding:
