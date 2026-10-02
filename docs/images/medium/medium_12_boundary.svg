@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="190" viewBox="0 0 900 190" role="img" aria-label="Three tools · three questions">
+<rect width="900" height="190" rx="10" fill="#0d1117"/>
+<rect width="900" height="36" rx="10" fill="#161b22"/>
+<rect y="26" width="900" height="10" fill="#161b22"/>
+<circle cx="18" cy="18" r="5" fill="#ff5f57"/>
+<circle cx="36" cy="18" r="5" fill="#febc2e"/>
+<circle cx="54" cy="18" r="5" fill="#28c840"/>
+<text x="450.0" y="23" text-anchor="middle" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12">Three tools · three questions</text>
+<text x="22" y="68" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">Nodeprobe        Is this RPC safe to expose?</text>
+<text x="22" y="90" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">RPCBench         Which RPC performs best for this workload?</text>
+<text x="22" y="112" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">ValidatorPulse   Is my validator healthy?</text>
+<text x="22" y="134" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve"></text>
+<text x="22" y="156" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve"># Overlap at the protocol. Different questions.</text>
+</svg>
