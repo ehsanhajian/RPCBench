@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="820" height="256" viewBox="0 0 820 256" role="img" aria-label="GitHub Action · SLO gate">
+<rect width="820" height="256" rx="10" fill="#0d1117"/>
+<rect width="820" height="36" rx="10" fill="#161b22"/>
+<rect y="26" width="820" height="10" fill="#161b22"/>
+<circle cx="18" cy="18" r="5" fill="#ff5f57"/>
+<circle cx="36" cy="18" r="5" fill="#febc2e"/>
+<circle cx="54" cy="18" r="5" fill="#28c840"/>
+<text x="410.0" y="23" text-anchor="middle" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="12">GitHub Action · SLO gate</text>
+<text x="22" y="68" fill="#388bfd" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">- uses: ehsanhajian/RPCBench@v0.6.1</text>
+<text x="22" y="90" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">  with:</text>
+<text x="22" y="112" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">    endpoints: endpoints.yaml</text>
+<text x="22" y="134" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">    budget: short</text>
+<text x="22" y="156" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">    max-p95: &quot;500&quot;</text>
+<text x="22" y="178" fill="#e6edf3" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve">    max-error-rate: &quot;0.05&quot;</text>
+<text x="22" y="200" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve"># Fail the job when an SLO budget misses.</text>
+<text x="22" y="222" fill="#8b949e" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-size="14" xml:space="preserve"># Artifacts: report.html / report.json / report.md</text>
+</svg>
